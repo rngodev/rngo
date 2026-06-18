@@ -37,7 +37,7 @@ fn assert_simulation(simulation: Simulation) {
         let name = obj["name"].as_str().unwrap();
         let name_len = name.chars().count();
         assert!(
-            name_len >= 10 && name_len <= 50,
+            (10..=50).contains(&name_len),
             "user name length should be 10–50, got {name_len}"
         );
 
@@ -46,7 +46,7 @@ fn assert_simulation(simulation: Simulation) {
             Value::Number(ref n) => {
                 let age = n.as_f64().unwrap();
                 assert!(
-                    age >= 18.0 && age <= 65.0,
+                    (18.0..=65.0).contains(&age),
                     "user age should be 18–65, got {age}"
                 )
             }
@@ -83,7 +83,7 @@ fn assert_simulation(simulation: Simulation) {
 
         let suffix_len = title.chars().count() - "Post: ".len();
         assert!(
-            suffix_len >= 10 && suffix_len <= 20,
+            (10..=20).contains(&suffix_len),
             "title suffix length should be 10–20, got {suffix_len}"
         );
 

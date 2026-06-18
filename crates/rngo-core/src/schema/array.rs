@@ -1,5 +1,3 @@
-use std::usize;
-
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::build::{BuildError, SchemaEdge};
 use crate::spec::SpecError as Error;

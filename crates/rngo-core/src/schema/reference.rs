@@ -60,7 +60,7 @@ impl SchemaBuilder for ReferenceBuilder {
                 index: visitor.event_log.index(config.clone()),
             }))
         } else {
-            return Err(vec![visitor.error("config was not set")]);
+            Err(vec![visitor.error("config was not set")])
         }
     }
 }

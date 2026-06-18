@@ -115,7 +115,7 @@ fn spec() {
     let by_effect = |key: &'static str| {
         move |e: &&SpecError| {
             e.path()
-                .map_or(false, |p| p.get(1).map_or(false, |k| k == key))
+                .is_some_and(|p| p.get(1).is_some_and(|k| k == key))
         }
     };
 

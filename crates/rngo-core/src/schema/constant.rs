@@ -52,7 +52,7 @@ impl SchemaBuilder for ConstantBuilder {
                 value: value.clone(),
             }))
         } else {
-            return Err(vec![visitor.error("value was not set")]);
+            Err(vec![visitor.error("value was not set")])
         }
     }
 }

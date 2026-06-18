@@ -31,14 +31,12 @@ pub trait SpecErrorTestExt {
 
 impl SpecErrorTestExt for SpecError {
     fn message(&self) -> &str {
-        match self {
-            SpecError { message, .. } => message,
-        }
+        let SpecError { message, .. } = self;
+        message
     }
 
     fn path(&self) -> Option<&Vec<String>> {
-        match self {
-            SpecError { path, .. } => path.as_ref(),
-        }
+        let SpecError { path, .. } = self;
+        path.as_ref()
     }
 }

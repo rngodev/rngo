@@ -178,7 +178,7 @@ impl SchemaParseVisitor {
 
         let child = SchemaParseVisitor {
             schema_parsers: self.schema_parsers.clone(),
-            simulation_seed: self.simulation_seed.clone(),
+            simulation_seed: self.simulation_seed,
             effect_key: self.effect_key.clone(),
             spec,
             path: new_path,

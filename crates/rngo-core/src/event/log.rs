@@ -33,7 +33,7 @@ impl EventLogIndex for SimpleEventLogIndex {
     fn sample(&self) -> Option<Rc<Event>> {
         let events = self.events.borrow();
 
-        let filtered_events = events.iter().filter(|e| match &***e {
+        let mut filtered_events = events.iter().filter(|e| match &***e {
             Event::Effect { key: event_key, .. } => match &self.config {
                 EventLogIndexConfig::ByEffect {
                     key: config_key, ..
@@ -45,7 +45,7 @@ impl EventLogIndex for SimpleEventLogIndex {
         match &self.config {
             EventLogIndexConfig::ByEffect { last_only, .. } => {
                 if *last_only {
-                    filtered_events.last().cloned()
+                    filtered_events.next_back().cloned()
                 } else {
                     let filtered_events = filtered_events.collect::<Vec<_>>();
                     if filtered_events.is_empty() {

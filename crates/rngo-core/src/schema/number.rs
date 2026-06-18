@@ -36,7 +36,7 @@ impl Schema for Number {
         let mut value = if let Some(step) = self.step {
             let current = self
                 .current
-                .get_or_insert_with(|| if step >= 0.0 { self.min } else { self.max });
+                .get_or_insert(if step >= 0.0 { self.min } else { self.max });
             let v = *current;
             *current += step;
             v
