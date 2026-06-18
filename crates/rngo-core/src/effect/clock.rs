@@ -1,0 +1,179 @@
+use crate::BuildError;
+use crate::util::cel::CelContextBuilder;
+use cel::{Context, Program, Value};
+use rand::RngExt;
+use rand_pcg::Pcg32;
+use rand_seeder::Seeder;
+use std::cell::RefCell;
+
+#[derive(Debug)]
+pub struct Clock {
+    rng: Pcg32,
+    rate_function: RateFunction,
+    last: u64,
+}
+
+impl Clock {
+    pub fn for_hertz(key: String, seed: u64, hertz: f64) -> Self {
+        let rng: Pcg32 = Seeder::from(&format!("{seed}-{key}")).into_rng();
+
+        Self {
+            rng,
+            rate_function: RateFunction::Fixed(hertz),
+            last: 0,
+        }
+    }
+
+    pub fn for_expression(
+        key: String,
+        seed: u64,
+        expression: String,
+    ) -> Result<Self, Vec<BuildError>> {
+        let rng: Pcg32 = Seeder::from(&format!("{seed}-{key}")).into_rng();
+
+        let program = Program::compile(&expression).map_err(|e| {
+            vec![BuildError::Effect {
+                effect: key.clone(),
+                key: crate::EffectKey::Trigger,
+                message: format!(
+                    "could not compile expression: {}",
+                    e.errors
+                        .into_iter()
+                        .map(|e| e.msg)
+                        .collect::<Vec<_>>()
+                        .join(",")
+                ),
+            }]
+        })?;
+
+        let mut context_builder = CelContextBuilder::default();
+        context_builder.time();
+        let mut context = context_builder.build();
+        let references = program.references();
+
+        let rate_function = if references.variables().contains(&"offset") {
+            let _ = context.add_variable("offset", 0);
+
+            program.execute(&context).map_err(|e| {
+                vec![BuildError::Effect {
+                    effect: key.clone(),
+                    key: crate::EffectKey::Trigger,
+                    message: format!("could not execute expression: {e}"),
+                }]
+            })?;
+
+            RateFunction::Dynamic {
+                expression,
+                cache: RefCell::new(Some((program, context))),
+            }
+        } else {
+            let value = program.execute(&context).map_err(|e| {
+                vec![BuildError::Effect {
+                    effect: key.clone(),
+                    key: crate::EffectKey::Trigger,
+                    message: format!("could not execute expression: {e}"),
+                }]
+            })?;
+
+            let static_rate = match value {
+                Value::Int(i) => Some(i as f64),
+                Value::UInt(ui) => Some(ui as f64),
+                Value::Float(f) => Some(f),
+                _ => None,
+            };
+
+            match static_rate {
+                Some(static_rate) => RateFunction::Fixed(static_rate),
+                None => {
+                    return Err(vec![BuildError::Effect {
+                        effect: key,
+                        key: crate::EffectKey::Trigger,
+                        message: format!("rate expression non-numeric: {expression}"),
+                    }]);
+                }
+            }
+        };
+
+        Ok(Self {
+            rng,
+            rate_function,
+            last: 0,
+        })
+    }
+}
+
+impl Iterator for Clock {
+    type Item = u64;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let u: f64 = self.rng.random();
+        let rate = self.rate_function.offset_rate(self.last as i64);
+        let interval = -u.ln() / rate;
+        self.last += interval.floor() as u64;
+        Some(self.last)
+    }
+}
+
+pub enum RateFunction {
+    Fixed(f64),
+    Dynamic {
+        expression: String,
+        cache: RefCell<Option<(Program, Context<'static>)>>,
+    },
+}
+
+impl Clone for RateFunction {
+    fn clone(&self) -> Self {
+        match self {
+            RateFunction::Fixed(rate) => RateFunction::Fixed(*rate),
+            RateFunction::Dynamic { expression, .. } => RateFunction::Dynamic {
+                expression: expression.clone(),
+                cache: RefCell::new(None),
+            },
+        }
+    }
+}
+
+impl std::fmt::Debug for RateFunction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RateFunction::Fixed(rate) => f.debug_tuple("Static").field(rate).finish(),
+            RateFunction::Dynamic { expression, .. } => f
+                .debug_struct("Dynamic")
+                .field("expression", expression)
+                .finish(),
+        }
+    }
+}
+
+impl RateFunction {
+    fn offset_rate(&self, offset: i64) -> f64 {
+        match self {
+            RateFunction::Fixed(rate) => *rate,
+            RateFunction::Dynamic { expression, cache } => {
+                let mut cache_ref = cache.borrow_mut();
+
+                // Lazily initialize program and context after deserialization
+                if cache_ref.is_none() {
+                    let program = Program::compile(expression).unwrap();
+                    let mut context_builder = CelContextBuilder::default();
+                    context_builder.time();
+                    let context = context_builder.build();
+                    *cache_ref = Some((program, context));
+                }
+
+                let (prog, ctx) = cache_ref.as_mut().unwrap();
+                let _ = ctx.add_variable("offset", offset);
+                match prog.execute(ctx) {
+                    Ok(value) => match value {
+                        Value::Float(num) => num,
+                        Value::Int(num) => num as f64,
+                        Value::UInt(num) => num as f64,
+                        v => panic!("Unexpected rate function result: {:?}", v),
+                    },
+                    Err(e) => panic!("Error executing rate function: {:?}", e),
+                }
+            }
+        }
+    }
+}
