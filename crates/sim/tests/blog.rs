@@ -1,7 +1,7 @@
 mod common;
 
-use rngo_core::build::*;
-use rngo_core::{Dialect, Event, Simulation};
+use rngo_sim::build::*;
+use rngo_sim::{Dialect, Event, Simulation};
 use serde_json::Value;
 
 fn assert_simulation(simulation: Simulation) {

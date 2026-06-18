@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use rngo_core::{BuildError, SchemaEdge, SpecError};
+use rngo_sim::{BuildError, SchemaEdge, SpecError};
 
 pub trait BuildErrorTestExt {
     fn message(&self) -> &str;

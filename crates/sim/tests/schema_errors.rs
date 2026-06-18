@@ -1,8 +1,8 @@
 mod common;
 
 use common::{BuildErrorTestExt, SpecErrorTestExt};
-use rngo_core::build::*;
-use rngo_core::{BuildError, Dialect, EffectKey, Simulation, SpecError};
+use rngo_sim::build::*;
+use rngo_sim::{BuildError, Dialect, EffectKey, Simulation, SpecError};
 
 #[test]
 fn builder() {
@@ -113,10 +113,7 @@ fn spec() {
     let errors = Dialect::core().parse_simulation_json(value).unwrap_err();
 
     let by_effect = |key: &'static str| {
-        move |e: &&SpecError| {
-            e.path()
-                .is_some_and(|p| p.get(1).is_some_and(|k| k == key))
-        }
+        move |e: &&SpecError| e.path().is_some_and(|p| p.get(1).is_some_and(|k| k == key))
     };
 
     let number_error = errors.iter().find(by_effect("number")).unwrap();
