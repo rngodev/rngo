@@ -2,9 +2,11 @@ mod log;
 
 pub use log::{EventLog, EventLogIndex, EventLogIndexConfig, SimpleEventLog};
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
     Effect {
         id: u64,

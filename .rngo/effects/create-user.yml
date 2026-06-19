@@ -1,0 +1,18 @@
+trigger: "1.0 / day"
+schema:
+  type: object
+  properties:
+    id:
+      type: number
+      min: 1
+      scale: 0
+      step: 1
+    email:
+      type: string
+      pattern: "[a-z]{5,10}@[a-z]{4,8}\\.(com|net|org)"
+    name:
+      type: string
+      pattern: "[A-Z][a-z]{3,8} [A-Z][a-z]{4,10}"
+    created_at:
+      type: context
+      path: ["trigger", "offset"]
