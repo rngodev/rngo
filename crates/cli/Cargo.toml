@@ -1,0 +1,14 @@
+[package]
+name = "cli"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "rngo"
+path = "src/main.rs"
+
+[dependencies]
+rngo-sim = { path = "../sim" }
+clap = { version = "4", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
