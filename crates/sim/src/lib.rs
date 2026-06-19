@@ -12,3 +12,4 @@ pub use event::Event;
 pub use simulation::Simulation;
 pub use spec::Dialect;
 pub use spec::SpecError;
+pub use util::time::Moment;
