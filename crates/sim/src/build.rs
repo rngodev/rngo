@@ -81,4 +81,5 @@ pub enum SimulationKey {
 pub enum EffectKey {
     Schema,
     Trigger,
+    Config,
 }

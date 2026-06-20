@@ -14,91 +14,8 @@ pub struct Clock {
 }
 
 impl Clock {
-    pub fn for_hertz(key: String, seed: u64, hertz: f64) -> Self {
-        let rng: Pcg32 = Seeder::from(&format!("{seed}-{key}")).into_rng();
-
-        Self {
-            rng,
-            rate_function: RateFunction::Fixed(hertz),
-            last: 0,
-        }
-    }
-
-    pub fn for_expression(
-        key: String,
-        seed: u64,
-        expression: String,
-    ) -> Result<Self, Vec<BuildError>> {
-        let rng: Pcg32 = Seeder::from(&format!("{seed}-{key}")).into_rng();
-
-        let program = Program::compile(&expression).map_err(|e| {
-            vec![BuildError::Effect {
-                effect: key.clone(),
-                key: crate::EffectKey::Trigger,
-                message: format!(
-                    "could not compile expression: {}",
-                    e.errors
-                        .into_iter()
-                        .map(|e| e.msg)
-                        .collect::<Vec<_>>()
-                        .join(",")
-                ),
-            }]
-        })?;
-
-        let mut context_builder = CelContextBuilder::default();
-        context_builder.time();
-        let mut context = context_builder.build();
-        let references = program.references();
-
-        let rate_function = if references.variables().contains(&"offset") {
-            let _ = context.add_variable("offset", 0);
-
-            program.execute(&context).map_err(|e| {
-                vec![BuildError::Effect {
-                    effect: key.clone(),
-                    key: crate::EffectKey::Trigger,
-                    message: format!("could not execute expression: {e}"),
-                }]
-            })?;
-
-            RateFunction::Dynamic {
-                expression,
-                cache: RefCell::new(Some((program, context))),
-            }
-        } else {
-            let value = program.execute(&context).map_err(|e| {
-                vec![BuildError::Effect {
-                    effect: key.clone(),
-                    key: crate::EffectKey::Trigger,
-                    message: format!("could not execute expression: {e}"),
-                }]
-            })?;
-
-            let static_rate = match value {
-                Value::Int(i) => Some(i as f64),
-                Value::UInt(ui) => Some(ui as f64),
-                Value::Float(f) => Some(f),
-                _ => None,
-            };
-
-            match static_rate {
-                Some(static_rate) => RateFunction::Fixed(static_rate),
-                None => {
-                    return Err(vec![BuildError::Effect {
-                        effect: key,
-                        key: crate::EffectKey::Trigger,
-                        message: format!("rate expression non-numeric: {expression}"),
-                    }]);
-                }
-            }
-        };
-
-        Ok(Self {
-            rng,
-            rate_function,
-            last: 0,
-        })
+    pub fn builder() -> ClockBuilder {
+        ClockBuilder::new()
     }
 }
 
@@ -111,6 +28,132 @@ impl Iterator for Clock {
         let interval = -u.ln() / rate;
         self.last += interval.floor() as u64;
         Some(self.last)
+    }
+}
+
+pub struct ClockBuilder {
+    key: String,
+    seed: u64,
+    rate: ClockRate,
+    start_offset: u64,
+}
+
+enum ClockRate {
+    Hertz(f64),
+    Expression(String),
+}
+
+impl ClockBuilder {
+    pub fn new() -> Self {
+        ClockBuilder {
+            key: String::new(),
+            seed: 1,
+            rate: ClockRate::Expression("1.0 / day".into()),
+            start_offset: 0,
+        }
+    }
+
+    pub fn key(mut self, key: String) -> Self {
+        self.key = key;
+        self
+    }
+
+    pub fn seed(mut self, seed: u64) -> Self {
+        self.seed = seed;
+        self
+    }
+
+    pub fn hertz(mut self, hertz: f64) -> Self {
+        self.rate = ClockRate::Hertz(hertz);
+        self
+    }
+
+    pub fn expression(mut self, expression: String) -> Self {
+        self.rate = ClockRate::Expression(expression);
+        self
+    }
+
+    pub fn start_offset(mut self, offset: u64) -> Self {
+        self.start_offset = offset;
+        self
+    }
+
+    pub fn build(self) -> Result<Clock, Vec<BuildError>> {
+        let rng: Pcg32 = Seeder::from(&format!("{}-{}", self.seed, self.key)).into_rng();
+
+        let rate_function = match self.rate {
+            ClockRate::Hertz(hertz) => RateFunction::Fixed(hertz),
+            ClockRate::Expression(expression) => {
+                let program = Program::compile(&expression).map_err(|e| {
+                    vec![BuildError::Effect {
+                        effect: self.key.clone(),
+                        key: crate::EffectKey::Trigger,
+                        message: format!(
+                            "could not compile expression: {}",
+                            e.errors
+                                .into_iter()
+                                .map(|e| e.msg)
+                                .collect::<Vec<_>>()
+                                .join(",")
+                        ),
+                    }]
+                })?;
+
+                let mut context_builder = CelContextBuilder::default();
+                context_builder.time();
+                let mut context = context_builder.build();
+                let references = program.references();
+
+                if references.variables().contains(&"offset") {
+                    let _ = context.add_variable("offset", 0);
+
+                    program.execute(&context).map_err(|e| {
+                        vec![BuildError::Effect {
+                            effect: self.key.clone(),
+                            key: crate::EffectKey::Trigger,
+                            message: format!("could not execute expression: {e}"),
+                        }]
+                    })?;
+
+                    RateFunction::Dynamic {
+                        expression,
+                        cache: RefCell::new(Some((program, context))),
+                    }
+                } else {
+                    let value = program.execute(&context).map_err(|e| {
+                        vec![BuildError::Effect {
+                            effect: self.key.clone(),
+                            key: crate::EffectKey::Trigger,
+                            message: format!("could not execute expression: {e}"),
+                        }]
+                    })?;
+
+                    let static_rate = match value {
+                        Value::Int(i) => Some(i as f64),
+                        Value::UInt(ui) => Some(ui as f64),
+                        Value::Float(f) => Some(f),
+                        _ => None,
+                    };
+
+                    match static_rate {
+                        Some(rate) => RateFunction::Fixed(rate),
+                        None => {
+                            return Err(vec![BuildError::Effect {
+                                effect: self.key,
+                                key: crate::EffectKey::Trigger,
+                                message: format!("rate expression non-numeric: {expression}"),
+                            }]);
+                        }
+                    }
+                }
+            }
+        };
+
+        Ok(Clock {
+            rng,
+            rate_function,
+            last: self.start_offset,
+        })
     }
 }
 

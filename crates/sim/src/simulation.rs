@@ -94,8 +94,13 @@ impl SimulationBuilder {
 
         let mut effects = vec![];
 
-        for effect_builder in self.effect_builders {
-            match effect_builder.build(&self.event_log, self.seed) {
+        for mut effect_builder in self.effect_builders {
+            effect_builder.set_now(now);
+            effect_builder.set_sim_start(start);
+            effect_builder.set_sim_end(end);
+            effect_builder.set_event_log(self.event_log.clone());
+            effect_builder.set_seed(self.seed);
+            match effect_builder.build() {
                 Ok(effect) => effects.push(effect),
                 Err(mut e) => errors.append(&mut e),
             }
