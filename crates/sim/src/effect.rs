@@ -3,6 +3,7 @@ mod trigger;
 
 use crate::build::{BuildError, EffectKey};
 use crate::event::{Event, EventLog, EventLogIndexConfig, SimpleEventLog};
+use crate::format::Format;
 use crate::schema::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::util::ext::FlattenErr;
 use crate::util::time::Moment;
@@ -19,8 +20,9 @@ pub struct Effect {
     key: String,
     event_log: Rc<dyn EventLog>,
     trigger: Trigger,
-    pub schema: Box<dyn Schema>,
+    schema: Box<dyn Schema>,
     end_offset: u64,
+    format: Option<Box<dyn Format>>,
 }
 
 impl Effect {
@@ -55,6 +57,7 @@ impl Iterator for Effect {
                 key: self.key.clone(),
                 id,
                 offset: trigger_event.offset,
+                format: self.format.as_ref().map(|f| f.format(&value)),
                 value,
             }),
             SchemaResult::Err(message) => Some(Event::Error { id, message }),
@@ -74,6 +77,7 @@ pub struct EffectBuilder {
     seed: Option<u64>,
     trigger: TriggerConfig,
     schema_builder: Option<Box<dyn SchemaBuilder>>,
+    format: Option<Box<dyn Format>>,
 }
 
 impl EffectBuilder {
@@ -89,6 +93,7 @@ impl EffectBuilder {
             seed: None,
             trigger: TriggerConfig::ClockExpression("1.0 / day".into()),
             schema_builder: None,
+            format: None,
         }
     }
 
@@ -147,6 +152,11 @@ impl EffectBuilder {
         self
     }
 
+    pub fn set_format(&mut self, format: Box<dyn Format>) -> &mut Self {
+        self.format = Some(format);
+        self
+    }
+
     pub fn build(self) -> Result<Effect, Vec<BuildError>> {
         let Some(now) = self.now else {
             return Err(vec![BuildError::Effect {
@@ -194,30 +204,26 @@ impl EffectBuilder {
                     last_offset: 0,
                 })
             }
-            TriggerConfig::ClockHertz(hertz) => {
-                Clock::builder()
-                    .key(self.key.clone())
-                    .seed(seed)
-                    .hertz(hertz)
-                    .start_offset(start_offset)
-                    .build()
-                    .map(|mut clock| {
-                        let next_offset = clock.next();
-                        Trigger::Clock { clock, next_offset }
-                    })
-            }
-            TriggerConfig::ClockExpression(expression) => {
-                Clock::builder()
-                    .key(self.key.clone())
-                    .seed(seed)
-                    .expression(expression)
-                    .start_offset(start_offset)
-                    .build()
-                    .map(|mut clock| {
-                        let next_offset = clock.next();
-                        Trigger::Clock { clock, next_offset }
-                    })
-            }
+            TriggerConfig::ClockHertz(hertz) => Clock::builder()
+                .key(self.key.clone())
+                .seed(seed)
+                .hertz(hertz)
+                .start_offset(start_offset)
+                .build()
+                .map(|mut clock| {
+                    let next_offset = clock.next();
+                    Trigger::Clock { clock, next_offset }
+                }),
+            TriggerConfig::ClockExpression(expression) => Clock::builder()
+                .key(self.key.clone())
+                .seed(seed)
+                .expression(expression)
+                .start_offset(start_offset)
+                .build()
+                .map(|mut clock| {
+                    let next_offset = clock.next();
+                    Trigger::Clock { clock, next_offset }
+                }),
         };
 
         let (schema, trigger) = schema_result.and_try(trigger_result).flatten_err()?;
@@ -228,6 +234,7 @@ impl EffectBuilder {
             trigger,
             schema,
             end_offset,
+            format: self.format,
         })
     }
 }

@@ -1,5 +1,6 @@
 use super::SpecError;
 use crate::effect::Effect;
+use crate::format::{self, Format};
 use crate::schema;
 use crate::schema::SchemaBuilder;
 use crate::simulation::{Simulation, SimulationBuilder};
@@ -9,27 +10,35 @@ use std::rc::Rc;
 
 pub struct Dialect {
     schema_parsers: Rc<Vec<Box<dyn SchemaParser>>>,
+    format_parsers: Rc<Vec<Box<dyn FormatParser>>>,
 }
 
 impl Dialect {
-    pub fn new(schema_parsers: Vec<Box<dyn SchemaParser>>) -> Self {
+    pub fn new(
+        schema_parsers: Vec<Box<dyn SchemaParser>>,
+        format_parsers: Vec<Box<dyn FormatParser>>,
+    ) -> Self {
         Dialect {
             schema_parsers: Rc::new(schema_parsers),
+            format_parsers: Rc::new(format_parsers),
         }
     }
 
     pub fn core() -> Self {
-        Dialect::new(vec![
-            Box::new(schema::Array::parser()),
-            Box::new(schema::Constant::parser()),
-            Box::new(schema::Context::parser()),
-            Box::new(schema::Function::parser()),
-            Box::new(schema::Number::parser()),
-            Box::new(schema::Object::parser()),
-            Box::new(schema::Reference::parser()),
-            Box::new(schema::Select::parser()),
-            Box::new(schema::Str::parser()),
-        ])
+        Dialect::new(
+            vec![
+                Box::new(schema::Array::parser()),
+                Box::new(schema::Constant::parser()),
+                Box::new(schema::Context::parser()),
+                Box::new(schema::Function::parser()),
+                Box::new(schema::Number::parser()),
+                Box::new(schema::Object::parser()),
+                Box::new(schema::Reference::parser()),
+                Box::new(schema::Select::parser()),
+                Box::new(schema::Str::parser()),
+            ],
+            vec![Box::new(format::SqlFormat::parser())],
+        )
     }
 
     pub fn parse_simulation_json(
@@ -56,8 +65,8 @@ impl Dialect {
         let mut simulation_builder = Simulation::builder();
         let simulation_moment_parser = Moment::parser();
 
-        if let Some(start) = spec.start {
-            match simulation_moment_parser.parse("start", &start) {
+        if let Some(start) = &spec.start {
+            match simulation_moment_parser.parse("start", start) {
                 Ok(timestamp) => {
                     simulation_builder.set_start(timestamp);
                 }
@@ -65,8 +74,8 @@ impl Dialect {
             };
         };
 
-        if let Some(end) = spec.end {
-            match simulation_moment_parser.parse("end", &end) {
+        if let Some(end) = &spec.end {
+            match simulation_moment_parser.parse("end", end) {
                 Ok(timestamp) => {
                     simulation_builder.set_end(timestamp);
                 }
@@ -74,13 +83,13 @@ impl Dialect {
             };
         };
 
-        for (key, effect) in spec.effects {
-            let mut effect_builder = Effect::builder(key);
+        for (key, effect) in &spec.effects {
+            let mut effect_builder = Effect::builder(key.clone());
             let effect_moment_parser =
                 Moment::parser().simulation(&simulation_builder.start, &simulation_builder.end);
 
-            if let Some(start) = effect.start {
-                match effect_moment_parser.parse("start", &start) {
+            if let Some(start) = &effect.start {
+                match effect_moment_parser.parse("start", start) {
                     Ok(timestamp) => {
                         effect_builder.set_start(timestamp);
                     }
@@ -88,8 +97,8 @@ impl Dialect {
                 };
             };
 
-            if let Some(end) = effect.end {
-                match effect_moment_parser.parse("end", &end) {
+            if let Some(end) = &effect.end {
+                match effect_moment_parser.parse("end", end) {
                     Ok(timestamp) => {
                         effect_builder.set_start(timestamp);
                     }
@@ -97,9 +106,11 @@ impl Dialect {
                 };
             };
 
-            if let Some(trigger_union) = effect.trigger {
+            if let Some(trigger_union) = &effect.trigger {
                 let trigger = match trigger_union {
-                    spec::TriggerUnion::Shorthand(rate) => spec::Trigger::Clock { rate },
+                    spec::TriggerUnion::Shorthand(rate) => {
+                        spec::Trigger::Clock { rate: rate.clone() }
+                    }
                     spec::TriggerUnion::Full(trigger) => trigger.clone(),
                 };
 
@@ -109,11 +120,32 @@ impl Dialect {
                 };
             }
 
+            let format_parse_context = FormatParseContext::new(spec.clone(), key.clone());
+
+            let matching: Vec<_> = self
+                .format_parsers
+                .iter()
+                .filter(|p| p.should_parse(&format_parse_context))
+                .collect();
+
+            let format = match matching.as_slice() {
+                [parser] => parser.parse(format_parse_context).map(|c| Some(c)),
+                [] => Ok(None),
+                _ => Err(vec![SpecError {
+                    path: None,
+                    message: format!("{} schema parsers matched", matching.len()),
+                }]),
+            }?;
+
+            if let Some(format) = format {
+                effect_builder.set_format(format);
+            }
+
             let visitor = SchemaParseVisitor {
                 schema_parsers: self.schema_parsers.clone(),
                 simulation_seed: simulation_builder.seed,
                 effect_key: effect_builder.key.clone(),
-                spec: effect.schema,
+                spec: effect.schema.clone(),
                 path: vec![],
             };
 
@@ -131,6 +163,54 @@ impl Dialect {
         } else {
             Ok(simulation_builder)
         }
+    }
+}
+
+pub trait FormatParser {
+    fn should_parse(&self, context: &FormatParseContext) -> bool;
+    fn parse(&self, context: FormatParseContext) -> Result<Box<dyn Format>, Vec<SpecError>>;
+}
+
+pub struct FormatParseContext {
+    simulation: super::Simulation,
+    effect_key: String,
+}
+
+impl FormatParseContext {
+    pub fn new(simulation: super::Simulation, effect_key: String) -> Self {
+        FormatParseContext {
+            simulation,
+            effect_key,
+        }
+    }
+
+    pub fn effect(&self) -> &spec::Effect {
+        &self
+            .simulation
+            .effects
+            .get(&self.effect_key)
+            .expect(&format!("expected effect at key {}", self.effect_key))
+    }
+
+    pub fn effect_key(&self) -> &str {
+        &self.effect_key
+    }
+
+    pub fn is_format_type(&self, ftype: &str) -> bool {
+        self.format()
+            .and_then(|f| f.ftype.as_ref())
+            .map(|ft| ft == ftype)
+            .unwrap_or(false)
+    }
+
+    pub fn format(&self) -> Option<&super::Format> {
+        let effect = self.effect();
+
+        effect.format.as_ref().or(effect
+            .system
+            .as_ref()
+            .and_then(|s| self.simulation.systems.get(s))
+            .map(|s| &s.format))
     }
 }
 
