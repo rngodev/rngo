@@ -21,6 +21,7 @@ pub struct Simulation {
     pub start: Option<String>,
     pub end: Option<String>,
     pub effects: IndexMap<String, Effect>,
+    #[serde(default)]
     pub systems: IndexMap<String, System>,
 }
 
