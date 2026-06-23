@@ -1,4 +1,7 @@
 trigger: "1.0 / day"
+system: db
+format:
+  table: USERS
 schema:
   type: object
   properties:

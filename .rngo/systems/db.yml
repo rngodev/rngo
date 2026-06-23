@@ -1,0 +1,4 @@
+format:
+  type: sql
+import:
+  command: sqlite3 db.sqlite

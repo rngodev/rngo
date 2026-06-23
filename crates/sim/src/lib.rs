@@ -1,9 +1,10 @@
 pub mod build;
 mod effect;
 mod event;
+mod format;
 pub mod schema;
 mod simulation;
-mod spec;
+pub mod spec;
 mod util;
 
 pub use build::{BuildError, EffectKey, SchemaEdge, SimulationKey};

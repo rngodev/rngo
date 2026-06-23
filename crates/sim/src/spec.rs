@@ -6,7 +6,18 @@ use serde_json::Value;
 use thiserror::Error;
 
 pub use parse::Dialect;
-pub use parse::{SchemaParseVisitor, SchemaParser};
+pub use parse::{FormatParseContext, FormatParser, SchemaParseVisitor, SchemaParser};
+
+pub fn from_value(value: serde_json::Value) -> Result<Simulation, Vec<SpecError>> {
+    let mut track = serde_path_to_error::Track::new();
+    let deserializer = serde_path_to_error::Deserializer::new(value, &mut track);
+    serde_path_to_error::deserialize(deserializer).map_err(|e| {
+        vec![SpecError {
+            path: Some(e.path().to_string().split('.').map(String::from).collect()),
+            message: e.inner().to_string(),
+        }]
+    })
+}
 
 #[derive(Error, Debug, Serialize, Deserialize)]
 #[error("failed to parse: `{message}`")]
@@ -21,14 +32,8 @@ pub struct Simulation {
     pub start: Option<String>,
     pub end: Option<String>,
     pub effects: IndexMap<String, Effect>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-#[serde(tag = "type")]
-pub enum Format {
-    Json {},
-    Sql { table: Option<String> },
+    #[serde(default)]
+    pub systems: IndexMap<String, System>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -58,9 +63,30 @@ pub struct Effect {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct Format {
+    #[serde(rename = "type")]
+    pub ftype: Option<String>,
+    #[serde(flatten)]
+    pub fields: IndexMap<String, Value>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Schema {
     #[serde(rename = "type")]
     pub stype: Option<String>,
     #[serde(flatten)]
     pub fields: IndexMap<String, Value>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct System {
+    pub format: Format,
+    pub import: SystemImport,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SystemImport {
+    pub before: Option<String>,
+    pub command: String,
 }

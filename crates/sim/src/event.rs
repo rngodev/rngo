@@ -13,6 +13,7 @@ pub enum Event {
         key: String,
         offset: u64,
         value: Value,
+        format: Option<String>,
     },
     Error {
         id: u64,
