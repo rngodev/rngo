@@ -63,7 +63,9 @@ pub fn run(stdout: bool) -> Result<(), Box<dyn Error>> {
             println!("{}", serde_json::to_string(&event)?);
         } else {
             match &event {
-                Event::Effect { key, value, format, .. } => {
+                Event::Effect {
+                    key, value, format, ..
+                } => {
                     let line = serde_json::to_string(&event)?;
                     let file = if let Some(f) = files.get_mut(key) {
                         f
@@ -158,7 +160,7 @@ fn load_spec() -> Result<spec::Simulation, Box<dyn Error>> {
         }
     }
 
-    Ok(serde_json::from_value(spec)?)
+    Ok(spec::from_value(spec).map_err(join_errors)?)
 }
 
 fn next_run_dir() -> Result<PathBuf, Box<dyn Error>> {

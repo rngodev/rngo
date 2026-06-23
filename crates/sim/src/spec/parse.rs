@@ -45,15 +45,7 @@ impl Dialect {
         &self,
         value: serde_json::Value,
     ) -> Result<SimulationBuilder, Vec<SpecError>> {
-        let mut track = serde_path_to_error::Track::new();
-        let deserializer = serde_path_to_error::Deserializer::new(value, &mut track);
-        let spec: spec::Simulation =
-            serde_path_to_error::deserialize(deserializer).map_err(|e| {
-                vec![SpecError {
-                    path: Some(e.path().to_string().split('.').map(String::from).collect()),
-                    message: e.inner().to_string(),
-                }]
-            })?;
+        let spec: spec::Simulation = super::from_value(value)?;
         self.parse_simulation(spec)
     }
 

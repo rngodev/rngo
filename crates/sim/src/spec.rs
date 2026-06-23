@@ -8,6 +8,17 @@ use thiserror::Error;
 pub use parse::Dialect;
 pub use parse::{FormatParseContext, FormatParser, SchemaParseVisitor, SchemaParser};
 
+pub fn from_value(value: serde_json::Value) -> Result<Simulation, Vec<SpecError>> {
+    let mut track = serde_path_to_error::Track::new();
+    let deserializer = serde_path_to_error::Deserializer::new(value, &mut track);
+    serde_path_to_error::deserialize(deserializer).map_err(|e| {
+        vec![SpecError {
+            path: Some(e.path().to_string().split('.').map(String::from).collect()),
+            message: e.inner().to_string(),
+        }]
+    })
+}
+
 #[derive(Error, Debug, Serialize, Deserialize)]
 #[error("failed to parse: `{message}`")]
 pub struct SpecError {
