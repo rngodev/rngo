@@ -76,8 +76,8 @@ pub fn run(stdout: bool) -> Result<(), Box<dyn Error>> {
                     };
                     writeln!(file, "{line}")?;
 
-                    if let Some(system_key) = effect_systems.get(key) {
-                        if let Some(stdin) = system_stdinpipes.get_mut(system_key) {
+                    if let Some(system_key) = effect_systems.get(key)
+                        && let Some(stdin) = system_stdinpipes.get_mut(system_key) {
                             let output = if let Some(fmt) = format {
                                 fmt.clone()
                             } else {
@@ -85,7 +85,6 @@ pub fn run(stdout: bool) -> Result<(), Box<dyn Error>> {
                             };
                             writeln!(stdin, "{output}")?;
                         }
-                    }
                 }
                 Event::Error { message, .. } => {
                     eprintln!("error: {message}");

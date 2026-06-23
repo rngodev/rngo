@@ -121,7 +121,7 @@ impl Dialect {
                         .collect();
 
                     let format = match matching.as_slice() {
-                        [parser] => parser.parse(ctx).map(|c| Some(c)),
+                        [parser] => parser.parse(ctx).map(Some),
                         [] => Ok(None),
                         _ => Err(vec![SpecError {
                             path: None,
@@ -178,7 +178,7 @@ impl FormatParseContext {
         let effect = simulation
             .effects
             .get(&effect_key)
-            .expect(&format!("expected effect at key {effect_key}"));
+            .unwrap_or_else(|| panic!("expected effect at key {effect_key}"));
 
         let effect_ftype = effect.format.as_ref().and_then(|f| f.ftype.as_deref());
         let system_ftype = effect
@@ -187,8 +187,8 @@ impl FormatParseContext {
             .and_then(|s| simulation.systems.get(s))
             .and_then(|s| s.format.ftype.as_deref());
 
-        if let (Some(ef), Some(sf)) = (effect_ftype, system_ftype) {
-            if ef != sf {
+        if let (Some(ef), Some(sf)) = (effect_ftype, system_ftype)
+            && ef != sf {
                 return Err(SpecError {
                     path: Some(vec![
                         "effects".into(),
@@ -201,7 +201,6 @@ impl FormatParseContext {
                     ),
                 });
             }
-        }
 
         Ok(FormatParseContext {
             simulation,
@@ -210,11 +209,11 @@ impl FormatParseContext {
     }
 
     pub fn effect(&self) -> &spec::Effect {
-        &self
+        self
             .simulation
             .effects
             .get(&self.effect_key)
-            .expect(&format!("expected effect at key {}", self.effect_key))
+            .unwrap_or_else(|| panic!("expected effect at key {}", self.effect_key))
     }
 
     pub fn effect_key(&self) -> &str {
