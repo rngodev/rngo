@@ -77,18 +77,18 @@ impl FormatParser for SqlFormatParser {
         &self,
         context: crate::spec::FormatParseContext,
     ) -> Result<Box<dyn Format>, Vec<SpecError>> {
-        let table_name = context
-            .format()
+        let format = context.format();
+        let table_name: String = format
+            .as_ref()
             .and_then(|f| f.fields.get("table"))
             .map(|v| match v.as_str() {
-                Some(table) => Ok(table),
+                Some(table) => Ok(table.to_string()),
                 None => Err(vec![SpecError {
                     path: None,
                     message: "table must be a string".into(),
                 }]),
             })
-            .unwrap_or(Ok(context.effect_key()))?
-            .into();
+            .unwrap_or_else(|| Ok(context.effect_key().to_string()))?;
 
         Ok(Box::new(SqlFormat { table_name }))
     }

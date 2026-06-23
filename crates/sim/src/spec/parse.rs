@@ -120,26 +120,31 @@ impl Dialect {
                 };
             }
 
-            let format_parse_context = FormatParseContext::new(spec.clone(), key.clone());
+            match FormatParseContext::new(spec.clone(), key.clone()) {
+                Ok(ctx) => {
+                    let matching: Vec<_> = self
+                        .format_parsers
+                        .iter()
+                        .filter(|p| p.should_parse(&ctx))
+                        .collect();
 
-            let matching: Vec<_> = self
-                .format_parsers
-                .iter()
-                .filter(|p| p.should_parse(&format_parse_context))
-                .collect();
+                    let format = match matching.as_slice() {
+                        [parser] => parser.parse(ctx).map(|c| Some(c)),
+                        [] => Ok(None),
+                        _ => Err(vec![SpecError {
+                            path: None,
+                            message: format!("{} schema parsers matched", matching.len()),
+                        }]),
+                    }?;
 
-            let format = match matching.as_slice() {
-                [parser] => parser.parse(format_parse_context).map(|c| Some(c)),
-                [] => Ok(None),
-                _ => Err(vec![SpecError {
-                    path: None,
-                    message: format!("{} schema parsers matched", matching.len()),
-                }]),
-            }?;
-
-            if let Some(format) = format {
-                effect_builder.set_format(format);
-            }
+                    if let Some(format) = format {
+                        effect_builder.set_format(format);
+                    }
+                }
+                Err(e) => {
+                    errors.push(e);
+                }
+            };
 
             let visitor = SchemaParseVisitor {
                 schema_parsers: self.schema_parsers.clone(),
@@ -177,11 +182,39 @@ pub struct FormatParseContext {
 }
 
 impl FormatParseContext {
-    pub fn new(simulation: super::Simulation, effect_key: String) -> Self {
-        FormatParseContext {
+    pub fn new(simulation: super::Simulation, effect_key: String) -> Result<Self, SpecError> {
+        let effect = simulation
+            .effects
+            .get(&effect_key)
+            .expect(&format!("expected effect at key {effect_key}"));
+
+        let effect_ftype = effect.format.as_ref().and_then(|f| f.ftype.as_deref());
+        let system_ftype = effect
+            .system
+            .as_ref()
+            .and_then(|s| simulation.systems.get(s))
+            .and_then(|s| s.format.ftype.as_deref());
+
+        if let (Some(ef), Some(sf)) = (effect_ftype, system_ftype) {
+            if ef != sf {
+                return Err(SpecError {
+                    path: Some(vec![
+                        "effects".into(),
+                        effect_key.clone(),
+                        "format".into(),
+                        "type".into(),
+                    ]),
+                    message: format!(
+                        "effect format type \"{ef}\" does not match system format type \"{sf}\""
+                    ),
+                });
+            }
+        }
+
+        Ok(FormatParseContext {
             simulation,
             effect_key,
-        }
+        })
     }
 
     pub fn effect(&self) -> &spec::Effect {
@@ -198,19 +231,35 @@ impl FormatParseContext {
 
     pub fn is_format_type(&self, ftype: &str) -> bool {
         self.format()
-            .and_then(|f| f.ftype.as_ref())
+            .and_then(|f| f.ftype)
             .map(|ft| ft == ftype)
             .unwrap_or(false)
     }
 
-    pub fn format(&self) -> Option<&super::Format> {
+    pub fn format(&self) -> Option<super::Format> {
         let effect = self.effect();
 
-        effect.format.as_ref().or(effect
+        let system_format = effect
             .system
             .as_ref()
             .and_then(|s| self.simulation.systems.get(s))
-            .map(|s| &s.format))
+            .map(|s| &s.format);
+
+        match (effect.format.as_ref(), system_format) {
+            (Some(ef), Some(sf)) => {
+                let mut merged = sf.clone();
+                if ef.ftype.is_some() {
+                    merged.ftype = ef.ftype.clone();
+                }
+                for (k, v) in &ef.fields {
+                    merged.fields.insert(k.clone(), v.clone());
+                }
+                Some(merged)
+            }
+            (Some(ef), None) => Some(ef.clone()),
+            (None, Some(sf)) => Some(sf.clone()),
+            (None, None) => None,
+        }
     }
 }
 

@@ -63,22 +63,26 @@ pub fn run(stdout: bool) -> Result<(), Box<dyn Error>> {
             println!("{}", serde_json::to_string(&event)?);
         } else {
             match &event {
-                Event::Effect { key, .. } => {
+                Event::Effect { key, value, format, .. } => {
+                    let line = serde_json::to_string(&event)?;
+                    let file = if let Some(f) = files.get_mut(key) {
+                        f
+                    } else {
+                        let path = run_dir.join(format!("{key}.jsonl"));
+                        let f = OpenOptions::new().create(true).append(true).open(path)?;
+                        files.entry(key.clone()).or_insert(f)
+                    };
+                    writeln!(file, "{line}")?;
+
                     if let Some(system_key) = effect_systems.get(key) {
                         if let Some(stdin) = system_stdinpipes.get_mut(system_key) {
-                            let line = serde_json::to_string(&event)?;
-                            writeln!(stdin, "{line}")?;
+                            let output = if let Some(fmt) = format {
+                                fmt.clone()
+                            } else {
+                                serde_json::to_string(value)?
+                            };
+                            writeln!(stdin, "{output}")?;
                         }
-                    } else {
-                        let line = serde_json::to_string(&event)?;
-                        let file = if let Some(f) = files.get_mut(key) {
-                            f
-                        } else {
-                            let path = run_dir.join(format!("{key}.jsonl"));
-                            let f = OpenOptions::new().create(true).append(true).open(path)?;
-                            files.entry(key.clone()).or_insert(f)
-                        };
-                        writeln!(file, "{line}")?;
                     }
                 }
                 Event::Error { message, .. } => {

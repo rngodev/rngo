@@ -1,4 +1,4 @@
 format:
   type: sql
 import:
-  command: sqlite3 db1.sqlite
+  command: sqlite3 db.sqlite

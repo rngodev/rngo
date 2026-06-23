@@ -4,3 +4,4 @@ target
 *.pdb
 **/mutants.out*/
 .rngo/runs
+db.sqlite
