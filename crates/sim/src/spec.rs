@@ -81,12 +81,14 @@ pub struct Schema {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct System {
-    pub format: Format,
+    pub format: Option<Format>,
     pub import: SystemImport,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SystemImport {
-    pub before: Option<String>,
-    pub command: String,
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type")]
+pub enum SystemImport {
+    Stream { command: String },
+    Exec { command: String },
 }

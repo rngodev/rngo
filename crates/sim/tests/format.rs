@@ -79,7 +79,7 @@ fn inherited_from_system() {
         "systems": {
             "db": {
                 "format": { "type": "sql" },
-                "import": { "command": "psql" }
+                "import": { "type": "stream", "command": "psql" }
             }
         },
         "effects": {
@@ -108,7 +108,7 @@ fn inherited_from_system_effect_overrides_table() {
         "systems": {
             "db": {
                 "format": { "type": "sql", "table": "system_default" },
-                "import": { "command": "psql" }
+                "import": { "type": "stream", "command": "psql" }
             }
         },
         "effects": {
@@ -138,7 +138,7 @@ fn errors() {
         "systems": {
             "db": {
                 "format": { "type": "sql" },
-                "import": { "command": "psql" }
+                "import": { "type": "stream", "command": "psql" }
             }
         },
         "effects": {

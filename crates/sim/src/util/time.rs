@@ -1,7 +1,7 @@
 use super::cel::CelContextBuilder;
 use crate::spec::SpecError;
 use cel::{Program, Value};
-use chrono::{DateTime, FixedOffset, TimeDelta, Utc};
+use chrono::{DateTime, FixedOffset, NaiveDate, TimeDelta, TimeZone, Utc};
 
 #[derive(Clone, Debug)]
 pub enum Moment {
@@ -55,6 +55,11 @@ impl<'a> MomentParser<'a> {
 
     pub fn parse(&self, field_name: &str, expr: &str) -> Result<Moment, Vec<SpecError>> {
         if let Ok(dt) = DateTime::parse_from_rfc3339(expr) {
+            return Ok(Moment::Absolute(dt));
+        }
+
+        if let Ok(date) = NaiveDate::parse_from_str(expr, "%Y-%m-%d") {
+            let dt = Utc.from_utc_datetime(&date.and_hms_opt(0, 0, 0).unwrap()).fixed_offset();
             return Ok(Moment::Absolute(dt));
         }
 

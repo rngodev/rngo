@@ -31,7 +31,7 @@ fn main() {
     match cli.command {
         Commands::Sim { command } => match command {
             SimCommands::Run { stdout } => {
-                if let Err(e) = sim::run(stdout) {
+                if let Err(e) = sim::run(std::path::Path::new("."), stdout) {
                     eprintln!("error: {e}");
                     std::process::exit(1);
                 }

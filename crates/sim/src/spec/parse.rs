@@ -185,22 +185,24 @@ impl FormatParseContext {
             .system
             .as_ref()
             .and_then(|s| simulation.systems.get(s))
-            .and_then(|s| s.format.ftype.as_deref());
+            .and_then(|s| s.format.as_ref())
+            .and_then(|f| f.ftype.as_ref());
 
         if let (Some(ef), Some(sf)) = (effect_ftype, system_ftype)
-            && ef != sf {
-                return Err(SpecError {
-                    path: Some(vec![
-                        "effects".into(),
-                        effect_key.clone(),
-                        "format".into(),
-                        "type".into(),
-                    ]),
-                    message: format!(
-                        "effect format type \"{ef}\" does not match system format type \"{sf}\""
-                    ),
-                });
-            }
+            && ef != sf
+        {
+            return Err(SpecError {
+                path: Some(vec![
+                    "effects".into(),
+                    effect_key.clone(),
+                    "format".into(),
+                    "type".into(),
+                ]),
+                message: format!(
+                    "effect format type \"{ef}\" does not match system format type \"{sf}\""
+                ),
+            });
+        }
 
         Ok(FormatParseContext {
             simulation,
@@ -209,8 +211,7 @@ impl FormatParseContext {
     }
 
     pub fn effect(&self) -> &spec::Effect {
-        self
-            .simulation
+        self.simulation
             .effects
             .get(&self.effect_key)
             .unwrap_or_else(|| panic!("expected effect at key {}", self.effect_key))
@@ -234,7 +235,7 @@ impl FormatParseContext {
             .system
             .as_ref()
             .and_then(|s| self.simulation.systems.get(s))
-            .map(|s| &s.format);
+            .and_then(|s| s.format.as_ref());
 
         match (effect.format.as_ref(), system_format) {
             (Some(ef), Some(sf)) => {
