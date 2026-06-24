@@ -59,7 +59,9 @@ impl<'a> MomentParser<'a> {
         }
 
         if let Ok(date) = NaiveDate::parse_from_str(expr, "%Y-%m-%d") {
-            let dt = Utc.from_utc_datetime(&date.and_hms_opt(0, 0, 0).unwrap()).fixed_offset();
+            let dt = Utc
+                .from_utc_datetime(&date.and_hms_opt(0, 0, 0).unwrap())
+                .fixed_offset();
             return Ok(Moment::Absolute(dt));
         }
 

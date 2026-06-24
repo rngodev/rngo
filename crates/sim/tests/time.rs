@@ -29,7 +29,11 @@ fn simulation_respects_end_time() {
     let offsets = effect_offsets(builder.build().unwrap(), 60);
     let window_secs: u64 = 30 * 86_400;
 
-    let out_of_bounds: Vec<_> = offsets.iter().copied().filter(|&o| o > window_secs).collect();
+    let out_of_bounds: Vec<_> = offsets
+        .iter()
+        .copied()
+        .filter(|&o| o > window_secs)
+        .collect();
     assert!(
         out_of_bounds.is_empty(),
         "{} events past end time (>{window_secs}s), e.g. {}",
