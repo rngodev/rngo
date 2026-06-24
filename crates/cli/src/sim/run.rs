@@ -8,8 +8,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 
-pub fn run(stdout: bool) -> Result<(), Box<dyn Error>> {
-    let spec = load_spec()?;
+pub fn run(base: &Path, stdout: bool) -> Result<(), Box<dyn Error>> {
+    let spec = load_spec(base)?;
 
     let effect_systems: HashMap<String, String> = spec
         .effects
@@ -23,7 +23,7 @@ pub fn run(stdout: bool) -> Result<(), Box<dyn Error>> {
         .map(|(k, v)| (k.clone(), v.import.clone()))
         .collect();
 
-    let run_dir = next_run_dir()?;
+    let run_dir = next_run_dir(base)?;
     fs::create_dir_all(&run_dir)?;
     fs::write(
         run_dir.join("spec.json"),
@@ -118,11 +118,11 @@ pub fn run(stdout: bool) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn load_spec() -> Result<spec::Simulation, Box<dyn Error>> {
-    let spec_path = Path::new(".rngo/spec.yml");
+fn load_spec(base: &Path) -> Result<spec::Simulation, Box<dyn Error>> {
+    let spec_path = base.join(".rngo/spec.yml");
 
     let mut spec: serde_json::Value = if spec_path.exists() {
-        serde_yaml::from_str(&fs::read_to_string(spec_path)?)?
+        serde_yaml::from_str(&fs::read_to_string(&spec_path)?)?
     } else {
         serde_json::json!({ "seed": 1, "effects": {} })
     };
@@ -131,9 +131,9 @@ fn load_spec() -> Result<spec::Simulation, Box<dyn Error>> {
         spec["effects"] = serde_json::json!({});
     }
 
-    let effects_dir = Path::new(".rngo/effects");
+    let effects_dir = base.join(".rngo/effects");
     if effects_dir.is_dir() {
-        let mut paths: Vec<_> = fs::read_dir(effects_dir)?
+        let mut paths: Vec<_> = fs::read_dir(&effects_dir)?
             .filter_map(|e| e.ok())
             .map(|e| e.path())
             .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("yml"))
@@ -155,9 +155,9 @@ fn load_spec() -> Result<spec::Simulation, Box<dyn Error>> {
         spec["systems"] = serde_json::json!({});
     }
 
-    let systems_dir = Path::new(".rngo/systems");
+    let systems_dir = base.join(".rngo/systems");
     if systems_dir.is_dir() {
-        let mut paths: Vec<_> = fs::read_dir(systems_dir)?
+        let mut paths: Vec<_> = fs::read_dir(&systems_dir)?
             .filter_map(|e| e.ok())
             .map(|e| e.path())
             .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("yml"))
@@ -178,11 +178,11 @@ fn load_spec() -> Result<spec::Simulation, Box<dyn Error>> {
     Ok(spec::from_value(spec).map_err(join_errors)?)
 }
 
-fn next_run_dir() -> Result<PathBuf, Box<dyn Error>> {
-    let runs_dir = Path::new(".rngo/runs/local");
-    fs::create_dir_all(runs_dir)?;
+fn next_run_dir(base: &Path) -> Result<PathBuf, Box<dyn Error>> {
+    let runs_dir = base.join(".rngo/runs/local");
+    fs::create_dir_all(&runs_dir)?;
 
-    let next = fs::read_dir(runs_dir)?
+    let next = fs::read_dir(&runs_dir)?
         .filter_map(|e| e.ok())
         .filter_map(|e| e.file_name().to_str().and_then(|s| s.parse::<u64>().ok()))
         .max()
@@ -198,4 +198,91 @@ fn join_errors<E: fmt::Display>(errors: Vec<E>) -> String {
         .map(|e| e.to_string())
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use tempfile::TempDir;
+
+    fn write_yaml(path: impl AsRef<Path>, value: &serde_json::Value) {
+        fs::write(path, serde_yaml::to_string(value).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn exec_import_runs_command_per_event() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+        let output = base.join("exec_output.txt");
+
+        fs::create_dir_all(base.join(".rngo/effects")).unwrap();
+        fs::create_dir_all(base.join(".rngo/systems")).unwrap();
+
+        write_yaml(base.join(".rngo/spec.yml"), &json!({
+            "seed": 1,
+            "start": "2024-01-01",
+            "end": "2024-01-04"
+        }));
+
+        write_yaml(base.join(".rngo/effects/ping.yml"), &json!({
+            "system": "logger",
+            "trigger": "1.0 / day",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "number", "min": 1, "scale": 0, "step": 1 }
+                }
+            }
+        }));
+
+        let command = "echo {{id}} >> ".to_string() + output.to_str().unwrap();
+        write_yaml(base.join(".rngo/systems/logger.yml"), &json!({
+            "format": {},
+            "import": { "type": "exec", "command": command }
+        }));
+
+        run(base, false).unwrap();
+
+        let content = fs::read_to_string(&output).unwrap();
+        assert!(content.lines().count() > 0, "exec command should have run once per event");
+    }
+
+    #[test]
+    fn stream_import_pipes_events_to_subprocess() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+        let output = base.join("stream_output.txt");
+
+        fs::create_dir_all(base.join(".rngo/effects")).unwrap();
+        fs::create_dir_all(base.join(".rngo/systems")).unwrap();
+
+        write_yaml(base.join(".rngo/spec.yml"), &json!({
+            "seed": 1,
+            "start": "2024-01-01",
+            "end": "2024-01-04"
+        }));
+
+        write_yaml(base.join(".rngo/effects/ping.yml"), &json!({
+            "system": "logger",
+            "trigger": "1.0 / day",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "number", "min": 1, "scale": 0, "step": 1 }
+                }
+            }
+        }));
+
+        let command = "cat >> ".to_string() + output.to_str().unwrap();
+        write_yaml(base.join(".rngo/systems/logger.yml"), &json!({
+            "format": {},
+            "import": { "type": "stream", "command": command }
+        }));
+
+        run(base, false).unwrap();
+
+        let content = fs::read_to_string(&output).unwrap();
+        assert!(content.lines().count() > 0, "stream subprocess should have received events");
+    }
 }
