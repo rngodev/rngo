@@ -1,7 +1,7 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaResult};
 use crate::build::BuildError;
-use crate::spec::SpecError as Error;
 use crate::schema::SchemaContext;
+use crate::spec::SpecError as Error;
 use crate::spec::{SchemaParseVisitor, SchemaParser};
 use rand::RngExt;
 use rand_pcg::Pcg32;
@@ -150,7 +150,9 @@ impl SchemaParser for NumberParser {
 
         if let Some(v) = visitor.spec().fields.get("min") {
             match v.as_f64() {
-                Some(min) => { builder.set_min(min); }
+                Some(min) => {
+                    builder.set_min(min);
+                }
                 None => errors.push(Error {
                     path: Some(visitor.absolute_sub_path(vec!["min".into()])),
                     message: "min must be a number".into(),
@@ -160,7 +162,9 @@ impl SchemaParser for NumberParser {
 
         if let Some(v) = visitor.spec().fields.get("max") {
             match v.as_f64() {
-                Some(max) => { builder.set_max(max); }
+                Some(max) => {
+                    builder.set_max(max);
+                }
                 None => errors.push(Error {
                     path: Some(visitor.absolute_sub_path(vec!["max".into()])),
                     message: "max must be a number".into(),
@@ -170,7 +174,9 @@ impl SchemaParser for NumberParser {
 
         if let Some(v) = visitor.spec().fields.get("scale") {
             match v.as_u64() {
-                Some(scale) => { builder.set_scale(scale as u32); }
+                Some(scale) => {
+                    builder.set_scale(scale as u32);
+                }
                 None => errors.push(Error {
                     path: Some(visitor.absolute_sub_path(vec!["scale".into()])),
                     message: "scale must be a non-negative integer".into(),
@@ -180,7 +186,9 @@ impl SchemaParser for NumberParser {
 
         if let Some(v) = visitor.spec().fields.get("step") {
             match v.as_f64() {
-                Some(step) => { builder.set_step(step); }
+                Some(step) => {
+                    builder.set_step(step);
+                }
                 None => errors.push(Error {
                     path: Some(visitor.absolute_sub_path(vec!["step".into()])),
                     message: "step must be a number".into(),

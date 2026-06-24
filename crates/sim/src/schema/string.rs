@@ -1,7 +1,7 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaResult};
 use crate::build::BuildError;
-use crate::spec::SpecError as Error;
 use crate::schema::SchemaContext;
+use crate::spec::SpecError as Error;
 use crate::spec::{SchemaParseVisitor, SchemaParser};
 use rand::distr::Distribution;
 use rand_pcg::Pcg32;
@@ -19,7 +19,9 @@ impl std::fmt::Debug for Str {
 
 impl Str {
     pub fn builder() -> StrBuilder {
-        StrBuilder { pattern: ".{0,64}".into() }
+        StrBuilder {
+            pattern: ".{0,64}".into(),
+        }
     }
 
     pub fn parser() -> StrParser {
@@ -56,7 +58,10 @@ impl SchemaBuilder for StrBuilder {
         let regex = rand_regex::Regex::compile(&self.pattern, 100)
             .map_err(|e| vec![visitor.error(format!("invalid pattern: {e}"))])?;
 
-        Ok(Box::new(Str { rng: visitor.rng(), regex }))
+        Ok(Box::new(Str {
+            rng: visitor.rng(),
+            regex,
+        }))
     }
 }
 
