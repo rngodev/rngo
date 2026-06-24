@@ -1,3 +1,4 @@
+use handlebars::Handlebars;
 use rngo_sim::{Dialect, Event, spec};
 use std::collections::HashMap;
 use std::error::Error;
@@ -16,10 +17,10 @@ pub fn run(stdout: bool) -> Result<(), Box<dyn Error>> {
         .filter_map(|(k, v)| v.system.as_ref().map(|s| (k.clone(), s.clone())))
         .collect();
 
-    let system_commands: HashMap<String, String> = spec
+    let system_imports: HashMap<String, spec::SystemImport> = spec
         .systems
         .iter()
-        .map(|(k, v)| (k.clone(), v.import.command.clone()))
+        .map(|(k, v)| (k.clone(), v.import.clone()))
         .collect();
 
     let run_dir = next_run_dir()?;
@@ -35,25 +36,33 @@ pub fn run(stdout: bool) -> Result<(), Box<dyn Error>> {
 
     let simulation = simulation_builder.build().map_err(join_errors)?;
 
-    // Start a subprocess for each system referenced by an effect.
     let mut system_stdinpipes: HashMap<String, ChildStdin> = HashMap::new();
     let mut system_children: HashMap<String, Child> = HashMap::new();
+    let mut hbs = Handlebars::new();
 
     for system_key in effect_systems.values() {
-        if system_stdinpipes.contains_key(system_key) {
-            continue;
-        }
-        let command = system_commands
+        let import = system_imports
             .get(system_key)
             .ok_or_else(|| format!("effect references unknown system: {system_key}"))?;
-        let mut child = Command::new("sh")
-            .arg("-c")
-            .arg(command)
-            .stdin(Stdio::piped())
-            .spawn()?;
-        let stdin = child.stdin.take().expect("stdin was piped");
-        system_stdinpipes.insert(system_key.clone(), stdin);
-        system_children.insert(system_key.clone(), child);
+
+        match import {
+            spec::SystemImport::Stream { command } => {
+                if system_stdinpipes.contains_key(system_key) {
+                    continue;
+                }
+                let mut child = Command::new("sh")
+                    .arg("-c")
+                    .arg(command)
+                    .stdin(Stdio::piped())
+                    .spawn()?;
+                let stdin = child.stdin.take().expect("stdin was piped");
+                system_stdinpipes.insert(system_key.clone(), stdin);
+                system_children.insert(system_key.clone(), child);
+            }
+            spec::SystemImport::Exec { command } => {
+                hbs.register_template_string(system_key, command)?;
+            }
+        }
     }
 
     let mut files: HashMap<String, fs::File> = HashMap::new();
@@ -76,15 +85,23 @@ pub fn run(stdout: bool) -> Result<(), Box<dyn Error>> {
                     };
                     writeln!(file, "{line}")?;
 
-                    if let Some(system_key) = effect_systems.get(key)
-                        && let Some(stdin) = system_stdinpipes.get_mut(system_key) {
+                    if let Some(system_key) = effect_systems.get(key) {
+                        if let Some(stdin) = system_stdinpipes.get_mut(system_key) {
                             let output = if let Some(fmt) = format {
                                 fmt.clone()
                             } else {
                                 serde_json::to_string(value)?
                             };
                             writeln!(stdin, "{output}")?;
+                        } else if hbs.has_template(system_key) {
+                            let command = hbs.render(system_key, value)?;
+                            Command::new("sh")
+                                .arg("-c")
+                                .arg(&command)
+                                .spawn()?
+                                .wait()?;
                         }
+                    }
                 }
                 Event::Error { message, .. } => {
                     eprintln!("error: {message}");
@@ -93,7 +110,6 @@ pub fn run(stdout: bool) -> Result<(), Box<dyn Error>> {
         }
     }
 
-    // Signal EOF to each system process then wait for it to finish.
     drop(system_stdinpipes);
     for (_, mut child) in system_children {
         child.wait()?;

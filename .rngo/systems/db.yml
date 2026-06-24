@@ -1,4 +1,5 @@
 format:
   type: sql
 import:
+  type: stream
   command: sqlite3 db.sqlite
