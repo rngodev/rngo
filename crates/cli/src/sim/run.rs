@@ -19,6 +19,12 @@ pub fn run(base: &Path, stdout: bool) -> Result<(), Box<dyn Error>> {
 
     let mut dispatch = SystemDispatch::new(&spec)?;
     let mut files: HashMap<String, fs::File> = HashMap::new();
+    let mut signal_file = if stdout {
+        None
+    } else {
+        let path = run_dir.join("signals.jsonl");
+        Some(OpenOptions::new().create(true).append(true).open(path)?)
+    };
 
     let simulation_builder = Dialect::core()
         .parse_simulation(spec)
@@ -43,7 +49,12 @@ pub fn run(base: &Path, stdout: bool) -> Result<(), Box<dyn Error>> {
                         files.entry(key.clone()).or_insert(f)
                     };
                     writeln!(file, "{line}")?;
-                    dispatch.send(key, value, format.as_deref())?;
+                    let signals = dispatch.send(key, value, format.as_deref())?;
+                    if let Some(sf) = &mut signal_file {
+                        for signal in signals {
+                            writeln!(sf, "{}", serde_json::to_string(&signal)?)?;
+                        }
+                    }
                 }
                 Event::Error { message, .. } => {
                     eprintln!("error: {message}");
@@ -52,7 +63,14 @@ pub fn run(base: &Path, stdout: bool) -> Result<(), Box<dyn Error>> {
         }
     }
 
-    dispatch.finish()
+    let finish_signals = dispatch.finish()?;
+    if let Some(sf) = &mut signal_file {
+        for signal in finish_signals {
+            writeln!(sf, "{}", serde_json::to_string(&signal)?)?;
+        }
+    }
+
+    Ok(())
 }
 
 fn load_spec(base: &Path) -> Result<spec::Simulation, Box<dyn Error>> {
