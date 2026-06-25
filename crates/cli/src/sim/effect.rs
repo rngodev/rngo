@@ -1,21 +1,24 @@
-use rngo_sim::{Io, Signal};
+use chrono::Utc;
 use handlebars::Handlebars;
 use rngo_sim::spec;
+use rngo_sim::{Io, Signal};
 use std::collections::HashMap;
 use std::error::Error;
 use std::io::{BufRead, BufReader, Write};
-use std::process::{Child, ChildStderr, ChildStdin, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::mpsc::Sender;
+use std::thread;
 
-pub struct SystemDispatch {
+pub struct EffectDispatch {
     effect_systems: HashMap<String, String>,
     stdinpipes: HashMap<String, ChildStdin>,
-    stderrpipes: HashMap<String, ChildStderr>,
     children: HashMap<String, Child>,
     hbs: Handlebars<'static>,
+    signal_tx: Sender<Signal>,
 }
 
-impl SystemDispatch {
-    pub fn new(spec: &spec::Simulation) -> Result<Self, Box<dyn Error>> {
+impl EffectDispatch {
+    pub fn new(spec: &spec::Simulation, signal_tx: Sender<Signal>) -> Result<Self, Box<dyn Error>> {
         let effect_systems: HashMap<String, String> = spec
             .effects
             .iter()
@@ -29,7 +32,6 @@ impl SystemDispatch {
             .collect();
 
         let mut stdinpipes = HashMap::new();
-        let mut stderrpipes = HashMap::new();
         let mut children = HashMap::new();
         let mut hbs = Handlebars::new();
 
@@ -43,16 +45,37 @@ impl SystemDispatch {
                     if stdinpipes.contains_key(system_key) {
                         continue;
                     }
+
                     let mut child = Command::new("sh")
                         .arg("-c")
                         .arg(command)
                         .stdin(Stdio::piped())
                         .stderr(Stdio::piped())
                         .spawn()?;
+
                     let stdin = child.stdin.take().expect("stdin was piped");
-                    let stderr = child.stderr.take().expect("stderr was piped");
                     stdinpipes.insert(system_key.clone(), stdin);
-                    stderrpipes.insert(system_key.clone(), stderr);
+
+                    if let Some(stderr) = child.stderr.take() {
+                        let tx = signal_tx.clone();
+                        let system_key = system_key.clone();
+                        thread::spawn(move || {
+                            for line in BufReader::new(stderr).lines() {
+                                if let Ok(data) = line {
+                                    if !data.is_empty() {
+                                        let _ = tx.send(Signal {
+                                            effect: None,
+                                            system: system_key.clone(),
+                                            io: Io::Stderr,
+                                            data,
+                                            timestamp: Utc::now(),
+                                        });
+                                    }
+                                }
+                            }
+                        });
+                    }
+
                     children.insert(system_key.clone(), child);
                 }
                 spec::SystemImport::Exec { command } => {
@@ -64,9 +87,9 @@ impl SystemDispatch {
         Ok(Self {
             effect_systems,
             stdinpipes,
-            stderrpipes,
             children,
             hbs,
+            signal_tx,
         })
     }
 
@@ -75,10 +98,10 @@ impl SystemDispatch {
         effect_key: &str,
         value: &serde_json::Value,
         format: Option<&str>,
-    ) -> Result<Vec<Signal>, Box<dyn Error>> {
+    ) -> Result<(), Box<dyn Error>> {
         let system_key = match self.effect_systems.get(effect_key) {
             Some(k) => k.clone(),
-            None => return Ok(vec![]),
+            None => return Ok(()),
         };
 
         if let Some(stdin) = self.stdinpipes.get_mut(&system_key) {
@@ -86,7 +109,6 @@ impl SystemDispatch {
                 .map(|f| f.to_string())
                 .unwrap_or_else(|| serde_json::to_string(value).unwrap());
             writeln!(stdin, "{data}")?;
-            Ok(vec![])
         } else if self.hbs.has_template(&system_key) {
             let command = self.hbs.render(&system_key, value)?;
             let output = Command::new("sh")
@@ -95,55 +117,35 @@ impl SystemDispatch {
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .output()?;
-            let effect = Some(effect_key.to_string());
-            let mut signals: Vec<Signal> = BufReader::new(output.stdout.as_slice())
-                .lines()
-                .filter_map(|l| l.ok())
-                .filter(|l| !l.is_empty())
-                .map(|data| Signal {
-                    effect: effect.clone(),
-                    system: system_key.clone(),
-                    io: Io::Stdout,
-                    data,
-                })
-                .collect();
-            let stderr_signals: Vec<Signal> = BufReader::new(output.stderr.as_slice())
-                .lines()
-                .filter_map(|l| l.ok())
-                .filter(|l| !l.is_empty())
-                .map(|data| Signal {
-                    effect: effect.clone(),
-                    system: system_key.clone(),
-                    io: Io::Stderr,
-                    data,
-                })
-                .collect();
-            signals.extend(stderr_signals);
-            Ok(signals)
-        } else {
-            Ok(vec![])
-        }
-    }
 
-    pub fn finish(mut self) -> Result<Vec<Signal>, Box<dyn Error>> {
-        drop(self.stdinpipes);
-        let mut signals = vec![];
-        for (system_key, mut child) in self.children {
-            child.wait()?;
-            if let Some(stderr) = self.stderrpipes.remove(&system_key) {
-                let stderr_signals = BufReader::new(stderr)
+            let effect = Some(effect_key.to_string());
+            let timestamp = Utc::now();
+            for (bytes, io) in [(&output.stdout, Io::Stdout), (&output.stderr, Io::Stderr)] {
+                for line in BufReader::new(bytes.as_slice())
                     .lines()
                     .filter_map(|l| l.ok())
-                    .filter(|l| !l.is_empty())
-                    .map(|data| Signal {
-                        effect: None,
-                        system: system_key.clone(),
-                        io: Io::Stderr,
-                        data,
-                    });
-                signals.extend(stderr_signals);
+                {
+                    if !line.is_empty() {
+                        let _ = self.signal_tx.send(Signal {
+                            effect: effect.clone(),
+                            system: system_key.clone(),
+                            io,
+                            data: line,
+                            timestamp,
+                        });
+                    }
+                }
             }
         }
-        Ok(signals)
+
+        Ok(())
+    }
+
+    pub fn finish(self) -> Result<(), Box<dyn Error>> {
+        drop(self.stdinpipes);
+        for (_, mut child) in self.children {
+            child.wait()?;
+        }
+        Ok(())
     }
 }
