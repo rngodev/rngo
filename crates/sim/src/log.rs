@@ -1,3 +1,4 @@
+use crate::Signal;
 use crate::effect::EffectEvent;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -5,6 +6,7 @@ use std::rc::Rc;
 pub trait EventLog: std::fmt::Debug {
     fn push_effect(&self, event: &EffectEvent);
     fn push_error(&self, event: &str);
+    fn push_signal(&self, event: &Signal);
     fn last(&self) -> Option<Rc<EffectEvent>>;
     fn index(&self, config: EventLogIndexConfig) -> Box<dyn EventLogIndex>;
 }
@@ -65,6 +67,8 @@ impl EventLog for SimpleEventLog {
     }
 
     fn push_error(&self, _event: &str) {}
+
+    fn push_signal(&self, _event: &Signal) {}
 
     fn last(&self) -> Option<Rc<EffectEvent>> {
         self.effect_events.borrow().last().cloned()

@@ -1,12 +1,12 @@
 use crate::sim::effect::EffectDispatch;
-use crate::sim::signal::SignalCapture;
-use rngo_sim::{Dialect, spec};
+use rngo_sim::{Dialect, Signal, spec};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
 
 pub fn run(base: &Path, stdout: bool) -> Result<(), Box<dyn Error>> {
     let spec = load_spec(base)?;
@@ -18,17 +18,17 @@ pub fn run(base: &Path, stdout: bool) -> Result<(), Box<dyn Error>> {
         serde_json::to_string_pretty(&spec)?,
     )?;
 
-    let signal_capture = SignalCapture::start(&run_dir.join("signals.jsonl"))?;
-    let mut effect_dispatch = EffectDispatch::new(&spec, signal_capture.tx())?;
-    let mut files: HashMap<String, fs::File> = HashMap::new();
-
     let simulation_builder = Dialect::core()
-        .parse_simulation(spec)
+        .parse_simulation(spec.clone())
         .map_err(join_errors)?;
 
-    let simulation = simulation_builder.build().map_err(join_errors)?;
+    let mut simulation = simulation_builder.build().map_err(join_errors)?;
 
-    for effect_event in simulation {
+    let (signal_tx, signal_rx) = mpsc::channel::<Signal>();
+    let mut effect_dispatch = EffectDispatch::new(&spec, signal_tx)?;
+    let mut files: HashMap<String, fs::File> = HashMap::new();
+
+    while let Some(effect_event) = simulation.next() {
         if stdout {
             println!("{}", serde_json::to_string(&effect_event)?);
         } else {
@@ -43,10 +43,16 @@ pub fn run(base: &Path, stdout: bool) -> Result<(), Box<dyn Error>> {
             writeln!(file, "{line}")?;
             effect_dispatch.send(&effect_event)?;
         }
+
+        for signal in signal_rx.try_iter() {
+            simulation.push_signal(signal);
+        }
     }
 
     effect_dispatch.finish()?;
-    signal_capture.finish()?;
+    for signal in signal_rx.try_iter() {
+        simulation.push_signal(signal);
+    }
 
     Ok(())
 }

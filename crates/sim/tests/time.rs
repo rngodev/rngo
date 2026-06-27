@@ -1,16 +1,11 @@
 mod common;
 
 use rngo_sim::build::*;
-use rngo_sim::{Event, Simulation};
+use rngo_sim::Simulation;
 use serde_json::Value;
 
 fn effect_offsets(sim: Simulation, take: usize) -> Vec<u64> {
-    sim.take(take)
-        .filter_map(|e| match e {
-            Event::Effect { offset, .. } => Some(offset),
-            _ => None,
-        })
-        .collect()
+    sim.take(take).map(|e| e.offset).collect()
 }
 
 /// The default simulation window is 30 days (start = -30d, end = now).

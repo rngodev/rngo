@@ -1,7 +1,7 @@
 mod common;
 
 use rngo_sim::build::*;
-use rngo_sim::{Dialect, Event, Simulation};
+use rngo_sim::{Dialect, Simulation};
 use serde_json::Value;
 
 fn assert_simulation(simulation: Simulation) {
@@ -9,18 +9,14 @@ fn assert_simulation(simulation: Simulation) {
 
     let user_events: Vec<_> = events
         .iter()
-        .filter_map(|e| match e {
-            Event::Effect { key, value, .. } if key == "user" => Some(value),
-            _ => None,
-        })
+        .filter(|e| e.key == "user")
+        .map(|e| &e.value)
         .collect();
 
     let post_events: Vec<_> = events
         .iter()
-        .filter_map(|e| match e {
-            Event::Effect { key, value, .. } if key == "post" => Some(value),
-            _ => None,
-        })
+        .filter(|e| e.key == "post")
+        .map(|e| &e.value)
         .collect();
 
     assert!(!user_events.is_empty(), "expected user events");

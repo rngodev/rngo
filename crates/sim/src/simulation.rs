@@ -1,3 +1,4 @@
+use crate::Signal;
 use crate::build::{BuildError, SimulationKey};
 use crate::effect::{Effect, EffectBuilder, EffectEvent};
 use crate::log::{EventLog, SimpleEventLog};
@@ -14,6 +15,10 @@ pub struct Simulation {
 impl Simulation {
     pub fn builder() -> SimulationBuilder {
         SimulationBuilder::new()
+    }
+
+    pub fn push_signal(&self, signal: Signal) {
+        self.event_log.push_signal(&signal);
     }
 }
 
