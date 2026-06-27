@@ -1,6 +1,6 @@
 use chrono::Utc;
 use handlebars::Handlebars;
-use rngo_sim::spec;
+use rngo_sim::{EffectEvent, spec};
 use rngo_sim::{Io, Signal};
 use std::collections::HashMap;
 use std::error::Error;
@@ -64,7 +64,7 @@ impl EffectDispatch {
                                 if let Ok(data) = line {
                                     if !data.is_empty() {
                                         let _ = tx.send(Signal {
-                                            effect: None,
+                                            effect_id: None,
                                             system: system_key.clone(),
                                             io: Io::Stderr,
                                             data,
@@ -93,24 +93,21 @@ impl EffectDispatch {
         })
     }
 
-    pub fn send(
-        &mut self,
-        effect_key: &str,
-        value: &serde_json::Value,
-        format: Option<&str>,
-    ) -> Result<(), Box<dyn Error>> {
-        let system_key = match self.effect_systems.get(effect_key) {
+    pub fn send(&mut self, effect_event: &EffectEvent) -> Result<(), Box<dyn Error>> {
+        let system_key = match self.effect_systems.get(&effect_event.key) {
             Some(k) => k.clone(),
             None => return Ok(()),
         };
 
         if let Some(stdin) = self.stdinpipes.get_mut(&system_key) {
-            let data = format
+            let data = effect_event
+                .format
+                .as_ref()
                 .map(|f| f.to_string())
-                .unwrap_or_else(|| serde_json::to_string(value).unwrap());
+                .unwrap_or_else(|| serde_json::to_string(&effect_event.value).unwrap());
             writeln!(stdin, "{data}")?;
         } else if self.hbs.has_template(&system_key) {
-            let command = self.hbs.render(&system_key, value)?;
+            let command = self.hbs.render(&system_key, &effect_event.value)?;
             let output = Command::new("sh")
                 .arg("-c")
                 .arg(&command)
@@ -118,7 +115,6 @@ impl EffectDispatch {
                 .stderr(Stdio::piped())
                 .output()?;
 
-            let effect = Some(effect_key.to_string());
             let timestamp = Utc::now();
             for (bytes, io) in [(&output.stdout, Io::Stdout), (&output.stderr, Io::Stderr)] {
                 for line in BufReader::new(bytes.as_slice())
@@ -127,7 +123,7 @@ impl EffectDispatch {
                 {
                     if !line.is_empty() {
                         let _ = self.signal_tx.send(Signal {
-                            effect: effect.clone(),
+                            effect_id: Some(effect_event.id),
                             system: system_key.clone(),
                             io,
                             data: line,

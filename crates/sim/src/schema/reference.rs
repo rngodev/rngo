@@ -1,6 +1,6 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::build::BuildError;
-use crate::event::{EventLogIndex, EventLogIndexConfig};
+use crate::log::{EventLogIndex, EventLogIndexConfig};
 use crate::spec::SpecError as Error;
 use crate::spec::{SchemaParseVisitor, SchemaParser};
 
@@ -22,11 +22,8 @@ impl Reference {
 impl Schema for Reference {
     fn next(&mut self, _context: &SchemaContext) -> SchemaResult {
         match self.index.sample() {
-            Some(event) => match event.value() {
-                Some(value) => SchemaResult::Ok {
-                    value: value.clone(),
-                },
-                None => SchemaResult::Err("no match".into()),
+            Some(effect_event) => SchemaResult::Ok {
+                value: effect_event.value.clone(),
             },
             None => SchemaResult::Err("no event".into()),
         }

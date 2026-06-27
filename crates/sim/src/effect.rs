@@ -2,14 +2,16 @@ mod clock;
 mod trigger;
 
 use crate::build::{BuildError, EffectKey};
-use crate::event::{Event, EventLog, EventLogIndexConfig, SimpleEventLog};
 use crate::format::Format;
+use crate::log::{EventLog, EventLogIndexConfig, SimpleEventLog};
 use crate::schema::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::util::ext::FlattenErr;
 use crate::util::time::Moment;
 use chrono::{DateTime, FixedOffset, TimeDelta};
 use clock::Clock;
 use multi_try::MultiTry;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::rc::Rc;
 use trigger::{Trigger, TriggerConfig};
 
@@ -41,7 +43,7 @@ impl Effect {
 }
 
 impl Iterator for Effect {
-    type Item = Event;
+    type Item = Result<EffectEvent, String>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.next_offset()?;
@@ -51,18 +53,27 @@ impl Iterator for Effect {
             trigger: &trigger_event,
         };
 
-        let id = self.event_log.last().map(|e| e.id() + 1).unwrap_or(1);
+        let last_id = self.event_log.last().map(|e| e.id).unwrap_or(0);
         match self.schema.next(&context) {
-            SchemaResult::Ok { value } => Some(Event::Effect {
+            SchemaResult::Ok { value } => Some(Ok(EffectEvent {
+                id: last_id + 1,
                 key: self.key.clone(),
-                id,
                 offset: trigger_event.offset,
                 format: self.format.as_ref().map(|f| f.format(&value)),
                 value,
-            }),
-            SchemaResult::Err(message) => Some(Event::Error { id, message }),
+            })),
+            SchemaResult::Err(message) => Some(Err(message)),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EffectEvent {
+    pub id: u64,
+    pub key: String,
+    pub offset: u64,
+    pub value: Value,
+    pub format: Option<String>,
 }
 
 #[derive(Debug)]

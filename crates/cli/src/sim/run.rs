@@ -1,6 +1,6 @@
 use crate::sim::effect::EffectDispatch;
 use crate::sim::signal::SignalCapture;
-use rngo_sim::{Dialect, Event, spec};
+use rngo_sim::{Dialect, spec};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
@@ -28,29 +28,20 @@ pub fn run(base: &Path, stdout: bool) -> Result<(), Box<dyn Error>> {
 
     let simulation = simulation_builder.build().map_err(join_errors)?;
 
-    for event in simulation {
+    for effect_event in simulation {
         if stdout {
-            println!("{}", serde_json::to_string(&event)?);
+            println!("{}", serde_json::to_string(&effect_event)?);
         } else {
-            match &event {
-                Event::Effect {
-                    key, value, format, ..
-                } => {
-                    let line = serde_json::to_string(&event)?;
-                    let file = if let Some(f) = files.get_mut(key) {
-                        f
-                    } else {
-                        let path = run_dir.join(format!("{key}.jsonl"));
-                        let f = OpenOptions::new().create(true).append(true).open(path)?;
-                        files.entry(key.clone()).or_insert(f)
-                    };
-                    writeln!(file, "{line}")?;
-                    effect_dispatch.send(key, value, format.as_deref())?;
-                }
-                Event::Error { message, .. } => {
-                    eprintln!("error: {message}");
-                }
-            }
+            let line = serde_json::to_string(&effect_event)?;
+            let file = if let Some(f) = files.get_mut(&effect_event.key) {
+                f
+            } else {
+                let path = run_dir.join(format!("{}.jsonl", effect_event.key));
+                let f = OpenOptions::new().create(true).append(true).open(path)?;
+                files.entry(effect_event.key.clone()).or_insert(f)
+            };
+            writeln!(file, "{line}")?;
+            effect_dispatch.send(&effect_event)?;
         }
     }
 

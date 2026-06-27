@@ -1,6 +1,6 @@
 use crate::build::{BuildError, SimulationKey};
-use crate::effect::{Effect, EffectBuilder};
-use crate::event::{Event, EventLog, SimpleEventLog};
+use crate::effect::{Effect, EffectBuilder, EffectEvent};
+use crate::log::{EventLog, SimpleEventLog};
 use crate::util::time::Moment;
 use chrono::{TimeDelta, Utc};
 use std::rc::Rc;
@@ -18,17 +18,24 @@ impl Simulation {
 }
 
 impl Iterator for Simulation {
-    type Item = Event;
+    type Item = EffectEvent;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.effects
-            .sort_unstable_by_key(|e| e.next_offset().unwrap_or(u64::MAX));
+        loop {
+            self.effects
+                .sort_unstable_by_key(|e| e.next_offset().unwrap_or(u64::MAX));
 
-        if let Some(event) = self.effects.first_mut()?.next() {
-            self.event_log.push(&event);
-            Some(event)
-        } else {
-            None
+            match self.effects.first_mut()?.next() {
+                Some(Ok(effect_event)) => {
+                    self.event_log.push_effect(&effect_event);
+                    return Some(effect_event);
+                }
+                Some(Err(error)) => {
+                    self.event_log.push_error(&error);
+                    continue;
+                }
+                None => return None,
+            }
         }
     }
 }

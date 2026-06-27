@@ -20,7 +20,7 @@ pub use string::Str;
 
 use crate::build::{BuildError, SchemaEdge};
 use crate::effect::TriggerEvent;
-use crate::event::EventLog;
+use crate::log::EventLog;
 use rand_pcg::Pcg32;
 use rand_seeder::Seeder;
 use serde_json::Value;

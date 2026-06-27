@@ -1,5 +1,6 @@
 use super::clock::Clock;
-use crate::event::{Event, EventLogIndex};
+use crate::effect::EffectEvent;
+use crate::log::EventLogIndex;
 use std::rc::Rc;
 
 #[derive(Clone, Debug)]
@@ -11,7 +12,7 @@ pub enum TriggerConfig {
 
 pub struct TriggerEvent {
     pub offset: u64,
-    pub event: Option<Rc<Event>>,
+    pub effect_event: Option<Rc<EffectEvent>>,
 }
 
 #[derive(Debug)]
@@ -33,16 +34,11 @@ impl Trigger {
             Trigger::Effect {
                 index, last_offset, ..
             } => {
-                if let Some(event) = index.sample() {
-                    match *event {
-                        Event::Effect { offset, .. } => {
-                            if &offset > last_offset {
-                                Some(offset)
-                            } else {
-                                None
-                            }
-                        }
-                        Event::Error { .. } => None,
+                if let Some(effect_event) = index.sample() {
+                    if &effect_event.offset > last_offset {
+                        Some(effect_event.offset)
+                    } else {
+                        None
                     }
                 } else {
                     None
@@ -56,17 +52,12 @@ impl Trigger {
             Trigger::Effect {
                 index, last_offset, ..
             } => {
-                if let Some(event) = index.sample() {
-                    match *event {
-                        Event::Effect { offset, .. } => {
-                            *last_offset = offset;
-                            Some(TriggerEvent {
-                                offset,
-                                event: Some(event.clone()),
-                            })
-                        }
-                        Event::Error { .. } => None,
-                    }
+                if let Some(effect_event) = index.sample() {
+                    *last_offset = effect_event.offset;
+                    Some(TriggerEvent {
+                        offset: effect_event.offset,
+                        effect_event: Some(effect_event.clone()),
+                    })
                 } else {
                     None
                 }
@@ -75,7 +66,7 @@ impl Trigger {
                 if let Some(offset) = next_offset {
                     let event = TriggerEvent {
                         offset: *offset,
-                        event: None,
+                        effect_event: None,
                     };
 
                     *next_offset = clock.next();

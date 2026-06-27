@@ -10,9 +10,9 @@ pub enum Io {
 
 #[derive(Debug, Serialize)]
 pub struct Signal {
-    pub effect: Option<String>,
+    pub effect_id: Option<u64>,
+    pub timestamp: DateTime<Utc>,
     pub system: String,
     pub io: Io,
     pub data: String,
-    pub timestamp: DateTime<Utc>,
 }

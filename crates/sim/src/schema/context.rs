@@ -38,14 +38,11 @@ impl Context {
 impl Schema for Context {
     fn next(&mut self, context: &SchemaContext) -> SchemaResult {
         match self.path {
-            ContextPath::Event => match &context.trigger.event {
-                Some(event) => match event.value() {
-                    Some(value) => SchemaResult::Ok {
-                        value: value.clone(),
-                    },
-                    None => SchemaResult::Err("no value for trigger".into()),
+            ContextPath::Event => match &context.trigger.effect_event {
+                Some(effect_event) => SchemaResult::Ok {
+                    value: effect_event.value.clone(),
                 },
-                None => SchemaResult::Err("no event for trigger".into()),
+                None => SchemaResult::Err("no value for trigger".into()),
             },
             ContextPath::Offset => SchemaResult::Ok {
                 value: context.trigger.offset.into(),
