@@ -61,16 +61,16 @@ impl EffectDispatch {
                         let system_key = system_key.clone();
                         thread::spawn(move || {
                             for line in BufReader::new(stderr).lines() {
-                                if let Ok(data) = line {
-                                    if !data.is_empty() {
-                                        let _ = tx.send(Signal {
-                                            effect_id: None,
-                                            system: system_key.clone(),
-                                            io: Io::Stderr,
-                                            data,
-                                            timestamp: Utc::now(),
-                                        });
-                                    }
+                                if let Ok(data) = line
+                                    && !data.is_empty()
+                                {
+                                    let _ = tx.send(Signal {
+                                        effect_id: None,
+                                        system: system_key.clone(),
+                                        io: Io::Stderr,
+                                        data,
+                                        timestamp: Utc::now(),
+                                    });
                                 }
                             }
                         });
@@ -119,7 +119,7 @@ impl EffectDispatch {
             for (bytes, io) in [(&output.stdout, Io::Stdout), (&output.stderr, Io::Stderr)] {
                 for line in BufReader::new(bytes.as_slice())
                     .lines()
-                    .filter_map(|l| l.ok())
+                    .map_while(Result::ok)
                 {
                     if !line.is_empty() {
                         let _ = self.signal_tx.send(Signal {

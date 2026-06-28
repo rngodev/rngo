@@ -21,10 +21,10 @@ pub fn run(base: &Path, stdout: bool) -> Result<(), Box<dyn Error>> {
         .parse_simulation(spec.clone())
         .map_err(join_errors)?;
 
-    let mut simulation = simulation_builder.log(log).build().map_err(join_errors)?;
+    let simulation = simulation_builder.log(log).build().map_err(join_errors)?;
     let mut effect_dispatch = EffectDispatch::new(&spec, simulation.signal_tx())?;
 
-    while let Some(effect_event) = simulation.next() {
+    for effect_event in simulation {
         if stdout {
             println!("{}", serde_json::to_string(&effect_event)?);
         } else {
