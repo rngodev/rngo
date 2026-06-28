@@ -1,7 +1,6 @@
 use chrono::Utc;
 use handlebars::Handlebars;
-use rngo_sim::{EffectEvent, spec};
-use rngo_sim::{Io, Signal};
+use rngo_sim::{EffectEvent, Io, Signal, spec};
 use std::collections::HashMap;
 use std::error::Error;
 use std::io::{BufRead, BufReader, Write};

@@ -1,7 +1,6 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::build::{BuildError, SchemaEdge};
-use crate::spec::SpecError as Error;
-use crate::spec::{self, SchemaParseVisitor, SchemaParser};
+use crate::spec::{self, SchemaParseVisitor, SchemaParser, SpecError as Error};
 use indexmap::IndexMap;
 use serde_json::Map;
 

@@ -1,9 +1,8 @@
 use crate::sim::effect::EffectDispatch;
 use rngo_sim::{Dialect, FsProxyLog, SimpleEventLog, spec};
 use std::error::Error;
-use std::fmt;
-use std::fs;
 use std::path::{Path, PathBuf};
+use std::{fmt, fs};
 
 pub fn run(base: &Path, stdout: bool) -> Result<(), Box<dyn Error>> {
     let spec = load_spec(base)?;

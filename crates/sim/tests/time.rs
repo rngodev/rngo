@@ -1,7 +1,7 @@
 mod common;
 
-use rngo_sim::build::*;
 use rngo_sim::Simulation;
+use rngo_sim::build::*;
 use serde_json::Value;
 
 fn effect_offsets(sim: Simulation, take: usize) -> Vec<u64> {
