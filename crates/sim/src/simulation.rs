@@ -29,7 +29,7 @@ impl Iterator for Simulation {
 
     fn next(&mut self) -> Option<Self::Item> {
         for signal in self.signal_rx.try_iter() {
-            self.event_log.push_signal(&signal);
+            self.event_log.push(signal.into());
         }
 
         loop {
@@ -38,11 +38,11 @@ impl Iterator for Simulation {
 
             match self.effects.first_mut()?.next() {
                 Some(Ok(effect_event)) => {
-                    self.event_log.push_effect(&effect_event);
+                    self.event_log.push(effect_event.clone().into());
                     return Some(effect_event);
                 }
                 Some(Err(error)) => {
-                    self.event_log.push_error(&error);
+                    self.event_log.push(error.into());
                     continue;
                 }
                 None => return None,

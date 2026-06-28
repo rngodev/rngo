@@ -8,7 +8,7 @@ pub enum Io {
     Stderr,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Signal {
     pub effect_id: Option<u64>,
     pub timestamp: DateTime<Utc>,
