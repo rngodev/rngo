@@ -1,12 +1,9 @@
 use crate::sim::effect::EffectDispatch;
-use rngo_sim::{Dialect, Signal, spec};
-use std::collections::HashMap;
+use rngo_sim::{Dialect, FsProxyLog, SimpleEventLog, spec};
 use std::error::Error;
 use std::fmt;
-use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc;
 
 pub fn run(base: &Path, stdout: bool) -> Result<(), Box<dyn Error>> {
     let spec = load_spec(base)?;
@@ -18,41 +15,24 @@ pub fn run(base: &Path, stdout: bool) -> Result<(), Box<dyn Error>> {
         serde_json::to_string_pretty(&spec)?,
     )?;
 
+    let log = FsProxyLog::new(Box::new(SimpleEventLog::default()), run_dir.clone());
+
     let simulation_builder = Dialect::core()
         .parse_simulation(spec.clone())
         .map_err(join_errors)?;
 
-    let mut simulation = simulation_builder.build().map_err(join_errors)?;
-
-    let (signal_tx, signal_rx) = mpsc::channel::<Signal>();
-    let mut effect_dispatch = EffectDispatch::new(&spec, signal_tx)?;
-    let mut files: HashMap<String, fs::File> = HashMap::new();
+    let mut simulation = simulation_builder.log(log).build().map_err(join_errors)?;
+    let mut effect_dispatch = EffectDispatch::new(&spec, simulation.signal_tx())?;
 
     while let Some(effect_event) = simulation.next() {
         if stdout {
             println!("{}", serde_json::to_string(&effect_event)?);
         } else {
-            let line = serde_json::to_string(&effect_event)?;
-            let file = if let Some(f) = files.get_mut(&effect_event.key) {
-                f
-            } else {
-                let path = run_dir.join(format!("{}.jsonl", effect_event.key));
-                let f = OpenOptions::new().create(true).append(true).open(path)?;
-                files.entry(effect_event.key.clone()).or_insert(f)
-            };
-            writeln!(file, "{line}")?;
             effect_dispatch.send(&effect_event)?;
-        }
-
-        for signal in signal_rx.try_iter() {
-            simulation.push_signal(signal);
         }
     }
 
     effect_dispatch.finish()?;
-    for signal in signal_rx.try_iter() {
-        simulation.push_signal(signal);
-    }
 
     Ok(())
 }

@@ -3,7 +3,7 @@ mod trigger;
 
 use crate::build::{BuildError, EffectKey};
 use crate::format::Format;
-use crate::log::{EventLog, EventLogIndexConfig, SimpleEventLog};
+use crate::log::{EventLog, EventLogIndexConfig, EventLogReader, SimpleEventLog};
 use crate::schema::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::util::ext::FlattenErr;
 use crate::util::time::Moment;
@@ -20,7 +20,7 @@ pub use trigger::TriggerEvent;
 #[derive(Debug)]
 pub struct Effect {
     key: String,
-    event_log: Rc<dyn EventLog>,
+    event_log: Rc<dyn EventLogReader>,
     trigger: Trigger,
     schema: Box<dyn Schema>,
     end_offset: u64,
@@ -84,7 +84,7 @@ pub struct EffectBuilder {
     now: Option<DateTime<FixedOffset>>,
     sim_start: Option<DateTime<FixedOffset>>,
     sim_end: Option<DateTime<FixedOffset>>,
-    event_log: Option<Rc<dyn EventLog>>,
+    event_log: Option<Rc<dyn EventLogReader>>,
     seed: Option<u64>,
     trigger: TriggerConfig,
     schema_builder: Option<Box<dyn SchemaBuilder>>,
@@ -133,7 +133,7 @@ impl EffectBuilder {
         self
     }
 
-    pub fn set_event_log(&mut self, event_log: Rc<dyn EventLog>) -> &mut Self {
+    pub fn set_event_log(&mut self, event_log: Rc<dyn EventLogReader>) -> &mut Self {
         self.event_log = Some(event_log);
         self
     }
@@ -176,9 +176,9 @@ impl EffectBuilder {
                 message: "now must be set via set_now()".into(),
             }]);
         };
-        let event_log: Rc<dyn EventLog> = self
+        let event_log: Rc<dyn EventLogReader> = self
             .event_log
-            .unwrap_or_else(|| Rc::new(SimpleEventLog::default()));
+            .unwrap_or_else(|| SimpleEventLog::default().reader());
         let seed = self.seed.unwrap_or(1);
         let sim_start = self.sim_start.unwrap_or_else(|| now + TimeDelta::days(-30));
         let sim_end = self.sim_end.unwrap_or(now);
