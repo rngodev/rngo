@@ -1,11 +1,10 @@
 use super::SpecError;
 use crate::effect::Effect;
 use crate::format::{self, Format};
-use crate::schema;
 use crate::schema::SchemaBuilder;
 use crate::simulation::{Simulation, SimulationBuilder};
-use crate::spec;
 use crate::util::time::Moment;
+use crate::{schema, spec};
 use std::rc::Rc;
 
 pub struct Dialect {

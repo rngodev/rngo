@@ -1,9 +1,9 @@
 mod common;
 
 use common::SpecErrorTestExt;
-use rngo_sim::{Dialect, Event, SpecError};
+use rngo_sim::{Dialect, EffectEvent, SpecError};
 
-fn parse_and_run(json: &str) -> Vec<Event> {
+fn parse_and_run(json: &str) -> Vec<EffectEvent> {
     let value: serde_json::Value = serde_json::from_str(json).unwrap();
     let simulation = Dialect::core()
         .parse_simulation_json(value)
@@ -18,11 +18,8 @@ fn parse_errors(json: &str) -> Vec<SpecError> {
     Dialect::core().parse_simulation_json(value).unwrap_err()
 }
 
-fn effect_format(event: &Event) -> Option<&str> {
-    match event {
-        Event::Effect { format, .. } => format.as_deref(),
-        _ => None,
-    }
+fn effect_format(event: &EffectEvent) -> Option<&str> {
+    event.format.as_deref()
 }
 
 #[test]

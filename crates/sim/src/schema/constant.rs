@@ -1,8 +1,7 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaResult};
 use crate::build::BuildError;
 use crate::schema::SchemaContext;
-use crate::spec::SpecError as Error;
-use crate::spec::{SchemaParseVisitor, SchemaParser};
+use crate::spec::{SchemaParseVisitor, SchemaParser, SpecError as Error};
 use serde_json::Value;
 
 #[derive(Debug)]

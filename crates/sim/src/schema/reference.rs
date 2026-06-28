@@ -1,12 +1,11 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::build::BuildError;
-use crate::event::{EventLogIndex, EventLogIndexConfig};
-use crate::spec::SpecError as Error;
-use crate::spec::{SchemaParseVisitor, SchemaParser};
+use crate::log::{LogIndex, LogIndexConfig};
+use crate::spec::{SchemaParseVisitor, SchemaParser, SpecError as Error};
 
 #[derive(Debug)]
 pub struct Reference {
-    index: Box<dyn EventLogIndex>,
+    index: Box<dyn LogIndex>,
 }
 
 impl Reference {
@@ -22,11 +21,8 @@ impl Reference {
 impl Schema for Reference {
     fn next(&mut self, _context: &SchemaContext) -> SchemaResult {
         match self.index.sample() {
-            Some(event) => match event.value() {
-                Some(value) => SchemaResult::Ok {
-                    value: value.clone(),
-                },
-                None => SchemaResult::Err("no match".into()),
+            Some(effect_event) => SchemaResult::Ok {
+                value: effect_event.value.clone(),
             },
             None => SchemaResult::Err("no event".into()),
         }
@@ -35,7 +31,7 @@ impl Schema for Reference {
 
 #[derive(Debug)]
 pub struct ReferenceBuilder {
-    config: Option<EventLogIndexConfig>,
+    config: Option<LogIndexConfig>,
 }
 
 impl ReferenceBuilder {
@@ -45,7 +41,7 @@ impl ReferenceBuilder {
     }
 
     pub fn set_effect(&mut self, effect: impl Into<String>) -> &mut Self {
-        self.config = Some(EventLogIndexConfig::ByEffect {
+        self.config = Some(LogIndexConfig::ByEffect {
             key: effect.into(),
             last_only: false,
         });

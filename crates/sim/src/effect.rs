@@ -2,14 +2,16 @@ mod clock;
 mod trigger;
 
 use crate::build::{BuildError, EffectKey};
-use crate::event::{Event, EventLog, EventLogIndexConfig, SimpleEventLog};
 use crate::format::Format;
+use crate::log::{Log, LogIndexConfig, LogReader, SimpleEventLog};
 use crate::schema::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::util::ext::FlattenErr;
 use crate::util::time::Moment;
 use chrono::{DateTime, FixedOffset, TimeDelta};
 use clock::Clock;
 use multi_try::MultiTry;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::rc::Rc;
 use trigger::{Trigger, TriggerConfig};
 
@@ -18,7 +20,7 @@ pub use trigger::TriggerEvent;
 #[derive(Debug)]
 pub struct Effect {
     key: String,
-    event_log: Rc<dyn EventLog>,
+    event_log: Rc<dyn LogReader>,
     trigger: Trigger,
     schema: Box<dyn Schema>,
     end_offset: u64,
@@ -41,7 +43,7 @@ impl Effect {
 }
 
 impl Iterator for Effect {
-    type Item = Event;
+    type Item = Result<EffectEvent, String>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.next_offset()?;
@@ -51,18 +53,27 @@ impl Iterator for Effect {
             trigger: &trigger_event,
         };
 
-        let id = self.event_log.last().map(|e| e.id() + 1).unwrap_or(1);
+        let last_id = self.event_log.last().map(|e| e.id).unwrap_or(0);
         match self.schema.next(&context) {
-            SchemaResult::Ok { value } => Some(Event::Effect {
+            SchemaResult::Ok { value } => Some(Ok(EffectEvent {
+                id: last_id + 1,
                 key: self.key.clone(),
-                id,
                 offset: trigger_event.offset,
                 format: self.format.as_ref().map(|f| f.format(&value)),
                 value,
-            }),
-            SchemaResult::Err(message) => Some(Event::Error { id, message }),
+            })),
+            SchemaResult::Err(message) => Some(Err(message)),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EffectEvent {
+    pub id: u64,
+    pub key: String,
+    pub offset: u64,
+    pub value: Value,
+    pub format: Option<String>,
 }
 
 #[derive(Debug)]
@@ -73,7 +84,7 @@ pub struct EffectBuilder {
     now: Option<DateTime<FixedOffset>>,
     sim_start: Option<DateTime<FixedOffset>>,
     sim_end: Option<DateTime<FixedOffset>>,
-    event_log: Option<Rc<dyn EventLog>>,
+    event_log: Option<Rc<dyn LogReader>>,
     seed: Option<u64>,
     trigger: TriggerConfig,
     schema_builder: Option<Box<dyn SchemaBuilder>>,
@@ -122,7 +133,7 @@ impl EffectBuilder {
         self
     }
 
-    pub fn set_event_log(&mut self, event_log: Rc<dyn EventLog>) -> &mut Self {
+    pub fn set_event_log(&mut self, event_log: Rc<dyn LogReader>) -> &mut Self {
         self.event_log = Some(event_log);
         self
     }
@@ -165,9 +176,9 @@ impl EffectBuilder {
                 message: "now must be set via set_now()".into(),
             }]);
         };
-        let event_log: Rc<dyn EventLog> = self
+        let event_log: Rc<dyn LogReader> = self
             .event_log
-            .unwrap_or_else(|| Rc::new(SimpleEventLog::default()));
+            .unwrap_or_else(|| SimpleEventLog::default().reader());
         let seed = self.seed.unwrap_or(1);
         let sim_start = self.sim_start.unwrap_or_else(|| now + TimeDelta::days(-30));
         let sim_end = self.sim_end.unwrap_or(now);
@@ -195,7 +206,7 @@ impl EffectBuilder {
 
         let trigger_result = match self.trigger {
             TriggerConfig::Effect { key } => {
-                let index = event_log.index(EventLogIndexConfig::ByEffect {
+                let index = event_log.index(LogIndexConfig::ByEffect {
                     key: key.clone(),
                     last_only: true,
                 });

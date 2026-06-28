@@ -1,11 +1,8 @@
-use crate::sim::system::SystemDispatch;
-use rngo_sim::{Dialect, Event, spec};
-use std::collections::HashMap;
+use crate::sim::effect::EffectDispatch;
+use rngo_sim::{Dialect, FsProxyLog, SimpleEventLog, spec};
 use std::error::Error;
-use std::fmt;
-use std::fs::{self, OpenOptions};
-use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::{fmt, fs};
 
 pub fn run(base: &Path, stdout: bool) -> Result<(), Box<dyn Error>> {
     let spec = load_spec(base)?;
@@ -17,42 +14,26 @@ pub fn run(base: &Path, stdout: bool) -> Result<(), Box<dyn Error>> {
         serde_json::to_string_pretty(&spec)?,
     )?;
 
-    let mut dispatch = SystemDispatch::new(&spec)?;
-    let mut files: HashMap<String, fs::File> = HashMap::new();
+    let log = FsProxyLog::new(Box::new(SimpleEventLog::default()), run_dir.clone());
 
     let simulation_builder = Dialect::core()
-        .parse_simulation(spec)
+        .parse_simulation(spec.clone())
         .map_err(join_errors)?;
 
-    let simulation = simulation_builder.build().map_err(join_errors)?;
+    let simulation = simulation_builder.log(log).build().map_err(join_errors)?;
+    let mut effect_dispatch = EffectDispatch::new(&spec, simulation.signal_tx())?;
 
-    for event in simulation {
+    for effect_event in simulation {
         if stdout {
-            println!("{}", serde_json::to_string(&event)?);
+            println!("{}", serde_json::to_string(&effect_event)?);
         } else {
-            match &event {
-                Event::Effect {
-                    key, value, format, ..
-                } => {
-                    let line = serde_json::to_string(&event)?;
-                    let file = if let Some(f) = files.get_mut(key) {
-                        f
-                    } else {
-                        let path = run_dir.join(format!("{key}.jsonl"));
-                        let f = OpenOptions::new().create(true).append(true).open(path)?;
-                        files.entry(key.clone()).or_insert(f)
-                    };
-                    writeln!(file, "{line}")?;
-                    dispatch.send(key, value, format.as_deref())?;
-                }
-                Event::Error { message, .. } => {
-                    eprintln!("error: {message}");
-                }
-            }
+            effect_dispatch.send(&effect_event)?;
         }
     }
 
-    dispatch.finish()
+    effect_dispatch.finish()?;
+
+    Ok(())
 }
 
 fn load_spec(base: &Path) -> Result<spec::Simulation, Box<dyn Error>> {

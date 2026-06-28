@@ -1,4 +1,5 @@
-use cel::{Context, Value, objects::Map};
+use cel::objects::Map;
+use cel::{Context, Value};
 use std::collections::HashMap;
 
 macro_rules! time_unit_fns {
