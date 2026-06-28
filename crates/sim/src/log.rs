@@ -8,6 +8,11 @@ use std::rc::Rc;
 pub use fs_proxy::FsProxyLog;
 pub use simple::SimpleEventLog;
 
+pub trait Log: std::fmt::Debug {
+    fn push(&mut self, event: LogEvent);
+    fn reader(&self) -> Rc<dyn LogReader>;
+}
+
 pub enum LogEvent {
     Effect(EffectEvent),
     Signal(Signal),
@@ -38,21 +43,16 @@ impl From<&str> for LogEvent {
     }
 }
 
-pub trait EventLogReader: std::fmt::Debug {
+pub trait LogReader: std::fmt::Debug {
     fn last(&self) -> Option<Rc<EffectEvent>>;
-    fn index(&self, config: EventLogIndexConfig) -> Box<dyn EventLogIndex>;
+    fn index(&self, config: LogIndexConfig) -> Box<dyn LogIndex>;
 }
 
-pub trait EventLog: std::fmt::Debug {
-    fn push(&mut self, event: LogEvent);
-    fn reader(&self) -> Rc<dyn EventLogReader>;
-}
-
-pub trait EventLogIndex: std::fmt::Debug {
+pub trait LogIndex: std::fmt::Debug {
     fn sample(&self) -> Option<Rc<EffectEvent>>;
 }
 
 #[derive(Clone, Debug)]
-pub enum EventLogIndexConfig {
+pub enum LogIndexConfig {
     ByEffect { key: String, last_only: bool },
 }

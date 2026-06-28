@@ -1,5 +1,5 @@
-use crate::log::{EventLogIndex, EventLogIndexConfig, EventLogReader};
-use crate::{EffectEvent, EventLog, LogEvent};
+use crate::log::{LogIndex, LogIndexConfig, LogReader};
+use crate::{EffectEvent, Log, LogEvent};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -8,12 +8,12 @@ pub struct SimpleEventLogReader {
     effect_events: Rc<RefCell<Vec<Rc<EffectEvent>>>>,
 }
 
-impl EventLogReader for SimpleEventLogReader {
+impl LogReader for SimpleEventLogReader {
     fn last(&self) -> Option<Rc<EffectEvent>> {
         self.effect_events.borrow().last().cloned()
     }
 
-    fn index(&self, config: EventLogIndexConfig) -> Box<dyn EventLogIndex> {
+    fn index(&self, config: LogIndexConfig) -> Box<dyn LogIndex> {
         Box::new(SimpleEventLogIndex {
             effect_events: Rc::clone(&self.effect_events),
             config,
@@ -26,14 +26,14 @@ pub struct SimpleEventLog {
     effect_events: Rc<RefCell<Vec<Rc<EffectEvent>>>>,
 }
 
-impl EventLog for SimpleEventLog {
+impl Log for SimpleEventLog {
     fn push(&mut self, event: LogEvent) {
         if let LogEvent::Effect(effect_event) = event {
             self.effect_events.borrow_mut().push(Rc::new(effect_event));
         }
     }
 
-    fn reader(&self) -> Rc<dyn EventLogReader> {
+    fn reader(&self) -> Rc<dyn LogReader> {
         Rc::new(SimpleEventLogReader {
             effect_events: Rc::clone(&self.effect_events),
         })
@@ -43,21 +43,21 @@ impl EventLog for SimpleEventLog {
 #[derive(Debug)]
 pub struct SimpleEventLogIndex {
     effect_events: Rc<RefCell<Vec<Rc<EffectEvent>>>>,
-    config: EventLogIndexConfig,
+    config: LogIndexConfig,
 }
 
-impl EventLogIndex for SimpleEventLogIndex {
+impl LogIndex for SimpleEventLogIndex {
     fn sample(&self) -> Option<Rc<EffectEvent>> {
         let effect_events = self.effect_events.borrow();
 
         let mut filtered_events = effect_events.iter().filter(|e| match &self.config {
-            EventLogIndexConfig::ByEffect {
+            LogIndexConfig::ByEffect {
                 key: config_key, ..
             } => &e.key == config_key,
         });
 
         match &self.config {
-            EventLogIndexConfig::ByEffect { last_only, .. } => {
+            LogIndexConfig::ByEffect { last_only, .. } => {
                 if *last_only {
                     filtered_events.next_back().cloned()
                 } else {

@@ -10,7 +10,7 @@ mod util;
 
 pub use build::{BuildError, EffectKey, SchemaEdge, SimulationKey};
 pub use effect::{Effect, EffectEvent};
-pub use log::{EventLog, FsProxyLog, LogEvent, SimpleEventLog};
+pub use log::{FsProxyLog, Log, LogEvent, SimpleEventLog};
 pub use signal::{Io, Signal};
 pub use simulation::Simulation;
 pub use spec::Dialect;

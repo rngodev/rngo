@@ -1,12 +1,12 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::build::BuildError;
-use crate::log::{EventLogIndex, EventLogIndexConfig};
+use crate::log::{LogIndex, LogIndexConfig};
 use crate::spec::SpecError as Error;
 use crate::spec::{SchemaParseVisitor, SchemaParser};
 
 #[derive(Debug)]
 pub struct Reference {
-    index: Box<dyn EventLogIndex>,
+    index: Box<dyn LogIndex>,
 }
 
 impl Reference {
@@ -32,7 +32,7 @@ impl Schema for Reference {
 
 #[derive(Debug)]
 pub struct ReferenceBuilder {
-    config: Option<EventLogIndexConfig>,
+    config: Option<LogIndexConfig>,
 }
 
 impl ReferenceBuilder {
@@ -42,7 +42,7 @@ impl ReferenceBuilder {
     }
 
     pub fn set_effect(&mut self, effect: impl Into<String>) -> &mut Self {
-        self.config = Some(EventLogIndexConfig::ByEffect {
+        self.config = Some(LogIndexConfig::ByEffect {
             key: effect.into(),
             last_only: false,
         });

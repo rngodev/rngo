@@ -3,7 +3,7 @@ mod trigger;
 
 use crate::build::{BuildError, EffectKey};
 use crate::format::Format;
-use crate::log::{EventLog, EventLogIndexConfig, EventLogReader, SimpleEventLog};
+use crate::log::{Log, LogIndexConfig, LogReader, SimpleEventLog};
 use crate::schema::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::util::ext::FlattenErr;
 use crate::util::time::Moment;
@@ -20,7 +20,7 @@ pub use trigger::TriggerEvent;
 #[derive(Debug)]
 pub struct Effect {
     key: String,
-    event_log: Rc<dyn EventLogReader>,
+    event_log: Rc<dyn LogReader>,
     trigger: Trigger,
     schema: Box<dyn Schema>,
     end_offset: u64,
@@ -84,7 +84,7 @@ pub struct EffectBuilder {
     now: Option<DateTime<FixedOffset>>,
     sim_start: Option<DateTime<FixedOffset>>,
     sim_end: Option<DateTime<FixedOffset>>,
-    event_log: Option<Rc<dyn EventLogReader>>,
+    event_log: Option<Rc<dyn LogReader>>,
     seed: Option<u64>,
     trigger: TriggerConfig,
     schema_builder: Option<Box<dyn SchemaBuilder>>,
@@ -133,7 +133,7 @@ impl EffectBuilder {
         self
     }
 
-    pub fn set_event_log(&mut self, event_log: Rc<dyn EventLogReader>) -> &mut Self {
+    pub fn set_event_log(&mut self, event_log: Rc<dyn LogReader>) -> &mut Self {
         self.event_log = Some(event_log);
         self
     }
@@ -176,7 +176,7 @@ impl EffectBuilder {
                 message: "now must be set via set_now()".into(),
             }]);
         };
-        let event_log: Rc<dyn EventLogReader> = self
+        let event_log: Rc<dyn LogReader> = self
             .event_log
             .unwrap_or_else(|| SimpleEventLog::default().reader());
         let seed = self.seed.unwrap_or(1);
@@ -206,7 +206,7 @@ impl EffectBuilder {
 
         let trigger_result = match self.trigger {
             TriggerConfig::Effect { key } => {
-                let index = event_log.index(EventLogIndexConfig::ByEffect {
+                let index = event_log.index(LogIndexConfig::ByEffect {
                     key: key.clone(),
                     last_only: true,
                 });

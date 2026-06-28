@@ -1,6 +1,6 @@
 use super::clock::Clock;
 use crate::effect::EffectEvent;
-use crate::log::EventLogIndex;
+use crate::log::LogIndex;
 use std::rc::Rc;
 
 #[derive(Clone, Debug)]
@@ -18,7 +18,7 @@ pub struct TriggerEvent {
 #[derive(Debug)]
 pub enum Trigger {
     Effect {
-        index: Box<dyn EventLogIndex>,
+        index: Box<dyn LogIndex>,
         last_offset: u64,
     },
     Clock {

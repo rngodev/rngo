@@ -20,7 +20,7 @@ pub use string::Str;
 
 use crate::build::{BuildError, SchemaEdge};
 use crate::effect::TriggerEvent;
-use crate::log::EventLogReader;
+use crate::log::LogReader;
 use rand_pcg::Pcg32;
 use rand_seeder::Seeder;
 use serde_json::Value;
@@ -50,7 +50,7 @@ impl SchemaBuilder for Box<dyn SchemaBuilder> {
 }
 
 pub struct SchemaBuildVisitor {
-    pub event_log: Rc<dyn EventLogReader>,
+    pub event_log: Rc<dyn LogReader>,
     pub simulation_seed: u64,
     pub effect_key: String,
     pub path: Vec<SchemaEdge>,

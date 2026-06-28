@@ -1,14 +1,14 @@
 use crate::Signal;
 use crate::build::{BuildError, SimulationKey};
 use crate::effect::{Effect, EffectBuilder, EffectEvent};
-use crate::log::{EventLog, SimpleEventLog};
+use crate::log::{Log, SimpleEventLog};
 use crate::util::time::Moment;
 use chrono::{TimeDelta, Utc};
 use std::sync::mpsc::{self, Receiver, Sender};
 
 #[derive(Debug)]
 pub struct Simulation {
-    event_log: Box<dyn EventLog>,
+    event_log: Box<dyn Log>,
     effects: Vec<Effect>,
     signal_tx: Sender<Signal>,
     signal_rx: Receiver<Signal>,
@@ -56,7 +56,7 @@ pub struct SimulationBuilder {
     pub seed: u64,
     pub start: Moment,
     pub end: Moment,
-    event_log: Box<dyn EventLog>,
+    event_log: Box<dyn Log>,
     effect_builders: Vec<EffectBuilder>,
 }
 
@@ -71,7 +71,7 @@ impl SimulationBuilder {
         }
     }
 
-    pub fn log(mut self, log: impl EventLog + 'static) -> Self {
+    pub fn log(mut self, log: impl Log + 'static) -> Self {
         self.event_log = Box::new(log);
         self
     }

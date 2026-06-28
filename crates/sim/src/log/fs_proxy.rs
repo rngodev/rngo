@@ -1,5 +1,5 @@
-use crate::log::EventLogReader;
-use crate::{EventLog, LogEvent};
+use crate::log::LogReader;
+use crate::{Log, LogEvent};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -7,7 +7,7 @@ use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct FsProxyLog {
-    child: Box<dyn EventLog>,
+    child: Box<dyn Log>,
     directory: PathBuf,
     effect_file: Option<std::fs::File>,
     signal_file: Option<std::fs::File>,
@@ -15,7 +15,7 @@ pub struct FsProxyLog {
 }
 
 impl FsProxyLog {
-    pub fn new(child: Box<dyn EventLog>, directory: PathBuf) -> Self {
+    pub fn new(child: Box<dyn Log>, directory: PathBuf) -> Self {
         FsProxyLog {
             child,
             directory,
@@ -41,7 +41,7 @@ impl FsProxyLog {
     }
 }
 
-impl EventLog for FsProxyLog {
+impl Log for FsProxyLog {
     fn push(&mut self, event: LogEvent) {
         match &event {
             LogEvent::Effect(e) => {
@@ -63,7 +63,7 @@ impl EventLog for FsProxyLog {
         self.child.push(event);
     }
 
-    fn reader(&self) -> Rc<dyn EventLogReader> {
+    fn reader(&self) -> Rc<dyn LogReader> {
         self.child.reader()
     }
 }
