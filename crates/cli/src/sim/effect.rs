@@ -63,6 +63,7 @@ impl EffectDispatch {
                                 if let Ok(data) = line
                                     && !data.is_empty()
                                 {
+                                    eprintln!("[{system_key}] {data}");
                                     let _ = tx.send(Signal {
                                         effect_id: None,
                                         system: system_key.clone(),
@@ -104,7 +105,8 @@ impl EffectDispatch {
                 .as_ref()
                 .map(|f| f.to_string())
                 .unwrap_or_else(|| serde_json::to_string(&effect_event.value).unwrap());
-            writeln!(stdin, "{data}")?;
+            writeln!(stdin, "{data}")
+                .map_err(|e| format!("system '{system_key}': {e}"))?;
         } else if self.hbs.has_template(&system_key) {
             let command = self.hbs.render(&system_key, &effect_event.value)?;
             let output = Command::new("sh")
