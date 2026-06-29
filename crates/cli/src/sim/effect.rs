@@ -49,11 +49,32 @@ impl EffectDispatch {
                         .arg("-c")
                         .arg(command)
                         .stdin(Stdio::piped())
+                        .stdout(Stdio::piped())
                         .stderr(Stdio::piped())
                         .spawn()?;
 
                     let stdin = child.stdin.take().expect("stdin was piped");
                     stdinpipes.insert(system_key.clone(), stdin);
+
+                    if let Some(stdout) = child.stdout.take() {
+                        let tx = signal_tx.clone();
+                        let system_key = system_key.clone();
+                        thread::spawn(move || {
+                            for line in BufReader::new(stdout).lines() {
+                                if let Ok(data) = line
+                                    && !data.is_empty()
+                                {
+                                    let _ = tx.send(Signal {
+                                        effect_id: None,
+                                        system: system_key.clone(),
+                                        io: Io::Stdout,
+                                        data,
+                                        timestamp: Utc::now(),
+                                    });
+                                }
+                            }
+                        });
+                    }
 
                     if let Some(stderr) = child.stderr.take() {
                         let tx = signal_tx.clone();

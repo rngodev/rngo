@@ -25,7 +25,7 @@ schema:
       pattern: "[a-z]{3,8}-[a-z]{3,8}-[a-z]{3,8}"
     body:
       type: string
-      pattern: ".{200,500}"
+      pattern: "[ -~]{200,500}"
     status:
       type: select
       options:

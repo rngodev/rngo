@@ -18,7 +18,7 @@ schema:
       pattern: "[a-z]{5,10}@[a-z]{4,8}\\.(com|net|org)"
     bio:
       type: string
-      pattern: ".{50,200}"
+      pattern: "[ -~]{50,200}"
     created_at:
       type: context
       path: ["trigger", "offset"]

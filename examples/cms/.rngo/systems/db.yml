@@ -2,4 +2,4 @@ format:
   type: sql
 import:
   type: stream
-  command: psql $DATABASE_URL
+  command: psql -q $DATABASE_URL
