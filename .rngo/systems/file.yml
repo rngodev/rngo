@@ -1,3 +1,0 @@
-import:
-  type: exec
-  command: echo {{id}} >> test.txt; echo "I wrote {{id}}"

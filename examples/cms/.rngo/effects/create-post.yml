@@ -1,0 +1,42 @@
+trigger: "3.0 / day"
+system: db
+format:
+  table: posts
+schema:
+  type: object
+  properties:
+    id:
+      type: number
+      min: 1
+      scale: 0
+      step: 1
+    author_id:
+      type: function
+      expression: "author.id"
+      variables:
+        author:
+          type: reference
+          effect: create-author
+    title:
+      type: string
+      pattern: "[A-Z][a-z]{3,10}( [a-z]{3,8}){2,5}"
+    slug:
+      type: string
+      pattern: "[a-z]{3,8}-[a-z]{3,8}-[a-z]{3,8}"
+    body:
+      type: string
+      pattern: ".{200,500}"
+    status:
+      type: select
+      options:
+        - weight: 3
+          schema:
+            type: constant
+            value: "published"
+        - weight: 1
+          schema:
+            type: constant
+            value: "draft"
+    created_at:
+      type: context
+      path: ["trigger", "offset"]

@@ -1,5 +1,7 @@
 trigger: "1.0 / day"
-system: file
+system: db
+format:
+  table: authors
 schema:
   type: object
   properties:
@@ -8,12 +10,15 @@ schema:
       min: 1
       scale: 0
       step: 1
-    email:
-      type: string
-      pattern: "[a-z]{5,10}@[a-z]{4,8}\\.(com|net|org)"
     name:
       type: string
       pattern: "[A-Z][a-z]{3,8} [A-Z][a-z]{4,10}"
+    email:
+      type: string
+      pattern: "[a-z]{5,10}@[a-z]{4,8}\\.(com|net|org)"
+    bio:
+      type: string
+      pattern: ".{50,200}"
     created_at:
       type: context
       path: ["trigger", "offset"]
