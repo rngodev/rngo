@@ -1,0 +1,13 @@
+start:
+    docker compose up -d
+    cargo run
+
+db-reset:
+    docker compose down -v
+    docker compose up -d
+
+db-truncate:
+    psql postgres://cms:cms@localhost:5432/cms -c 'TRUNCATE posts, authors RESTART IDENTITY CASCADE'
+
+sim-run:
+    cargo run --manifest-path ../../Cargo.toml -p rngo-cli -- sim run
