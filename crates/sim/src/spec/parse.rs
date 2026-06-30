@@ -91,7 +91,7 @@ impl Dialect {
             if let Some(end) = &effect.end {
                 match effect_moment_parser.parse("end", end) {
                     Ok(timestamp) => {
-                        effect_builder.set_start(timestamp);
+                        effect_builder.set_end(timestamp);
                     }
                     Err(mut e) => errors.append(&mut e),
                 };

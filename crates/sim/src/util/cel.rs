@@ -87,6 +87,7 @@ impl CelContextBuilder {
 
         if let Some(offset) = self.offset {
             let _ = context.add_variable("offset", offset);
+            let _ = context.add_variable("now", offset);
         }
 
         if self.simulation_start.is_some() || self.simulation_end.is_some() {

@@ -1,0 +1,17 @@
+trigger: 3.0 / hour
+start: now
+end: now + hours(3.0)
+system: api
+schema:
+  type: object
+  properties:
+    method:
+      type: constant
+      value: GET
+    path:
+      type: function
+      expression: "'/posts/slug/' + post.slug"
+      variables:
+        post:
+          type: reference
+          effect: create-post

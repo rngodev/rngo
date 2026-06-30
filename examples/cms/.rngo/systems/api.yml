@@ -1,0 +1,3 @@
+import:
+  type: exec
+  command: curl -s -X {{method}} $API_BASE_URL{{path}}
