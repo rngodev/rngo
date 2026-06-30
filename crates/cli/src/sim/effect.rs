@@ -126,8 +126,7 @@ impl EffectDispatch {
                 .as_ref()
                 .map(|f| f.to_string())
                 .unwrap_or_else(|| serde_json::to_string(&effect_event.value).unwrap());
-            writeln!(stdin, "{data}")
-                .map_err(|e| format!("system '{system_key}': {e}"))?;
+            writeln!(stdin, "{data}").map_err(|e| format!("system '{system_key}': {e}"))?;
         } else if self.hbs.has_template(&system_key) {
             let command = self.hbs.render(&system_key, &effect_event.value)?;
             let output = Command::new("sh")

@@ -1,7 +1,7 @@
 mod common;
 
-use rngo_sim::{Dialect, Simulation};
 use rngo_sim::build::*;
+use rngo_sim::{Dialect, Simulation};
 use serde_json::Value;
 
 fn effect_offsets(sim: Simulation, take: usize) -> Vec<u64> {
@@ -99,9 +99,16 @@ fn effect_respects_end_time_via_spec() {
     // 2024-01-01 to 2024-06-01 = 31+29+31+30+31 = 152 days (2024 is a leap year)
     let effect_end_offset: u64 = 152 * 86_400;
 
-    assert!(!offsets.is_empty(), "effect should produce events before its end time");
+    assert!(
+        !offsets.is_empty(),
+        "effect should produce events before its end time"
+    );
 
-    let too_late: Vec<_> = offsets.iter().copied().filter(|&o| o > effect_end_offset).collect();
+    let too_late: Vec<_> = offsets
+        .iter()
+        .copied()
+        .filter(|&o| o > effect_end_offset)
+        .collect();
     assert!(
         too_late.is_empty(),
         "{} events after effect end (>{effect_end_offset}s), e.g. {}",
