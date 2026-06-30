@@ -22,6 +22,8 @@ enum SimCommands {
     Run {
         #[arg(long)]
         stdout: bool,
+        #[arg(long, default_value = ".")]
+        dir: std::path::PathBuf,
     },
 }
 
@@ -30,8 +32,8 @@ fn main() {
 
     match cli.command {
         Commands::Sim { command } => match command {
-            SimCommands::Run { stdout } => {
-                if let Err(e) = sim::run(std::path::Path::new("."), stdout) {
+            SimCommands::Run { stdout, dir } => {
+                if let Err(e) = sim::run(&dir, stdout) {
                     eprintln!("error: {e}");
                     std::process::exit(1);
                 }

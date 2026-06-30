@@ -49,11 +49,32 @@ impl EffectDispatch {
                         .arg("-c")
                         .arg(command)
                         .stdin(Stdio::piped())
+                        .stdout(Stdio::piped())
                         .stderr(Stdio::piped())
                         .spawn()?;
 
                     let stdin = child.stdin.take().expect("stdin was piped");
                     stdinpipes.insert(system_key.clone(), stdin);
+
+                    if let Some(stdout) = child.stdout.take() {
+                        let tx = signal_tx.clone();
+                        let system_key = system_key.clone();
+                        thread::spawn(move || {
+                            for line in BufReader::new(stdout).lines() {
+                                if let Ok(data) = line
+                                    && !data.is_empty()
+                                {
+                                    let _ = tx.send(Signal {
+                                        effect_id: None,
+                                        system: system_key.clone(),
+                                        io: Io::Stdout,
+                                        data,
+                                        timestamp: Utc::now(),
+                                    });
+                                }
+                            }
+                        });
+                    }
 
                     if let Some(stderr) = child.stderr.take() {
                         let tx = signal_tx.clone();
@@ -63,6 +84,7 @@ impl EffectDispatch {
                                 if let Ok(data) = line
                                     && !data.is_empty()
                                 {
+                                    eprintln!("[{system_key}] {data}");
                                     let _ = tx.send(Signal {
                                         effect_id: None,
                                         system: system_key.clone(),
@@ -104,7 +126,7 @@ impl EffectDispatch {
                 .as_ref()
                 .map(|f| f.to_string())
                 .unwrap_or_else(|| serde_json::to_string(&effect_event.value).unwrap());
-            writeln!(stdin, "{data}")?;
+            writeln!(stdin, "{data}").map_err(|e| format!("system '{system_key}': {e}"))?;
         } else if self.hbs.has_template(&system_key) {
             let command = self.hbs.render(&system_key, &effect_event.value)?;
             let output = Command::new("sh")

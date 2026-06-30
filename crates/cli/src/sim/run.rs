@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 use std::{fmt, fs};
 
 pub fn run(base: &Path, stdout: bool) -> Result<(), Box<dyn Error>> {
+    let _ = dotenvy::from_path(base.join(".env"));
+
     let spec = load_spec(base)?;
 
     let run_dir = next_run_dir(base)?;

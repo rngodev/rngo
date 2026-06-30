@@ -19,7 +19,7 @@ pub use trigger::TriggerEvent;
 
 #[derive(Debug)]
 pub struct Effect {
-    key: String,
+    pub key: String,
     event_log: Rc<dyn LogReader>,
     trigger: Trigger,
     schema: Box<dyn Schema>,

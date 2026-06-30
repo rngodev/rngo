@@ -1,7 +1,7 @@
 mod common;
 
-use rngo_sim::Simulation;
 use rngo_sim::build::*;
+use rngo_sim::{Dialect, Simulation};
 use serde_json::Value;
 
 fn effect_offsets(sim: Simulation, take: usize) -> Vec<u64> {
@@ -66,5 +66,53 @@ fn effect_respects_start_time() {
         "{} events before effect start (<{effect_start_offset}s), e.g. {}",
         too_early.len(),
         too_early[0],
+    );
+}
+
+/// An effect with its own end time (parsed from spec) should emit events before
+/// that end time and nothing after. Goes through Dialect::parse_simulation_json
+/// so a copy-paste bug that calls set_start instead of set_end in parse.rs would
+/// cause events to appear in the wrong half of the window and fail this test.
+#[test]
+fn effect_respects_end_time_via_spec() {
+    let spec = serde_json::json!({
+        "seed": 1,
+        "start": "2024-01-01",
+        "end": "2024-12-31",
+        "effects": {
+            "events": {
+                "trigger": "1.0 / day",
+                "end": "2024-06-01",
+                "schema": { "type": "constant", "value": null }
+            }
+        }
+    });
+
+    let sim = Dialect::core()
+        .parse_simulation_json(spec)
+        .unwrap()
+        .build()
+        .unwrap();
+
+    let offsets: Vec<u64> = sim.map(|e| e.offset).collect();
+
+    // 2024-01-01 to 2024-06-01 = 31+29+31+30+31 = 152 days (2024 is a leap year)
+    let effect_end_offset: u64 = 152 * 86_400;
+
+    assert!(
+        !offsets.is_empty(),
+        "effect should produce events before its end time"
+    );
+
+    let too_late: Vec<_> = offsets
+        .iter()
+        .copied()
+        .filter(|&o| o > effect_end_offset)
+        .collect();
+    assert!(
+        too_late.is_empty(),
+        "{} events after effect end (>{effect_end_offset}s), e.g. {}",
+        too_late.len(),
+        too_late[0],
     );
 }
