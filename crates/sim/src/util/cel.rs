@@ -1,42 +1,23 @@
+use cel::extractors::This;
 use cel::objects::Map;
 use cel::{Context, Value};
+use chrono::{DateTime, Duration, FixedOffset};
 use std::collections::HashMap;
 
-macro_rules! time_unit_fns {
-    ($name:ident, $seconds:expr) => {
-        pastey::paste! {
-            fn [<$name _int_fn>](n: i64) -> f64     { (n * $seconds) as f64 }
-            fn [<$name _int_int_fn>](n: i64) -> i64  { n * $seconds }
-            fn [<$name _float_fn>](n: f64) -> f64    { n * ($seconds as f64) }
-            fn [<$name _float_int_fn>](n: f64) -> i64 { (n * ($seconds as f64)) as i64 }
-        }
-    };
-}
+fn seconds(n: i64) -> Duration { Duration::seconds(n) }
+fn minutes(n: i64) -> Duration { Duration::seconds(n * 60) }
+fn hours(n: i64) -> Duration   { Duration::seconds(n * 3_600) }
+fn days(n: i64) -> Duration    { Duration::seconds(n * 86_400) }
+fn weeks(n: i64) -> Duration   { Duration::seconds(n * 604_800) }
+fn months(n: i64) -> Duration  { Duration::seconds(n * 2_419_200) } // 28 days
+fn years(n: i64) -> Duration   { Duration::seconds(n * 31_536_000) } // 365 days
 
-time_unit_fns!(seconds, 1_i64);
-time_unit_fns!(minutes, 60_i64);
-time_unit_fns!(hours, 3_600_i64);
-time_unit_fns!(days, 86_400_i64);
-time_unit_fns!(weeks, 604_800_i64);
-time_unit_fns!(months, 2_419_200_i64); // 28 days
-time_unit_fns!(years, 31_536_000_i64); // 365 days
-
-macro_rules! register_time_fns {
-    ($ctx:expr, $plural:literal, $singular:literal, $prefix:ident) => {
-        pastey::paste! {
-            $ctx.add_function($plural, [<$prefix _int_fn>]);
-            $ctx.add_function($plural, [<$prefix _int_int_fn>]);
-            $ctx.add_function($plural, [<$prefix _float_fn>]);
-            $ctx.add_function($plural, [<$prefix _float_int_fn>]);
-            let _ = $ctx.add_variable($singular, [<$prefix _int_fn>](1));
-        }
-    };
-}
+fn to_seconds(This(d): This<Duration>) -> f64 { d.num_seconds() as f64 }
 
 pub struct CelContextBuilder {
     empty: bool,
     time: bool,
-    offset: Option<i64>,
+    now: Option<DateTime<FixedOffset>>,
     simulation_start: Option<i64>,
     simulation_end: Option<i64>,
 }
@@ -46,7 +27,7 @@ impl CelContextBuilder {
         Self {
             empty: false,
             time: false,
-            offset: None,
+            now: None,
             simulation_start: None,
             simulation_end: None,
         }
@@ -57,8 +38,8 @@ impl CelContextBuilder {
         self
     }
 
-    pub fn offset(&mut self, offset: i64) -> &mut Self {
-        self.offset = Some(offset);
+    pub fn set_now(&mut self, now: DateTime<FixedOffset>) -> &mut Self {
+        self.now = Some(now);
         self
     }
 
@@ -76,18 +57,32 @@ impl CelContextBuilder {
         };
 
         if self.time {
-            register_time_fns!(context, "seconds", "second", seconds);
-            register_time_fns!(context, "minutes", "minute", minutes);
-            register_time_fns!(context, "hours", "hour", hours);
-            register_time_fns!(context, "days", "day", days);
-            register_time_fns!(context, "weeks", "week", weeks);
-            register_time_fns!(context, "months", "month", months);
-            register_time_fns!(context, "years", "year", years);
+            context.add_function("seconds", seconds);
+            let _ = context.add_variable("second", Value::Duration(Duration::seconds(1)));
+
+            context.add_function("minutes", minutes);
+            let _ = context.add_variable("minute", Value::Duration(Duration::seconds(60)));
+
+            context.add_function("hours", hours);
+            let _ = context.add_variable("hour", Value::Duration(Duration::seconds(3_600)));
+
+            context.add_function("days", days);
+            let _ = context.add_variable("day", Value::Duration(Duration::seconds(86_400)));
+
+            context.add_function("weeks", weeks);
+            let _ = context.add_variable("week", Value::Duration(Duration::seconds(604_800)));
+
+            context.add_function("months", months);
+            let _ = context.add_variable("month", Value::Duration(Duration::seconds(2_419_200)));
+
+            context.add_function("years", years);
+            let _ = context.add_variable("year", Value::Duration(Duration::seconds(31_536_000)));
+
+            context.add_function("toSeconds", to_seconds);
         }
 
-        if let Some(offset) = self.offset {
-            let _ = context.add_variable("offset", offset);
-            let _ = context.add_variable("now", offset);
+        if let Some(now) = self.now {
+            let _ = context.add_variable("now", now);
         }
 
         if self.simulation_start.is_some() || self.simulation_end.is_some() {

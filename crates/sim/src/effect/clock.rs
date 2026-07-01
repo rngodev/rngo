@@ -48,7 +48,7 @@ impl ClockBuilder {
         ClockBuilder {
             key: String::new(),
             seed: 1,
-            rate: ClockRate::Expression("1.0 / day".into()),
+            rate: ClockRate::Expression("1.0 / day.toSeconds()".into()),
             start_offset: 0,
         }
     }

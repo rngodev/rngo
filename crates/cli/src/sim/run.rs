@@ -152,7 +152,7 @@ mod tests {
             base.join(".rngo/effects/ping.yml"),
             &json!({
                 "system": "logger",
-                "trigger": "1.0 / day",
+                "trigger": "1.0 / day.toSeconds()",
                 "schema": {
                     "type": "object",
                     "properties": {
@@ -202,7 +202,7 @@ mod tests {
             base.join(".rngo/effects/ping.yml"),
             &json!({
                 "system": "logger",
-                "trigger": "1.0 / day",
+                "trigger": "1.0 / day.toSeconds()",
                 "schema": {
                     "type": "object",
                     "properties": {

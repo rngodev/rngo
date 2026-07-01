@@ -81,7 +81,7 @@ fn effect_respects_end_time_via_spec() {
         "end": "2024-12-31",
         "effects": {
             "events": {
-                "trigger": "1.0 / day",
+                "trigger": "1.0 / day.toSeconds()",
                 "end": "2024-06-01",
                 "schema": { "type": "constant", "value": null }
             }

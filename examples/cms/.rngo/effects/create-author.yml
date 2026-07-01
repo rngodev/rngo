@@ -1,4 +1,4 @@
-trigger: "1.0 / day"
+trigger: "1.0 / day.toSeconds()"
 system: db
 format:
   table: authors

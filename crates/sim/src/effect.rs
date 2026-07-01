@@ -102,7 +102,7 @@ impl EffectBuilder {
             sim_end: None,
             event_log: None,
             seed: None,
-            trigger: TriggerConfig::ClockExpression("1.0 / day".into()),
+            trigger: TriggerConfig::ClockExpression("1.0 / day.toSeconds()".into()),
             schema_builder: None,
             format: None,
         }

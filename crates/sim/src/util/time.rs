@@ -66,13 +66,13 @@ impl<'a> MomentParser<'a> {
         }
 
         let mut context_builder = CelContextBuilder::default();
-        let offset = Utc::now().fixed_offset();
-        context_builder.time().offset(offset.timestamp());
+        let now = Utc::now().fixed_offset();
+        context_builder.time().set_now(now);
 
         if let Some((simulation_start, simulation_end)) = self.simulation_range {
             context_builder.simulation(
-                simulation_start.timestamp(&offset),
-                simulation_end.timestamp(&offset),
+                simulation_start.timestamp(&now),
+                simulation_end.timestamp(&now),
             );
         };
 
@@ -108,7 +108,7 @@ impl<'a> MomentParser<'a> {
         };
 
         Ok(Moment::Relative(TimeDelta::seconds(
-            result_secs - offset.timestamp(),
+            result_secs - now.timestamp(),
         )))
     }
 }
