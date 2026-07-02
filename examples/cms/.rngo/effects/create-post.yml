@@ -39,4 +39,4 @@ schema:
             value: "draft"
     created_at:
       type: context
-      path: ["trigger", "offset"]
+      path: ["sim", "offset"]

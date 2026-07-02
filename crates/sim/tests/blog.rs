@@ -118,7 +118,7 @@ fn builder() {
                             .option(3, number().min(18).max(65))
                             .option(1, constant().value(Value::Null)),
                     )
-                    .property("created_at", context().path(["trigger", "offset"])),
+                    .property("created_at", context().path(["sim", "offset"])),
             );
         })
         .with_effect("post", |e| {
@@ -140,7 +140,7 @@ fn builder() {
                                 .option(1, constant().value("b")),
                         ),
                     )
-                    .property("created_at", context().path(["trigger", "offset"])),
+                    .property("created_at", context().path(["sim", "offset"])),
             );
         });
 
@@ -165,7 +165,7 @@ fn spec() {
                                 { "weight": 1, "schema": { "type": "constant", "value": null } }
                             ]
                         },
-                        "created_at": { "type": "context", "path": ["trigger", "offset"] }
+                        "created_at": { "type": "context", "path": ["sim", "offset"] }
                     }
                 }
             },
@@ -194,7 +194,7 @@ fn spec() {
                                 ]
                             }
                         },
-                        "created_at": { "type": "context", "path": ["trigger", "offset"] }
+                        "created_at": { "type": "context", "path": ["sim", "offset"] }
                     }
                 }
             }

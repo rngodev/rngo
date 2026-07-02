@@ -24,6 +24,8 @@ pub struct Effect {
     trigger: Trigger,
     schema: Box<dyn Schema>,
     end_offset: u64,
+    sim_start: DateTime<FixedOffset>,
+    sim_end: DateTime<FixedOffset>,
     format: Option<Box<dyn Format>>,
 }
 
@@ -51,6 +53,8 @@ impl Iterator for Effect {
         let trigger_event = self.trigger.pull()?;
         let context = SchemaContext {
             trigger: &trigger_event,
+            simulation_start: self.sim_start,
+            simulation_end: self.sim_end,
         };
 
         let last_id = self.event_log.last().map(|e| e.id).unwrap_or(0);
@@ -58,7 +62,7 @@ impl Iterator for Effect {
             SchemaResult::Ok { value } => Some(Ok(EffectEvent {
                 id: last_id + 1,
                 key: self.key.clone(),
-                offset: trigger_event.offset,
+                offset: trigger_event.sim_offset,
                 format: self.format.as_ref().map(|f| f.format(&value)),
                 value,
             })),
@@ -245,6 +249,8 @@ impl EffectBuilder {
             trigger,
             schema,
             end_offset,
+            sim_start,
+            sim_end,
             format: self.format,
         })
     }

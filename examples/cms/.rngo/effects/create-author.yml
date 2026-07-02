@@ -21,4 +21,4 @@ schema:
       pattern: "[ -~]{50,200}"
     created_at:
       type: context
-      path: ["trigger", "offset"]
+      path: ["sim", "offset"]

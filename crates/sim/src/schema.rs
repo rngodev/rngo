@@ -9,6 +9,7 @@ pub(crate) mod select;
 pub(crate) mod string;
 
 pub use array::Array;
+use chrono::{DateTime, FixedOffset};
 pub use constant::Constant;
 pub use context::Context;
 pub use function::Function;
@@ -32,6 +33,8 @@ pub trait Schema: std::fmt::Debug {
 
 pub struct SchemaContext<'a> {
     pub trigger: &'a TriggerEvent,
+    pub simulation_start: DateTime<FixedOffset>,
+    pub simulation_end: DateTime<FixedOffset>,
 }
 
 pub enum SchemaResult {

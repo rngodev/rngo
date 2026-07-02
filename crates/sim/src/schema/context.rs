@@ -2,12 +2,7 @@ use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaResult};
 use crate::build::BuildError;
 use crate::schema::SchemaContext;
 use crate::spec::{SchemaParseVisitor, SchemaParser, SpecError as Error};
-
-#[derive(Debug)]
-enum ContextPath {
-    Event,
-    Offset,
-}
+use serde_json;
 
 #[derive(Debug)]
 pub struct Context {
@@ -15,16 +10,6 @@ pub struct Context {
 }
 
 impl Context {
-    pub fn new(path: Vec<String>) -> Result<Self, String> {
-        let strs: Vec<&str> = path.iter().map(String::as_str).collect();
-        let path = match strs.as_slice() {
-            ["trigger", "event"] => ContextPath::Event,
-            ["trigger", "offset"] => ContextPath::Offset,
-            _ => return Err(format!("unknown path: {:?}", path)),
-        };
-        Ok(Self { path })
-    }
-
     pub fn builder() -> ContextBuilder {
         ContextBuilder { path: None }
     }
@@ -37,15 +22,54 @@ impl Context {
 impl Schema for Context {
     fn next(&mut self, context: &SchemaContext) -> SchemaResult {
         match self.path {
-            ContextPath::Event => match &context.trigger.effect_event {
-                Some(effect_event) => SchemaResult::Ok {
-                    value: effect_event.value.clone(),
+            ContextPath::TriggerEvent => match &context.trigger.effect_event {
+                Some(effect_event) => match serde_json::to_value(effect_event.as_ref()) {
+                    Ok(value) => SchemaResult::Ok { value },
+                    Err(e) => SchemaResult::Err(e.to_string()),
                 },
                 None => SchemaResult::Err("no value for trigger".into()),
             },
-            ContextPath::Offset => SchemaResult::Ok {
-                value: context.trigger.offset.into(),
+            ContextPath::SimOffset => SchemaResult::Ok {
+                value: context.trigger.sim_offset.into(),
             },
+            ContextPath::SimStart => SchemaResult::Ok {
+                value: context.simulation_start.to_rfc3339().into(),
+            },
+            ContextPath::SimEnd => SchemaResult::Ok {
+                value: context.simulation_end.to_rfc3339().into(),
+            },
+            ContextPath::ClockNow => {
+                let now = context.simulation_start
+                    + chrono::Duration::seconds(context.trigger.sim_offset as i64);
+                SchemaResult::Ok {
+                    value: now.to_rfc3339().into(),
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+enum ContextPath {
+    TriggerEvent,
+    SimOffset,
+    SimStart,
+    SimEnd,
+    ClockNow,
+}
+
+impl TryFrom<Vec<String>> for ContextPath {
+    type Error = String;
+
+    fn try_from(value: Vec<String>) -> Result<Self, Self::Error> {
+        let strs: Vec<&str> = value.iter().map(String::as_str).collect();
+        match strs.as_slice() {
+            ["trigger", "event"] => Ok(ContextPath::TriggerEvent),
+            ["sim", "offset"] => Ok(ContextPath::SimOffset),
+            ["sim", "start"] => Ok(ContextPath::SimStart),
+            ["sim", "end"] => Ok(ContextPath::SimEnd),
+            ["clock", "now"] => Ok(ContextPath::ClockNow),
+            _ => return Err(format!("unknown path: {:?}", value)),
         }
     }
 }
@@ -74,8 +98,8 @@ impl SchemaBuilder for ContextBuilder {
             None => return Err(vec![visitor.error("path was not set")]),
         };
 
-        Context::new(path)
-            .map(|c| Box::new(c) as Box<dyn Schema>)
+        ContextPath::try_from(path)
+            .map(|p| Box::new(Context { path: p }) as Box<dyn Schema>)
             .map_err(|e| vec![visitor.error(format!("invalid context path: {e}"))])
     }
 }
