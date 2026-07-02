@@ -150,9 +150,16 @@ fn effect_respects_both_start_and_end() {
     let effect_start_offset: u64 = 91 * 86_400;
     let effect_end_offset: u64 = 273 * 86_400;
 
-    assert!(!offsets.is_empty(), "effect should produce events within its window");
+    assert!(
+        !offsets.is_empty(),
+        "effect should produce events within its window"
+    );
 
-    let too_early: Vec<_> = offsets.iter().copied().filter(|&o| o < effect_start_offset).collect();
+    let too_early: Vec<_> = offsets
+        .iter()
+        .copied()
+        .filter(|&o| o < effect_start_offset)
+        .collect();
     assert!(
         too_early.is_empty(),
         "{} events before effect start (<{effect_start_offset}s), e.g. {}",
@@ -160,7 +167,11 @@ fn effect_respects_both_start_and_end() {
         too_early[0],
     );
 
-    let too_late: Vec<_> = offsets.iter().copied().filter(|&o| o > effect_end_offset).collect();
+    let too_late: Vec<_> = offsets
+        .iter()
+        .copied()
+        .filter(|&o| o > effect_end_offset)
+        .collect();
     assert!(
         too_late.is_empty(),
         "{} events after effect end (>{effect_end_offset}s), e.g. {}",
@@ -252,7 +263,10 @@ fn effect_bounds_outside_simulation_via_spec_are_errors() {
         .iter()
         .find(|e| matches!(e, BuildError::Effect { effect, key: EffectKey::Start, .. } if effect == "too_early"))
         .unwrap();
-    assert_eq!(start_error.message(), "start cannot be before simulation start");
+    assert_eq!(
+        start_error.message(),
+        "start cannot be before simulation start"
+    );
 
     let end_error = errors
         .iter()

@@ -8,6 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 cargo test --workspace          # run all tests
 cargo test -p rngo-sim          # run sim crate tests only
 cargo test <test_name>          # run a single test by name
+just fmt                        # format all Rust code (preferred)
 cargo fmt                       # format code (rustfmt.toml: imports_granularity = "Module")
 cargo fmt --check               # check formatting (used in CI)
 cargo clippy --workspace --all-targets -- -D warnings  # lint (warnings are errors in CI)

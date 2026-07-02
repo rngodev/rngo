@@ -201,7 +201,9 @@ mod tests {
         let parser = Moment::parser().simulation(&start, &end);
 
         // simulation.start + years(1) = (now - 2yr) + 1yr = now - 1yr
-        let moment = parser.parse("field", "simulation.start + years(1)").unwrap();
+        let moment = parser
+            .parse("field", "simulation.start + years(1)")
+            .unwrap();
         assert!(matches!(moment, Moment::Relative(d) if d.num_seconds() == -31_536_000));
 
         // simulation.end - hours(2) = (now + 5hr) - 2hr = now + 3hr

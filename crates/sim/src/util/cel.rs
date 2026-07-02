@@ -4,22 +4,44 @@ use cel::{Context, Value};
 use chrono::{DateTime, Duration, FixedOffset};
 use std::collections::HashMap;
 
-fn seconds(n: i64) -> Duration { Duration::seconds(n) }
-fn minutes(n: i64) -> Duration { Duration::seconds(n * 60) }
-fn hours(n: i64) -> Duration   { Duration::seconds(n * 3_600) }
-fn days(n: i64) -> Duration    { Duration::seconds(n * 86_400) }
-fn weeks(n: i64) -> Duration   { Duration::seconds(n * 604_800) }
-fn months(n: i64) -> Duration  { Duration::seconds(n * 2_419_200) } // 28 days
-fn years(n: i64) -> Duration   { Duration::seconds(n * 31_536_000) } // 365 days
+fn seconds(n: i64) -> Duration {
+    Duration::seconds(n)
+}
+fn minutes(n: i64) -> Duration {
+    Duration::seconds(n * 60)
+}
+fn hours(n: i64) -> Duration {
+    Duration::seconds(n * 3_600)
+}
+fn days(n: i64) -> Duration {
+    Duration::seconds(n * 86_400)
+}
+fn weeks(n: i64) -> Duration {
+    Duration::seconds(n * 604_800)
+}
+fn months(n: i64) -> Duration {
+    Duration::seconds(n * 2_419_200)
+} // 28 days
+fn years(n: i64) -> Duration {
+    Duration::seconds(n * 31_536_000)
+} // 365 days
 
-fn to_seconds(This(d): This<Duration>) -> f64 { d.num_seconds() as f64 }
-fn hz(n: i64, d: Duration) -> f64 { n as f64 / d.num_seconds() as f64 }
+fn to_seconds(This(d): This<Duration>) -> f64 {
+    d.num_seconds() as f64
+}
+fn hz(n: i64, d: Duration) -> f64 {
+    n as f64 / d.num_seconds() as f64
+}
 
 pub trait CelContextExt {
     fn with_time(&mut self) -> &mut Self;
     fn with_hertz(&mut self) -> &mut Self;
     fn with_now(&mut self, now: DateTime<FixedOffset>) -> &mut Self;
-    fn with_simulation(&mut self, start: DateTime<FixedOffset>, end: DateTime<FixedOffset>) -> &mut Self;
+    fn with_simulation(
+        &mut self,
+        start: DateTime<FixedOffset>,
+        end: DateTime<FixedOffset>,
+    ) -> &mut Self;
     fn with_offset(&mut self, offset: i64) -> &mut Self;
 }
 
@@ -61,7 +83,11 @@ impl CelContextExt for Context<'static> {
         self
     }
 
-    fn with_simulation(&mut self, start: DateTime<FixedOffset>, end: DateTime<FixedOffset>) -> &mut Self {
+    fn with_simulation(
+        &mut self,
+        start: DateTime<FixedOffset>,
+        end: DateTime<FixedOffset>,
+    ) -> &mut Self {
         let sim_map: HashMap<String, Value> = [
             ("start".to_string(), Value::Timestamp(start)),
             ("end".to_string(), Value::Timestamp(end)),
@@ -161,7 +187,10 @@ mod tests {
         let mut ctx = Context::default();
         ctx.with_time().with_hertz();
 
-        assert_eq!(float(&ctx, "hz(5, day)"), float(&ctx, "5.0 / day.toSeconds()"));
+        assert_eq!(
+            float(&ctx, "hz(5, day)"),
+            float(&ctx, "5.0 / day.toSeconds()")
+        );
     }
 
     #[test]
@@ -170,10 +199,7 @@ mod tests {
         let mut ctx = Context::default();
         ctx.with_time().with_now(now);
 
-        assert_eq!(
-            eval(&ctx, "now"),
-            Value::Timestamp(now)
-        );
+        assert_eq!(eval(&ctx, "now"), Value::Timestamp(now));
     }
 
     #[test]
@@ -222,11 +248,11 @@ mod tests {
         ctx.with_now(now);
 
         assert_eq!(eval(&ctx, "now.getFullYear()"), Value::Int(2024));
-        assert_eq!(eval(&ctx, "now.getMonth()"), Value::Int(2));       // 0-based
-        assert_eq!(eval(&ctx, "now.getDayOfYear()"), Value::Int(74));  // 0-based
+        assert_eq!(eval(&ctx, "now.getMonth()"), Value::Int(2)); // 0-based
+        assert_eq!(eval(&ctx, "now.getDayOfYear()"), Value::Int(74)); // 0-based
         assert_eq!(eval(&ctx, "now.getDayOfMonth()"), Value::Int(14)); // 0-based
-        assert_eq!(eval(&ctx, "now.getDate()"), Value::Int(15));       // 1-based
-        assert_eq!(eval(&ctx, "now.getDayOfWeek()"), Value::Int(5));   // 0=Sun
+        assert_eq!(eval(&ctx, "now.getDate()"), Value::Int(15)); // 1-based
+        assert_eq!(eval(&ctx, "now.getDayOfWeek()"), Value::Int(5)); // 0=Sun
         assert_eq!(eval(&ctx, "now.getHours()"), Value::Int(10));
         assert_eq!(eval(&ctx, "now.getMinutes()"), Value::Int(30));
         assert_eq!(eval(&ctx, "now.getSeconds()"), Value::Int(45));
