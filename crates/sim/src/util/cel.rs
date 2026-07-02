@@ -82,7 +82,7 @@ impl CelContextBuilder {
         }
 
         if let Some(now) = self.now {
-            let _ = context.add_variable("now", now);
+            context.add_variable_from_value("now", Value::Timestamp(now));
         }
 
         if self.simulation_start.is_some() || self.simulation_end.is_some() {

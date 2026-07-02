@@ -3,5 +3,5 @@ CREATE TABLE authors (
     name TEXT NOT NULL,
     email TEXT NOT NULL,
     bio TEXT,
-    created_at BIGINT NOT NULL
+    created_at TIMESTAMPTZ NOT NULL
 );

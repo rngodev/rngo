@@ -96,11 +96,12 @@ impl<'a> MomentParser<'a> {
             Value::Int(i) => i,
             Value::UInt(ui) => ui as i64,
             Value::Float(f) => f.round() as i64,
+            Value::Timestamp(dt) => dt.timestamp(),
             _ => {
                 return Err(vec![SpecError {
                     path: Some(vec![field_name.to_string()]),
                     message: format!(
-                        "{} expression must evaluate to a number (seconds relative to now)",
+                        "{} expression must evaluate to a number or timestamp (seconds relative to now)",
                         field_name
                     ),
                 }]);

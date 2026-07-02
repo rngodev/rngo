@@ -5,5 +5,5 @@ CREATE TABLE posts (
     slug TEXT NOT NULL,
     body TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'draft',
-    created_at BIGINT NOT NULL
+    created_at TIMESTAMPTZ NOT NULL
 );

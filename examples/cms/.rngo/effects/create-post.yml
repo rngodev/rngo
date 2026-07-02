@@ -1,4 +1,5 @@
-trigger: "3.0 / day"
+trigger: "3.0 / day.toSeconds()"
+end: now
 system: db
 format:
   table: posts
@@ -39,4 +40,4 @@ schema:
             value: "draft"
     created_at:
       type: context
-      path: ["sim", "offset"]
+      path: ["clock", "now"]
