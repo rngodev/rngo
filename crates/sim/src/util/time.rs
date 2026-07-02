@@ -1,6 +1,6 @@
-use super::cel::CelContextBuilder;
+use super::cel::CelContextExt;
 use crate::spec::SpecError;
-use cel::{Program, Value};
+use cel::{Context, Program, Value};
 use chrono::{DateTime, FixedOffset, NaiveDate, TimeDelta, TimeZone, Utc};
 
 #[derive(Clone, Debug)]
@@ -65,18 +65,16 @@ impl<'a> MomentParser<'a> {
             return Ok(Moment::Absolute(dt));
         }
 
-        let mut context_builder = CelContextBuilder::default();
         let now = Utc::now().fixed_offset();
-        context_builder.time().set_now(now);
+        let mut context = Context::default();
+        context.with_time().with_now(now);
 
         if let Some((simulation_start, simulation_end)) = self.simulation_range {
-            context_builder.simulation(
+            context.with_simulation(
                 simulation_start.timestamp(&now),
                 simulation_end.timestamp(&now),
             );
         };
-
-        let context = context_builder.build();
 
         let program = Program::compile(expr).map_err(|e| {
             vec![SpecError {
