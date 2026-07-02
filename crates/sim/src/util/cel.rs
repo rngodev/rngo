@@ -19,7 +19,7 @@ pub trait CelContextExt {
     fn with_time(&mut self) -> &mut Self;
     fn with_hertz(&mut self) -> &mut Self;
     fn with_now(&mut self, now: DateTime<FixedOffset>) -> &mut Self;
-    fn with_simulation(&mut self, start: i64, end: i64) -> &mut Self;
+    fn with_simulation(&mut self, start: DateTime<FixedOffset>, end: DateTime<FixedOffset>) -> &mut Self;
     fn with_offset(&mut self, offset: i64) -> &mut Self;
 }
 
@@ -61,10 +61,10 @@ impl CelContextExt for Context<'static> {
         self
     }
 
-    fn with_simulation(&mut self, start: i64, end: i64) -> &mut Self {
+    fn with_simulation(&mut self, start: DateTime<FixedOffset>, end: DateTime<FixedOffset>) -> &mut Self {
         let sim_map: HashMap<String, Value> = [
-            ("start".to_string(), Value::Int(start)),
-            ("end".to_string(), Value::Int(end)),
+            ("start".to_string(), Value::Timestamp(start)),
+            ("end".to_string(), Value::Timestamp(end)),
         ]
         .into();
         let _ = self.add_variable("simulation", Value::Map(Map::from(sim_map)));
@@ -188,11 +188,13 @@ mod tests {
 
     #[test]
     fn with_simulation_sets_map() {
+        let start = DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap();
+        let end = DateTime::parse_from_rfc3339("2024-12-31T00:00:00Z").unwrap();
         let mut ctx = Context::default();
-        ctx.with_simulation(1_000, 2_000);
+        ctx.with_simulation(start, end);
 
-        assert_eq!(eval(&ctx, "simulation.start"), Value::Int(1_000));
-        assert_eq!(eval(&ctx, "simulation.end"), Value::Int(2_000));
+        assert_eq!(eval(&ctx, "simulation.start"), Value::Timestamp(start));
+        assert_eq!(eval(&ctx, "simulation.end"), Value::Timestamp(end));
     }
 
     #[test]
