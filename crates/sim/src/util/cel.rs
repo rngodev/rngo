@@ -76,3 +76,171 @@ impl CelContextExt for Context<'static> {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cel::Program;
+    use chrono::Utc;
+
+    fn eval(ctx: &Context<'static>, expr: &str) -> Value {
+        Program::compile(expr).unwrap().execute(ctx).unwrap()
+    }
+
+    fn float(ctx: &Context<'static>, expr: &str) -> f64 {
+        match eval(ctx, expr) {
+            Value::Float(f) => f,
+            v => panic!("expected float, got {:?}", v),
+        }
+    }
+
+    fn duration(ctx: &Context<'static>, expr: &str) -> Duration {
+        match eval(ctx, expr) {
+            Value::Duration(d) => d,
+            v => panic!("expected duration, got {:?}", v),
+        }
+    }
+
+    fn bool(ctx: &Context<'static>, expr: &str) -> std::primitive::bool {
+        match eval(ctx, expr) {
+            Value::Bool(b) => b,
+            v => panic!("expected bool, got {:?}", v),
+        }
+    }
+
+    #[test]
+    fn time_unit_variables() {
+        let mut ctx = Context::default();
+        ctx.with_time();
+
+        assert_eq!(duration(&ctx, "second"), Duration::seconds(1));
+        assert_eq!(duration(&ctx, "minute"), Duration::seconds(60));
+        assert_eq!(duration(&ctx, "hour"), Duration::seconds(3_600));
+        assert_eq!(duration(&ctx, "day"), Duration::seconds(86_400));
+        assert_eq!(duration(&ctx, "week"), Duration::seconds(604_800));
+        assert_eq!(duration(&ctx, "month"), Duration::seconds(2_419_200));
+        assert_eq!(duration(&ctx, "year"), Duration::seconds(31_536_000));
+    }
+
+    #[test]
+    fn time_unit_functions() {
+        let mut ctx = Context::default();
+        ctx.with_time();
+
+        assert_eq!(duration(&ctx, "seconds(90)"), Duration::seconds(90));
+        assert_eq!(duration(&ctx, "minutes(2)"), Duration::seconds(120));
+        assert_eq!(duration(&ctx, "hours(3)"), Duration::seconds(10_800));
+        assert_eq!(duration(&ctx, "days(1)"), Duration::seconds(86_400));
+        assert_eq!(duration(&ctx, "weeks(1)"), Duration::seconds(604_800));
+        assert_eq!(duration(&ctx, "months(1)"), Duration::seconds(2_419_200));
+        assert_eq!(duration(&ctx, "years(1)"), Duration::seconds(31_536_000));
+    }
+
+    #[test]
+    fn to_seconds_method() {
+        let mut ctx = Context::default();
+        ctx.with_time();
+
+        assert_eq!(float(&ctx, "day.toSeconds()"), 86_400.0);
+        assert_eq!(float(&ctx, "hours(2).toSeconds()"), 7_200.0);
+        assert_eq!(float(&ctx, "minute.toSeconds()"), 60.0);
+    }
+
+    #[test]
+    fn hz_function() {
+        let mut ctx = Context::default();
+        ctx.with_time().with_hertz();
+
+        assert_eq!(float(&ctx, "hz(1, day)"), 1.0 / 86_400.0);
+        assert_eq!(float(&ctx, "hz(3, hour)"), 3.0 / 3_600.0);
+        assert_eq!(float(&ctx, "hz(2, week)"), 2.0 / 604_800.0);
+    }
+
+    #[test]
+    fn hz_equals_manual_division() {
+        let mut ctx = Context::default();
+        ctx.with_time().with_hertz();
+
+        assert_eq!(float(&ctx, "hz(5, day)"), float(&ctx, "5.0 / day.toSeconds()"));
+    }
+
+    #[test]
+    fn with_now_sets_timestamp() {
+        let now = Utc::now().fixed_offset();
+        let mut ctx = Context::default();
+        ctx.with_time().with_now(now);
+
+        assert_eq!(
+            eval(&ctx, "now"),
+            Value::Timestamp(now)
+        );
+    }
+
+    #[test]
+    fn now_arithmetic_with_durations() {
+        let now = Utc::now().fixed_offset();
+        let mut ctx = Context::default();
+        ctx.with_time().with_now(now);
+
+        assert!(bool(&ctx, "now + day > now"));
+        assert!(bool(&ctx, "now - hour < now"));
+    }
+
+    #[test]
+    fn with_simulation_sets_map() {
+        let mut ctx = Context::default();
+        ctx.with_simulation(1_000, 2_000);
+
+        assert_eq!(eval(&ctx, "simulation.start"), Value::Int(1_000));
+        assert_eq!(eval(&ctx, "simulation.end"), Value::Int(2_000));
+    }
+
+    #[test]
+    fn with_offset_sets_variable() {
+        let mut ctx = Context::default();
+        ctx.with_offset(42);
+
+        assert_eq!(eval(&ctx, "offset"), Value::Int(42));
+    }
+
+    #[test]
+    fn with_offset_can_be_updated() {
+        let mut ctx = Context::default();
+        ctx.with_offset(10);
+        ctx.with_offset(99);
+
+        assert_eq!(eval(&ctx, "offset"), Value::Int(99));
+    }
+
+    #[test]
+    fn now_timestamp_methods() {
+        // 2024-03-15T10:30:45Z — a Friday, day 74 of year, month 2 (0-based)
+        let now = DateTime::parse_from_rfc3339("2024-03-15T10:30:45Z").unwrap();
+        let mut ctx = Context::default();
+        ctx.with_now(now);
+
+        assert_eq!(eval(&ctx, "now.getFullYear()"), Value::Int(2024));
+        assert_eq!(eval(&ctx, "now.getMonth()"), Value::Int(2));       // 0-based
+        assert_eq!(eval(&ctx, "now.getDayOfYear()"), Value::Int(74));  // 0-based
+        assert_eq!(eval(&ctx, "now.getDayOfMonth()"), Value::Int(14)); // 0-based
+        assert_eq!(eval(&ctx, "now.getDate()"), Value::Int(15));       // 1-based
+        assert_eq!(eval(&ctx, "now.getDayOfWeek()"), Value::Int(5));   // 0=Sun
+        assert_eq!(eval(&ctx, "now.getHours()"), Value::Int(10));
+        assert_eq!(eval(&ctx, "now.getMinutes()"), Value::Int(30));
+        assert_eq!(eval(&ctx, "now.getSeconds()"), Value::Int(45));
+    }
+
+    #[test]
+    fn unit_aliases_match_functions() {
+        let mut ctx = Context::default();
+        ctx.with_time();
+
+        assert!(bool(&ctx, "second == seconds(1)"));
+        assert!(bool(&ctx, "minute == minutes(1)"));
+        assert!(bool(&ctx, "hour == hours(1)"));
+        assert!(bool(&ctx, "day == days(1)"));
+        assert!(bool(&ctx, "week == weeks(1)"));
+        assert!(bool(&ctx, "month == months(1)"));
+        assert!(bool(&ctx, "year == years(1)"));
+    }
+}
