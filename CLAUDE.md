@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## After editing code
+
+Always run `just fmt` and `just clippy` after making code changes.
+
 ## Commands
 
 ```bash
@@ -11,6 +15,7 @@ cargo test <test_name>          # run a single test by name
 just fmt                        # format all Rust code (preferred)
 cargo fmt                       # format code (rustfmt.toml: imports_granularity = "Module")
 cargo fmt --check               # check formatting (used in CI)
+just clippy                     # lint and auto-fix; CI runs the same flags with -D warnings
 cargo clippy --workspace --all-targets -- -D warnings  # lint (warnings are errors in CI)
 cargo build                     # build
 cargo run -p rngo-cli -- sim run            # run simulation (writes to .rngo/runs/local/<N>/)
