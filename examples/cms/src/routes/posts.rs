@@ -3,6 +3,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 
@@ -16,7 +17,7 @@ pub struct Post {
     pub slug: String,
     pub body: String,
     pub status: String,
-    pub created_at: i64,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Deserialize)]

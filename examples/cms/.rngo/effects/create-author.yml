@@ -1,4 +1,5 @@
-trigger: "1.0 / day"
+trigger: "hz(1, day)"
+end: now
 system: db
 format:
   table: authors
@@ -21,4 +22,4 @@ schema:
       pattern: "[ -~]{50,200}"
     created_at:
       type: context
-      path: ["trigger", "offset"]
+      path: ["clock", "now"]

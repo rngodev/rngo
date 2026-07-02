@@ -3,6 +3,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::PgPool;
 
@@ -14,7 +15,7 @@ pub struct Author {
     pub name: String,
     pub email: String,
     pub bio: Option<String>,
-    pub created_at: i64,
+    pub created_at: DateTime<Utc>,
 }
 
 pub fn router() -> Router<PgPool> {

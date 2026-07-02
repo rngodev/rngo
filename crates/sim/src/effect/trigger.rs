@@ -11,7 +11,7 @@ pub enum TriggerConfig {
 }
 
 pub struct TriggerEvent {
-    pub offset: u64,
+    pub sim_offset: u64,
     pub effect_event: Option<Rc<EffectEvent>>,
 }
 
@@ -55,7 +55,7 @@ impl Trigger {
                 if let Some(effect_event) = index.sample() {
                     *last_offset = effect_event.offset;
                     Some(TriggerEvent {
-                        offset: effect_event.offset,
+                        sim_offset: effect_event.offset,
                         effect_event: Some(effect_event.clone()),
                     })
                 } else {
@@ -65,7 +65,7 @@ impl Trigger {
             Trigger::Clock { clock, next_offset } => {
                 if let Some(offset) = next_offset {
                     let event = TriggerEvent {
-                        offset: *offset,
+                        sim_offset: *offset,
                         effect_event: None,
                     };
 

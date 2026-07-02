@@ -1,109 +1,274 @@
+use cel::extractors::This;
 use cel::objects::Map;
 use cel::{Context, Value};
+use chrono::{DateTime, Duration, FixedOffset};
 use std::collections::HashMap;
 
-macro_rules! time_unit_fns {
-    ($name:ident, $seconds:expr) => {
-        pastey::paste! {
-            fn [<$name _int_fn>](n: i64) -> f64     { (n * $seconds) as f64 }
-            fn [<$name _int_int_fn>](n: i64) -> i64  { n * $seconds }
-            fn [<$name _float_fn>](n: f64) -> f64    { n * ($seconds as f64) }
-            fn [<$name _float_int_fn>](n: f64) -> i64 { (n * ($seconds as f64)) as i64 }
-        }
-    };
+fn seconds(n: i64) -> Duration {
+    Duration::seconds(n)
+}
+fn minutes(n: i64) -> Duration {
+    Duration::seconds(n * 60)
+}
+fn hours(n: i64) -> Duration {
+    Duration::seconds(n * 3_600)
+}
+fn days(n: i64) -> Duration {
+    Duration::seconds(n * 86_400)
+}
+fn weeks(n: i64) -> Duration {
+    Duration::seconds(n * 604_800)
+}
+fn months(n: i64) -> Duration {
+    Duration::seconds(n * 2_419_200)
+} // 28 days
+fn years(n: i64) -> Duration {
+    Duration::seconds(n * 31_536_000)
+} // 365 days
+
+fn to_seconds(This(d): This<Duration>) -> f64 {
+    d.num_seconds() as f64
+}
+fn hz(n: i64, d: Duration) -> f64 {
+    n as f64 / d.num_seconds() as f64
 }
 
-time_unit_fns!(seconds, 1_i64);
-time_unit_fns!(minutes, 60_i64);
-time_unit_fns!(hours, 3_600_i64);
-time_unit_fns!(days, 86_400_i64);
-time_unit_fns!(weeks, 604_800_i64);
-time_unit_fns!(months, 2_419_200_i64); // 28 days
-time_unit_fns!(years, 31_536_000_i64); // 365 days
-
-macro_rules! register_time_fns {
-    ($ctx:expr, $plural:literal, $singular:literal, $prefix:ident) => {
-        pastey::paste! {
-            $ctx.add_function($plural, [<$prefix _int_fn>]);
-            $ctx.add_function($plural, [<$prefix _int_int_fn>]);
-            $ctx.add_function($plural, [<$prefix _float_fn>]);
-            $ctx.add_function($plural, [<$prefix _float_int_fn>]);
-            let _ = $ctx.add_variable($singular, [<$prefix _int_fn>](1));
-        }
-    };
+pub trait CelContextExt {
+    fn with_time(&mut self) -> &mut Self;
+    fn with_hertz(&mut self) -> &mut Self;
+    fn with_now(&mut self, now: DateTime<FixedOffset>) -> &mut Self;
+    fn with_simulation(
+        &mut self,
+        start: DateTime<FixedOffset>,
+        end: DateTime<FixedOffset>,
+    ) -> &mut Self;
+    fn with_offset(&mut self, offset: i64) -> &mut Self;
 }
 
-pub struct CelContextBuilder {
-    empty: bool,
-    time: bool,
-    offset: Option<i64>,
-    simulation_start: Option<i64>,
-    simulation_end: Option<i64>,
-}
+impl CelContextExt for Context<'static> {
+    fn with_time(&mut self) -> &mut Self {
+        self.add_function("seconds", seconds);
+        let _ = self.add_variable("second", Value::Duration(Duration::seconds(1)));
 
-impl CelContextBuilder {
-    pub fn default() -> Self {
-        Self {
-            empty: false,
-            time: false,
-            offset: None,
-            simulation_start: None,
-            simulation_end: None,
-        }
-    }
+        self.add_function("minutes", minutes);
+        let _ = self.add_variable("minute", Value::Duration(Duration::seconds(60)));
 
-    pub fn time(&mut self) -> &mut Self {
-        self.time = true;
+        self.add_function("hours", hours);
+        let _ = self.add_variable("hour", Value::Duration(Duration::seconds(3_600)));
+
+        self.add_function("days", days);
+        let _ = self.add_variable("day", Value::Duration(Duration::seconds(86_400)));
+
+        self.add_function("weeks", weeks);
+        let _ = self.add_variable("week", Value::Duration(Duration::seconds(604_800)));
+
+        self.add_function("months", months);
+        let _ = self.add_variable("month", Value::Duration(Duration::seconds(2_419_200)));
+
+        self.add_function("years", years);
+        let _ = self.add_variable("year", Value::Duration(Duration::seconds(31_536_000)));
+
+        self.add_function("toSeconds", to_seconds);
+
         self
     }
 
-    pub fn offset(&mut self, offset: i64) -> &mut Self {
-        self.offset = Some(offset);
+    fn with_hertz(&mut self) -> &mut Self {
+        self.add_function("hz", hz);
         self
     }
 
-    pub fn simulation(&mut self, start: i64, end: i64) -> &mut Self {
-        self.simulation_start = Some(start);
-        self.simulation_end = Some(end);
+    fn with_now(&mut self, now: DateTime<FixedOffset>) -> &mut Self {
+        self.add_variable_from_value("now", Value::Timestamp(now));
         self
     }
 
-    pub fn build(self) -> Context<'static> {
-        let mut context = if self.empty {
-            Context::empty()
-        } else {
-            Context::default()
-        };
+    fn with_simulation(
+        &mut self,
+        start: DateTime<FixedOffset>,
+        end: DateTime<FixedOffset>,
+    ) -> &mut Self {
+        let sim_map: HashMap<String, Value> = [
+            ("start".to_string(), Value::Timestamp(start)),
+            ("end".to_string(), Value::Timestamp(end)),
+        ]
+        .into();
+        let _ = self.add_variable("simulation", Value::Map(Map::from(sim_map)));
+        self
+    }
 
-        if self.time {
-            register_time_fns!(context, "seconds", "second", seconds);
-            register_time_fns!(context, "minutes", "minute", minutes);
-            register_time_fns!(context, "hours", "hour", hours);
-            register_time_fns!(context, "days", "day", days);
-            register_time_fns!(context, "weeks", "week", weeks);
-            register_time_fns!(context, "months", "month", months);
-            register_time_fns!(context, "years", "year", years);
+    fn with_offset(&mut self, offset: i64) -> &mut Self {
+        let _ = self.add_variable("offset", offset);
+        self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cel::Program;
+    use chrono::Utc;
+
+    fn eval(ctx: &Context<'static>, expr: &str) -> Value {
+        Program::compile(expr).unwrap().execute(ctx).unwrap()
+    }
+
+    fn float(ctx: &Context<'static>, expr: &str) -> f64 {
+        match eval(ctx, expr) {
+            Value::Float(f) => f,
+            v => panic!("expected float, got {:?}", v),
         }
+    }
 
-        if let Some(offset) = self.offset {
-            let _ = context.add_variable("offset", offset);
-            let _ = context.add_variable("now", offset);
+    fn duration(ctx: &Context<'static>, expr: &str) -> Duration {
+        match eval(ctx, expr) {
+            Value::Duration(d) => d,
+            v => panic!("expected duration, got {:?}", v),
         }
+    }
 
-        if self.simulation_start.is_some() || self.simulation_end.is_some() {
-            let mut sim_map: HashMap<String, Value> = HashMap::new();
-
-            if let Some(simulation_start) = self.simulation_start {
-                sim_map.insert("start".to_string(), Value::Int(simulation_start));
-            }
-
-            if let Some(simulation_end) = self.simulation_end {
-                sim_map.insert("end".to_string(), Value::Int(simulation_end));
-            }
-
-            let _ = context.add_variable("simulation", Value::Map(Map::from(sim_map)));
+    fn bool(ctx: &Context<'static>, expr: &str) -> std::primitive::bool {
+        match eval(ctx, expr) {
+            Value::Bool(b) => b,
+            v => panic!("expected bool, got {:?}", v),
         }
+    }
 
-        context
+    #[test]
+    fn time_unit_variables() {
+        let mut ctx = Context::default();
+        ctx.with_time();
+
+        assert_eq!(duration(&ctx, "second"), Duration::seconds(1));
+        assert_eq!(duration(&ctx, "minute"), Duration::seconds(60));
+        assert_eq!(duration(&ctx, "hour"), Duration::seconds(3_600));
+        assert_eq!(duration(&ctx, "day"), Duration::seconds(86_400));
+        assert_eq!(duration(&ctx, "week"), Duration::seconds(604_800));
+        assert_eq!(duration(&ctx, "month"), Duration::seconds(2_419_200));
+        assert_eq!(duration(&ctx, "year"), Duration::seconds(31_536_000));
+    }
+
+    #[test]
+    fn time_unit_functions() {
+        let mut ctx = Context::default();
+        ctx.with_time();
+
+        assert_eq!(duration(&ctx, "seconds(90)"), Duration::seconds(90));
+        assert_eq!(duration(&ctx, "minutes(2)"), Duration::seconds(120));
+        assert_eq!(duration(&ctx, "hours(3)"), Duration::seconds(10_800));
+        assert_eq!(duration(&ctx, "days(1)"), Duration::seconds(86_400));
+        assert_eq!(duration(&ctx, "weeks(1)"), Duration::seconds(604_800));
+        assert_eq!(duration(&ctx, "months(1)"), Duration::seconds(2_419_200));
+        assert_eq!(duration(&ctx, "years(1)"), Duration::seconds(31_536_000));
+    }
+
+    #[test]
+    fn to_seconds_method() {
+        let mut ctx = Context::default();
+        ctx.with_time();
+
+        assert_eq!(float(&ctx, "day.toSeconds()"), 86_400.0);
+        assert_eq!(float(&ctx, "hours(2).toSeconds()"), 7_200.0);
+        assert_eq!(float(&ctx, "minute.toSeconds()"), 60.0);
+    }
+
+    #[test]
+    fn hz_function() {
+        let mut ctx = Context::default();
+        ctx.with_time().with_hertz();
+
+        assert_eq!(float(&ctx, "hz(1, day)"), 1.0 / 86_400.0);
+        assert_eq!(float(&ctx, "hz(3, hour)"), 3.0 / 3_600.0);
+        assert_eq!(float(&ctx, "hz(2, week)"), 2.0 / 604_800.0);
+    }
+
+    #[test]
+    fn hz_equals_manual_division() {
+        let mut ctx = Context::default();
+        ctx.with_time().with_hertz();
+
+        assert_eq!(
+            float(&ctx, "hz(5, day)"),
+            float(&ctx, "5.0 / day.toSeconds()")
+        );
+    }
+
+    #[test]
+    fn with_now_sets_timestamp() {
+        let now = Utc::now().fixed_offset();
+        let mut ctx = Context::default();
+        ctx.with_time().with_now(now);
+
+        assert_eq!(eval(&ctx, "now"), Value::Timestamp(now));
+    }
+
+    #[test]
+    fn now_arithmetic_with_durations() {
+        let now = Utc::now().fixed_offset();
+        let mut ctx = Context::default();
+        ctx.with_time().with_now(now);
+
+        assert!(bool(&ctx, "now + day > now"));
+        assert!(bool(&ctx, "now - hour < now"));
+    }
+
+    #[test]
+    fn with_simulation_sets_map() {
+        let start = DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap();
+        let end = DateTime::parse_from_rfc3339("2024-12-31T00:00:00Z").unwrap();
+        let mut ctx = Context::default();
+        ctx.with_simulation(start, end);
+
+        assert_eq!(eval(&ctx, "simulation.start"), Value::Timestamp(start));
+        assert_eq!(eval(&ctx, "simulation.end"), Value::Timestamp(end));
+    }
+
+    #[test]
+    fn with_offset_sets_variable() {
+        let mut ctx = Context::default();
+        ctx.with_offset(42);
+
+        assert_eq!(eval(&ctx, "offset"), Value::Int(42));
+    }
+
+    #[test]
+    fn with_offset_can_be_updated() {
+        let mut ctx = Context::default();
+        ctx.with_offset(10);
+        ctx.with_offset(99);
+
+        assert_eq!(eval(&ctx, "offset"), Value::Int(99));
+    }
+
+    #[test]
+    fn now_timestamp_methods() {
+        // 2024-03-15T10:30:45Z — a Friday, day 74 of year, month 2 (0-based)
+        let now = DateTime::parse_from_rfc3339("2024-03-15T10:30:45Z").unwrap();
+        let mut ctx = Context::default();
+        ctx.with_now(now);
+
+        assert_eq!(eval(&ctx, "now.getFullYear()"), Value::Int(2024));
+        assert_eq!(eval(&ctx, "now.getMonth()"), Value::Int(2)); // 0-based
+        assert_eq!(eval(&ctx, "now.getDayOfYear()"), Value::Int(74)); // 0-based
+        assert_eq!(eval(&ctx, "now.getDayOfMonth()"), Value::Int(14)); // 0-based
+        assert_eq!(eval(&ctx, "now.getDate()"), Value::Int(15)); // 1-based
+        assert_eq!(eval(&ctx, "now.getDayOfWeek()"), Value::Int(5)); // 0=Sun
+        assert_eq!(eval(&ctx, "now.getHours()"), Value::Int(10));
+        assert_eq!(eval(&ctx, "now.getMinutes()"), Value::Int(30));
+        assert_eq!(eval(&ctx, "now.getSeconds()"), Value::Int(45));
+    }
+
+    #[test]
+    fn unit_aliases_match_functions() {
+        let mut ctx = Context::default();
+        ctx.with_time();
+
+        assert!(bool(&ctx, "second == seconds(1)"));
+        assert!(bool(&ctx, "minute == minutes(1)"));
+        assert!(bool(&ctx, "hour == hours(1)"));
+        assert!(bool(&ctx, "day == days(1)"));
+        assert!(bool(&ctx, "week == weeks(1)"));
+        assert!(bool(&ctx, "month == months(1)"));
+        assert!(bool(&ctx, "year == years(1)"));
     }
 }

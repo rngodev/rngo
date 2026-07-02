@@ -24,6 +24,8 @@ pub struct Effect {
     trigger: Trigger,
     schema: Box<dyn Schema>,
     end_offset: u64,
+    sim_start: DateTime<FixedOffset>,
+    sim_end: DateTime<FixedOffset>,
     format: Option<Box<dyn Format>>,
 }
 
@@ -51,6 +53,8 @@ impl Iterator for Effect {
         let trigger_event = self.trigger.pull()?;
         let context = SchemaContext {
             trigger: &trigger_event,
+            simulation_start: self.sim_start,
+            simulation_end: self.sim_end,
         };
 
         let last_id = self.event_log.last().map(|e| e.id).unwrap_or(0);
@@ -58,7 +62,7 @@ impl Iterator for Effect {
             SchemaResult::Ok { value } => Some(Ok(EffectEvent {
                 id: last_id + 1,
                 key: self.key.clone(),
-                offset: trigger_event.offset,
+                offset: trigger_event.sim_offset,
                 format: self.format.as_ref().map(|f| f.format(&value)),
                 value,
             })),
@@ -102,7 +106,7 @@ impl EffectBuilder {
             sim_end: None,
             event_log: None,
             seed: None,
-            trigger: TriggerConfig::ClockExpression("1.0 / day".into()),
+            trigger: TriggerConfig::ClockExpression("hz(1, day)".into()),
             schema_builder: None,
             format: None,
         }
@@ -187,6 +191,23 @@ impl EffectBuilder {
         let end_offset = (effect_end - sim_start).num_seconds().max(0) as u64;
         let start_offset = (effect_start - sim_start).num_seconds().max(0) as u64;
 
+        let mut errors: Vec<BuildError> = vec![];
+
+        if effect_start < sim_start {
+            errors.push(BuildError::Effect {
+                effect: self.key.clone(),
+                key: EffectKey::Start,
+                message: "start cannot be before simulation start".into(),
+            });
+        }
+        if effect_end > sim_end {
+            errors.push(BuildError::Effect {
+                effect: self.key.clone(),
+                key: EffectKey::End,
+                message: "end cannot be after simulation end".into(),
+            });
+        }
+
         let schema_result = if let Some(schema_builder) = self.schema_builder {
             let visitor = SchemaBuildVisitor {
                 event_log: event_log.clone(),
@@ -237,15 +258,22 @@ impl EffectBuilder {
                 }),
         };
 
-        let (schema, trigger) = schema_result.and_try(trigger_result).flatten_err()?;
-
-        Ok(Effect {
-            key: self.key,
-            event_log: event_log.clone(),
-            trigger,
-            schema,
-            end_offset,
-            format: self.format,
-        })
+        match schema_result.and_try(trigger_result).flatten_err() {
+            Ok((schema, trigger)) if errors.is_empty() => Ok(Effect {
+                key: self.key,
+                event_log: event_log.clone(),
+                trigger,
+                schema,
+                end_offset,
+                sim_start,
+                sim_end,
+                format: self.format,
+            }),
+            Ok(_) => Err(errors),
+            Err(mut e) => {
+                errors.append(&mut e);
+                Err(errors)
+            }
+        }
     }
 }

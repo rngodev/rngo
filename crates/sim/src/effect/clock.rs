@@ -1,5 +1,5 @@
 use crate::BuildError;
-use crate::util::cel::CelContextBuilder;
+use crate::util::cel::CelContextExt;
 use cel::{Context, Program, Value};
 use rand::RngExt;
 use rand_pcg::Pcg32;
@@ -48,7 +48,7 @@ impl ClockBuilder {
         ClockBuilder {
             key: String::new(),
             seed: 1,
-            rate: ClockRate::Expression("1.0 / day".into()),
+            rate: ClockRate::Expression("hz(1, day)".into()),
             start_offset: 0,
         }
     }
@@ -99,9 +99,8 @@ impl ClockBuilder {
                     }]
                 })?;
 
-                let mut context_builder = CelContextBuilder::default();
-                context_builder.time();
-                let mut context = context_builder.build();
+                let mut context = Context::default();
+                context.with_time().with_hertz();
                 let references = program.references();
 
                 if references.variables().contains(&"offset") {
@@ -199,14 +198,13 @@ impl RateFunction {
                 // Lazily initialize program and context after deserialization
                 if cache_ref.is_none() {
                     let program = Program::compile(expression).unwrap();
-                    let mut context_builder = CelContextBuilder::default();
-                    context_builder.time();
-                    let context = context_builder.build();
+                    let mut context = Context::default();
+                    context.with_time();
                     *cache_ref = Some((program, context));
                 }
 
                 let (prog, ctx) = cache_ref.as_mut().unwrap();
-                let _ = ctx.add_variable("offset", offset);
+                ctx.with_offset(offset);
                 match prog.execute(ctx) {
                     Ok(value) => match value {
                         Value::Float(num) => num,

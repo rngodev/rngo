@@ -1,6 +1,6 @@
-trigger: 3.0 / hour
+trigger: "hz(3, hour)"
 start: now
-end: now + hours(3.0)
+end: now + hours(3)
 system: api
 schema:
   type: object
