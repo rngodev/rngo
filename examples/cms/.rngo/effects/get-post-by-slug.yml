@@ -1,4 +1,4 @@
-trigger: "3.0 / hour.toSeconds()"
+trigger: "hz(3, hour)"
 start: now
 end: now + hours(3)
 system: api

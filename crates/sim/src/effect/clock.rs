@@ -48,7 +48,7 @@ impl ClockBuilder {
         ClockBuilder {
             key: String::new(),
             seed: 1,
-            rate: ClockRate::Expression("1.0 / day.toSeconds()".into()),
+            rate: ClockRate::Expression("hz(1, day)".into()),
             start_offset: 0,
         }
     }
@@ -100,7 +100,7 @@ impl ClockBuilder {
                 })?;
 
                 let mut context = Context::default();
-                context.with_time();
+                context.with_time().with_hertz();
                 let references = program.references();
 
                 if references.variables().contains(&"offset") {

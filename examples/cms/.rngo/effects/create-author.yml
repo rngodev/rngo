@@ -1,4 +1,4 @@
-trigger: "1.0 / day.toSeconds()"
+trigger: "hz(1, day)"
 end: now
 system: db
 format:

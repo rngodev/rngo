@@ -13,9 +13,11 @@ fn months(n: i64) -> Duration  { Duration::seconds(n * 2_419_200) } // 28 days
 fn years(n: i64) -> Duration   { Duration::seconds(n * 31_536_000) } // 365 days
 
 fn to_seconds(This(d): This<Duration>) -> f64 { d.num_seconds() as f64 }
+fn hz(n: i64, d: Duration) -> f64 { n as f64 / d.num_seconds() as f64 }
 
 pub trait CelContextExt {
     fn with_time(&mut self) -> &mut Self;
+    fn with_hertz(&mut self) -> &mut Self;
     fn with_now(&mut self, now: DateTime<FixedOffset>) -> &mut Self;
     fn with_simulation(&mut self, start: i64, end: i64) -> &mut Self;
     fn with_offset(&mut self, offset: i64) -> &mut Self;
@@ -46,6 +48,11 @@ impl CelContextExt for Context<'static> {
 
         self.add_function("toSeconds", to_seconds);
 
+        self
+    }
+
+    fn with_hertz(&mut self) -> &mut Self {
+        self.add_function("hz", hz);
         self
     }
 
