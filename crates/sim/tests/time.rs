@@ -1,7 +1,8 @@
 mod common;
 
+use common::BuildErrorTestExt;
 use rngo_sim::build::*;
-use rngo_sim::{Dialect, Simulation};
+use rngo_sim::{BuildError, Dialect, EffectKey, Simulation};
 use serde_json::Value;
 
 fn effect_offsets(sim: Simulation, take: usize) -> Vec<u64> {
@@ -115,4 +116,96 @@ fn effect_respects_end_time_via_spec() {
         too_late.len(),
         too_late[0],
     );
+}
+
+#[test]
+fn effect_start_before_simulation_start_is_error() {
+    use chrono::TimeDelta;
+    use rngo_sim::Moment;
+
+    let mut builder = Simulation::builder();
+    // Simulation: -30d to now. Effect tries to start before the simulation at -60d.
+    builder.with_effect("events", |e| {
+        e.set_start(Moment::Relative(TimeDelta::days(-60)));
+        e.set_schema(constant().value(Value::Null));
+    });
+
+    let errors = builder.build().unwrap_err();
+    let error = errors
+        .iter()
+        .find(|e| matches!(e, BuildError::Effect { effect, .. } if effect == "events"))
+        .unwrap();
+
+    assert_eq!(error.message(), "start cannot be before simulation start");
+    assert!(matches!(
+        error,
+        BuildError::Effect {
+            key: EffectKey::Start,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn effect_end_after_simulation_end_is_error() {
+    use chrono::TimeDelta;
+    use rngo_sim::Moment;
+
+    let mut builder = Simulation::builder();
+    // Simulation: -30d to now. Effect tries to end after the simulation at +1d.
+    builder.with_effect("events", |e| {
+        e.set_end(Moment::Relative(TimeDelta::days(1)));
+        e.set_schema(constant().value(Value::Null));
+    });
+
+    let errors = builder.build().unwrap_err();
+    let error = errors
+        .iter()
+        .find(|e| matches!(e, BuildError::Effect { effect, .. } if effect == "events"))
+        .unwrap();
+
+    assert_eq!(error.message(), "end cannot be after simulation end");
+    assert!(matches!(
+        error,
+        BuildError::Effect {
+            key: EffectKey::End,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn effect_bounds_outside_simulation_via_spec_are_errors() {
+    let spec = serde_json::json!({
+        "start": "2024-01-01",
+        "end": "2024-12-31",
+        "effects": {
+            "too_early": {
+                "start": "2023-06-01",
+                "schema": { "type": "constant", "value": null }
+            },
+            "too_late": {
+                "end": "2025-06-01",
+                "schema": { "type": "constant", "value": null }
+            }
+        }
+    });
+
+    let errors = Dialect::core()
+        .parse_simulation_json(spec)
+        .unwrap()
+        .build()
+        .unwrap_err();
+
+    let start_error = errors
+        .iter()
+        .find(|e| matches!(e, BuildError::Effect { effect, key: EffectKey::Start, .. } if effect == "too_early"))
+        .unwrap();
+    assert_eq!(start_error.message(), "start cannot be before simulation start");
+
+    let end_error = errors
+        .iter()
+        .find(|e| matches!(e, BuildError::Effect { effect, key: EffectKey::End, .. } if effect == "too_late"))
+        .unwrap();
+    assert_eq!(end_error.message(), "end cannot be after simulation end");
 }

@@ -82,4 +82,6 @@ pub enum EffectKey {
     Schema,
     Trigger,
     Config,
+    Start,
+    End,
 }

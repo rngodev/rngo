@@ -191,6 +191,23 @@ impl EffectBuilder {
         let end_offset = (effect_end - sim_start).num_seconds().max(0) as u64;
         let start_offset = (effect_start - sim_start).num_seconds().max(0) as u64;
 
+        let mut errors: Vec<BuildError> = vec![];
+
+        if effect_start < sim_start {
+            errors.push(BuildError::Effect {
+                effect: self.key.clone(),
+                key: EffectKey::Start,
+                message: "start cannot be before simulation start".into(),
+            });
+        }
+        if effect_end > sim_end {
+            errors.push(BuildError::Effect {
+                effect: self.key.clone(),
+                key: EffectKey::End,
+                message: "end cannot be after simulation end".into(),
+            });
+        }
+
         let schema_result = if let Some(schema_builder) = self.schema_builder {
             let visitor = SchemaBuildVisitor {
                 event_log: event_log.clone(),
@@ -241,17 +258,22 @@ impl EffectBuilder {
                 }),
         };
 
-        let (schema, trigger) = schema_result.and_try(trigger_result).flatten_err()?;
-
-        Ok(Effect {
-            key: self.key,
-            event_log: event_log.clone(),
-            trigger,
-            schema,
-            end_offset,
-            sim_start,
-            sim_end,
-            format: self.format,
-        })
+        match schema_result.and_try(trigger_result).flatten_err() {
+            Ok((schema, trigger)) if errors.is_empty() => Ok(Effect {
+                key: self.key,
+                event_log: event_log.clone(),
+                trigger,
+                schema,
+                end_offset,
+                sim_start,
+                sim_end,
+                format: self.format,
+            }),
+            Ok(_) => Err(errors),
+            Err(mut e) => {
+                errors.append(&mut e);
+                Err(errors)
+            }
+        }
     }
 }
