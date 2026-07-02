@@ -69,7 +69,7 @@ impl TryFrom<Vec<String>> for ContextPath {
             ["sim", "start"] => Ok(ContextPath::SimStart),
             ["sim", "end"] => Ok(ContextPath::SimEnd),
             ["clock", "now"] => Ok(ContextPath::ClockNow),
-            _ => return Err(format!("unknown path: {:?}", value)),
+            _ => Err(format!("unknown path: {:?}", value)),
         }
     }
 }
