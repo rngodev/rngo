@@ -118,6 +118,57 @@ fn effect_respects_end_time_via_spec() {
     );
 }
 
+/// An effect with both start and end inside the simulation window should only
+/// emit events between its own start and end, not outside them.
+#[test]
+fn effect_respects_both_start_and_end() {
+    let spec = serde_json::json!({
+        "seed": 1,
+        "start": "2024-01-01",
+        "end": "2024-12-31",
+        "effects": {
+            "events": {
+                "trigger": "hz(1, day)",
+                "start": "2024-04-01",
+                "end": "2024-09-30",
+                "schema": { "type": "constant", "value": null }
+            }
+        }
+    });
+
+    let sim = Dialect::core()
+        .parse_simulation_json(spec)
+        .unwrap()
+        .build()
+        .unwrap();
+
+    let offsets: Vec<u64> = sim.map(|e| e.offset).collect();
+
+    // 2024 is a leap year.
+    // 2024-04-01 is day 92 (31+29+31+1), so offset = 91 days from Jan 1.
+    // 2024-09-30 is day 274 (31+29+31+30+31+30+31+31+30), so offset = 273 days.
+    let effect_start_offset: u64 = 91 * 86_400;
+    let effect_end_offset: u64 = 273 * 86_400;
+
+    assert!(!offsets.is_empty(), "effect should produce events within its window");
+
+    let too_early: Vec<_> = offsets.iter().copied().filter(|&o| o < effect_start_offset).collect();
+    assert!(
+        too_early.is_empty(),
+        "{} events before effect start (<{effect_start_offset}s), e.g. {}",
+        too_early.len(),
+        too_early[0],
+    );
+
+    let too_late: Vec<_> = offsets.iter().copied().filter(|&o| o > effect_end_offset).collect();
+    assert!(
+        too_late.is_empty(),
+        "{} events after effect end (>{effect_end_offset}s), e.g. {}",
+        too_late.len(),
+        too_late[0],
+    );
+}
+
 #[test]
 fn effect_start_before_simulation_start_is_error() {
     use chrono::TimeDelta;
