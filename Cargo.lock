@@ -838,6 +838,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "tempfile",
+ "uuid",
 ]
 
 [[package]]
@@ -1099,6 +1100,7 @@ version = "1.23.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "144d6b123cef80b301b8f72a9e2ca4370ddec21950d0a103dd22c437006d2db7"
 dependencies = [
+ "getrandom",
  "js-sys",
  "wasm-bindgen",
 ]

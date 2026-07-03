@@ -3,18 +3,20 @@ use rngo_sim::{Dialect, FsProxyLog, SimpleEventLog, spec};
 use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::{fmt, fs};
+use uuid::Uuid;
 
 pub fn run(base: &Path, stdout: bool) -> Result<(), Box<dyn Error>> {
     let _ = dotenvy::from_path(base.join(".env"));
 
     let spec = load_spec(base)?;
 
-    let run_dir = next_run_dir(base)?;
+    let run_dir = new_run_dir(base)?;
     fs::create_dir_all(&run_dir)?;
     fs::write(
         run_dir.join("spec.json"),
         serde_json::to_string_pretty(&spec)?,
     )?;
+    update_last_symlink(base, &run_dir)?;
 
     let log = FsProxyLog::new(Box::new(SimpleEventLog::default()), run_dir.clone());
 
@@ -98,18 +100,21 @@ fn load_spec(base: &Path) -> Result<spec::Simulation, Box<dyn Error>> {
     Ok(spec::from_value(spec).map_err(join_errors)?)
 }
 
-fn next_run_dir(base: &Path) -> Result<PathBuf, Box<dyn Error>> {
-    let runs_dir = base.join(".rngo/runs/local");
+fn new_run_dir(base: &Path) -> Result<PathBuf, Box<dyn Error>> {
+    let runs_dir = base.join(".rngo/runs");
     fs::create_dir_all(&runs_dir)?;
+    let id = Uuid::now_v7();
+    Ok(runs_dir.join(id.to_string()))
+}
 
-    let next = fs::read_dir(&runs_dir)?
-        .filter_map(|e| e.ok())
-        .filter_map(|e| e.file_name().to_str().and_then(|s| s.parse::<u64>().ok()))
-        .max()
-        .map(|n| n + 1)
-        .unwrap_or(1);
-
-    Ok(runs_dir.join(next.to_string()))
+fn update_last_symlink(base: &Path, run_dir: &Path) -> Result<(), Box<dyn Error>> {
+    let link = base.join(".rngo/runs/last");
+    if link.exists() || link.is_symlink() {
+        fs::remove_file(&link)?;
+    }
+    let target = run_dir.strip_prefix(base.join(".rngo/runs"))?;
+    std::os::unix::fs::symlink(target, &link)?;
+    Ok(())
 }
 
 fn join_errors<E: fmt::Display>(errors: Vec<E>) -> String {
