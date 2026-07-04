@@ -108,7 +108,7 @@ fn builder() {
 
     simulation_builder
         .with_effect("user", |e| {
-            e.set_schema(
+            e.schema(
                 object()
                     .property("id", number().min(1).scale(0).step(1))
                     .property("name", string().pattern(".{10,50}"))
@@ -119,10 +119,10 @@ fn builder() {
                             .option(1, constant().value(Value::Null)),
                     )
                     .property("created_at", context().path(["sim", "offset"])),
-            );
+            )
         })
         .with_effect("post", |e| {
-            e.set_schema(
+            e.schema(
                 object()
                     .property("id", number().min(1).scale(0).step(1))
                     .property(
@@ -141,7 +141,7 @@ fn builder() {
                         ),
                     )
                     .property("created_at", context().path(["sim", "offset"])),
-            );
+            )
         });
 
     let simulation = simulation_builder.build().unwrap();

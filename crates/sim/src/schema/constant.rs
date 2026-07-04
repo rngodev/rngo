@@ -34,12 +34,12 @@ pub struct ConstantBuilder {
 
 impl ConstantBuilder {
     pub fn value(mut self, value: impl Into<Value>) -> Self {
-        self.value = Some(value.into());
+        self.set_value(value);
         self
     }
 
-    pub fn set_value(&mut self, value: Value) -> &mut Self {
-        self.value = Some(value);
+    pub fn set_value(&mut self, value: impl Into<Value>) -> &mut Self {
+        self.value = Some(value.into());
         self
     }
 }

@@ -35,7 +35,7 @@ pub struct ArrayBuilder {
 
 impl ArrayBuilder {
     pub fn min_items(mut self, value: usize) -> Self {
-        self.min_items = value;
+        self.set_min_items(value);
         self
     }
 
@@ -45,7 +45,7 @@ impl ArrayBuilder {
     }
 
     pub fn max_items(mut self, value: usize) -> Self {
-        self.max_items = value;
+        self.set_max_items(value);
         self
     }
 
@@ -55,7 +55,7 @@ impl ArrayBuilder {
     }
 
     pub fn items(mut self, builder: impl SchemaBuilder + 'static) -> Self {
-        self.items_builder = Some(Box::new(builder));
+        self.set_items(builder);
         self
     }
 

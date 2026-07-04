@@ -52,7 +52,7 @@ pub struct FunctionBuilder {
 
 impl FunctionBuilder {
     pub fn expression(mut self, expression: impl Into<String>) -> Self {
-        self.expression = Some(expression.into());
+        self.set_expression(expression);
         self
     }
 
@@ -66,7 +66,7 @@ impl FunctionBuilder {
         key: impl Into<String>,
         builder: impl SchemaBuilder + 'static,
     ) -> Self {
-        self.variable_builders.insert(key.into(), Box::new(builder));
+        self.set_variable(key, builder);
         self
     }
 

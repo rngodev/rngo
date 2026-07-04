@@ -70,7 +70,7 @@ pub struct NumberBuilder {
 
 impl NumberBuilder {
     pub fn min(mut self, min: impl Into<f64>) -> Self {
-        self.min = Some(min.into());
+        self.set_min(min);
         self
     }
 
@@ -80,7 +80,7 @@ impl NumberBuilder {
     }
 
     pub fn max(mut self, max: impl Into<f64>) -> Self {
-        self.max = Some(max.into());
+        self.set_max(max);
         self
     }
 
@@ -90,7 +90,7 @@ impl NumberBuilder {
     }
 
     pub fn scale(mut self, scale: u32) -> Self {
-        self.scale = Some(scale);
+        self.set_scale(scale);
         self
     }
 
@@ -100,7 +100,7 @@ impl NumberBuilder {
     }
 
     pub fn step(mut self, step: impl Into<f64>) -> Self {
-        self.step = Some(step.into());
+        self.set_step(step);
         self
     }
 

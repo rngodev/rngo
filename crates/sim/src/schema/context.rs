@@ -81,7 +81,7 @@ pub struct ContextBuilder {
 
 impl ContextBuilder {
     pub fn path(mut self, path: impl IntoIterator<Item: Into<String>>) -> Self {
-        self.path = Some(path.into_iter().map(Into::into).collect());
+        self.set_path(path);
         self
     }
 

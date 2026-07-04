@@ -112,8 +112,18 @@ impl EffectBuilder {
         }
     }
 
+    pub fn start(mut self, start: Moment) -> Self {
+        self.set_start(start);
+        self
+    }
+
     pub fn set_start(&mut self, start: Moment) -> &mut Self {
         self.start = Some(start);
+        self
+    }
+
+    pub fn end(mut self, end: Moment) -> Self {
+        self.set_end(end);
         self
     }
 
@@ -122,8 +132,18 @@ impl EffectBuilder {
         self
     }
 
+    pub fn now(mut self, now: DateTime<FixedOffset>) -> Self {
+        self.set_now(now);
+        self
+    }
+
     pub fn set_now(&mut self, now: DateTime<FixedOffset>) -> &mut Self {
         self.now = Some(now);
+        self
+    }
+
+    pub fn sim_start(mut self, start: DateTime<FixedOffset>) -> Self {
+        self.set_sim_start(start);
         self
     }
 
@@ -132,8 +152,18 @@ impl EffectBuilder {
         self
     }
 
+    pub fn sim_end(mut self, end: DateTime<FixedOffset>) -> Self {
+        self.set_sim_end(end);
+        self
+    }
+
     pub fn set_sim_end(&mut self, end: DateTime<FixedOffset>) -> &mut Self {
         self.sim_end = Some(end);
+        self
+    }
+
+    pub fn event_log(mut self, event_log: Rc<dyn LogReader>) -> Self {
+        self.set_event_log(event_log);
         self
     }
 
@@ -142,8 +172,18 @@ impl EffectBuilder {
         self
     }
 
+    pub fn seed(mut self, seed: u64) -> Self {
+        self.set_seed(seed);
+        self
+    }
+
     pub fn set_seed(&mut self, seed: u64) -> &mut Self {
         self.seed = Some(seed);
+        self
+    }
+
+    pub fn trigger_effect(mut self, key: String) -> Self {
+        self.set_trigger_effect(key);
         self
     }
 
@@ -152,8 +192,18 @@ impl EffectBuilder {
         self
     }
 
+    pub fn trigger_hertz(mut self, hertz: f64) -> Self {
+        self.set_trigger_hertz(hertz);
+        self
+    }
+
     pub fn set_trigger_hertz(&mut self, hertz: f64) -> &mut Self {
         self.trigger = TriggerConfig::ClockHertz(hertz);
+        self
+    }
+
+    pub fn trigger_expression(mut self, expression: String) -> Self {
+        self.set_trigger_expression(expression);
         self
     }
 
@@ -162,8 +212,18 @@ impl EffectBuilder {
         self
     }
 
+    pub fn schema(mut self, builder: impl SchemaBuilder + 'static) -> Self {
+        self.set_schema(builder);
+        self
+    }
+
     pub fn set_schema(&mut self, builder: impl SchemaBuilder + 'static) -> &mut Self {
         self.schema_builder = Some(Box::new(builder));
+        self
+    }
+
+    pub fn format(mut self, format: Box<dyn Format>) -> Self {
+        self.set_format(format);
         self
     }
 
