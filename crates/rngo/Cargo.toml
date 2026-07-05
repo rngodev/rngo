@@ -1,6 +1,6 @@
 [package]
 name = "rngo"
-version = "0.25.0"
+version = "0.26.0"
 edition = "2024"
 description = "Rust library for rngo simulations"
 license = "MIT OR Apache-2.0"
@@ -10,4 +10,4 @@ keywords = ["simulation", "testing", "data", "codegen"]
 categories = ["development-tools::testing", "simulation"]
 
 [dependencies]
-rngo-sim = { version = "0.25.0", path = "../sim" }
+rngo-sim = { version = "0.26.0", path = "../sim" }
