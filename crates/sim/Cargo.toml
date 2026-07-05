@@ -1,6 +1,6 @@
 [package]
 name = "rngo-sim"
-version = "0.26.0"
+version = "0.27.0"
 edition = "2024"
 description = "Core simulation engine for rngo"
 license = "MIT OR Apache-2.0"
