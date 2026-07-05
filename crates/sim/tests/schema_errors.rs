@@ -108,7 +108,9 @@ fn spec() {
     }"#;
 
     let value: serde_json::Value = serde_json::from_str(json).unwrap();
-    let errors = Dialect::core().parse_simulation_json(value).unwrap_err();
+    let errors = Dialect::primitive()
+        .parse_simulation_json(value)
+        .unwrap_err();
 
     let by_effect = |key: &'static str| {
         move |e: &&SpecError| e.path().is_some_and(|p| p.get(1).is_some_and(|k| k == key))

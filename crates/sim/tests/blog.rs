@@ -202,8 +202,7 @@ fn spec() {
     }"#;
 
     let value: serde_json::Value = serde_json::from_str(json).unwrap();
-    let dialect = Dialect::core();
-    let simulation_builder = dialect.parse_simulation_json(value).unwrap();
+    let simulation_builder = Dialect::primitive().parse_simulation_json(value).unwrap();
     let simulation = simulation_builder.build().unwrap();
     assert_simulation(simulation);
 }

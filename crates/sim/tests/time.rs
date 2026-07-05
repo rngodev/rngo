@@ -87,7 +87,7 @@ fn effect_respects_end_time_via_spec() {
         }
     });
 
-    let sim = Dialect::core()
+    let sim = Dialect::primitive()
         .parse_simulation_json(spec)
         .unwrap()
         .build()
@@ -134,7 +134,7 @@ fn effect_respects_both_start_and_end() {
         }
     });
 
-    let sim = Dialect::core()
+    let sim = Dialect::primitive()
         .parse_simulation_json(spec)
         .unwrap()
         .build()
@@ -251,7 +251,7 @@ fn effect_bounds_outside_simulation_via_spec_are_errors() {
         }
     });
 
-    let errors = Dialect::core()
+    let errors = Dialect::primitive()
         .parse_simulation_json(spec)
         .unwrap()
         .build()

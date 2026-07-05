@@ -42,7 +42,7 @@ pub struct StrBuilder {
 
 impl StrBuilder {
     pub fn pattern(mut self, pattern: impl Into<String>) -> Self {
-        self.pattern = pattern.into();
+        self.set_pattern(pattern);
         self
     }
 

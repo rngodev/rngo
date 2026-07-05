@@ -23,7 +23,7 @@ impl Dialect {
         }
     }
 
-    pub fn core() -> Self {
+    pub fn primitive() -> Self {
         Dialect::new(
             vec![
                 Box::new(schema::Array::parser()),

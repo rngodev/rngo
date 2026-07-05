@@ -5,7 +5,7 @@ use rngo_sim::{Dialect, EffectEvent, SpecError};
 
 fn parse_and_run(json: &str) -> Vec<EffectEvent> {
     let value: serde_json::Value = serde_json::from_str(json).unwrap();
-    let simulation = Dialect::core()
+    let simulation = Dialect::primitive()
         .parse_simulation_json(value)
         .unwrap()
         .build()
@@ -15,7 +15,9 @@ fn parse_and_run(json: &str) -> Vec<EffectEvent> {
 
 fn parse_errors(json: &str) -> Vec<SpecError> {
     let value: serde_json::Value = serde_json::from_str(json).unwrap();
-    Dialect::core().parse_simulation_json(value).unwrap_err()
+    Dialect::primitive()
+        .parse_simulation_json(value)
+        .unwrap_err()
 }
 
 fn effect_format(event: &EffectEvent) -> Option<&str> {

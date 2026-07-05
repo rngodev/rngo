@@ -20,7 +20,7 @@ pub fn run(base: &Path, stdout: bool) -> Result<(), Box<dyn Error>> {
 
     let log = FsProxyLog::new(Box::new(SimpleEventLog::default()), run_dir.clone());
 
-    let simulation_builder = Dialect::core()
+    let simulation_builder = Dialect::primitive()
         .parse_simulation(spec.clone())
         .map_err(join_errors)?;
 
