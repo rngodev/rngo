@@ -113,7 +113,10 @@ fn update_last_symlink(base: &Path, run_dir: &Path) -> Result<(), Box<dyn Error>
         fs::remove_file(&link)?;
     }
     let target = run_dir.strip_prefix(base.join(".rngo/runs"))?;
+    #[cfg(unix)]
     std::os::unix::fs::symlink(target, &link)?;
+    #[cfg(windows)]
+    std::os::windows::fs::symlink_dir(target, &link)?;
     Ok(())
 }
 
