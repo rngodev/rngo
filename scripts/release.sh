@@ -31,6 +31,7 @@ echo "Releasing $CURRENT -> $VERSION"
 sed -i.bak -E "s/^version = \"[^\"]+\"/version = \"$VERSION\"/" crates/sim/Cargo.toml
 sed -i.bak -E "s/^version = \"[^\"]+\"/version = \"$VERSION\"/" crates/rngo/Cargo.toml
 sed -i.bak -E "s/^rngo-sim = \{ version = \"[^\"]+\"/rngo-sim = { version = \"$VERSION\"/" crates/rngo/Cargo.toml
+sed -i.bak -E "s/^rngo-sim = \{ version = \"[^\"]+\"/rngo-sim = { version = \"$VERSION\"/" crates/cli/Cargo.toml
 sed -i.bak -E "s/^version = \"[^\"]+\"/version = \"$VERSION\"/" crates/cli/Cargo.toml
 find crates -name "*.bak" -delete
 
