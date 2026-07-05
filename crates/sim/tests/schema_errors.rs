@@ -9,26 +9,24 @@ fn builder() {
     let mut simulation_builder = Simulation::builder();
 
     simulation_builder
-        .with_effect("number", |e| {
-            e.set_schema(number().min(100).max(18));
-        })
+        .with_effect("number", |e| e.schema(number().min(100).max(18)))
         .with_effect("object", |e| {
-            e.set_schema(
+            e.schema(
                 object()
                     .property("name", string())
                     .property("age", number().min(100).max(18)),
-            );
+            )
         })
-        .with_effect("no_schema", |_e| {})
+        .with_effect("no_schema", |e| e)
         .with_effect("nested", |e| {
-            e.set_schema(
+            e.schema(
                 object().property(
                     "score",
                     select()
                         .option(1, number().min(100).max(18))
                         .option(1, constant().value(0)),
                 ),
-            );
+            )
         });
 
     let errors = simulation_builder.build().unwrap_err();
@@ -110,7 +108,9 @@ fn spec() {
     }"#;
 
     let value: serde_json::Value = serde_json::from_str(json).unwrap();
-    let errors = Dialect::core().parse_simulation_json(value).unwrap_err();
+    let errors = Dialect::primitive()
+        .parse_simulation_json(value)
+        .unwrap_err();
 
     let by_effect = |key: &'static str| {
         move |e: &&SpecError| e.path().is_some_and(|p| p.get(1).is_some_and(|k| k == key))

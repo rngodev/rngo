@@ -18,9 +18,7 @@ fn effect_offsets(sim: Simulation, take: usize) -> Vec<u64> {
 #[test]
 fn simulation_respects_end_time() {
     let mut builder = Simulation::builder();
-    builder.with_effect("events", |e| {
-        e.set_schema(constant().value(Value::Null));
-    });
+    builder.with_effect("events", |e| e.schema(constant().value(Value::Null)));
 
     let offsets = effect_offsets(builder.build().unwrap(), 60);
     let window_secs: u64 = 30 * 86_400;
@@ -48,8 +46,8 @@ fn effect_respects_start_time() {
     let mut builder = Simulation::builder();
     // Simulation: -30d to now. Effect starts at -15d (halfway through).
     builder.with_effect("events", |e| {
-        e.set_start(Moment::Relative(TimeDelta::days(-15)));
-        e.set_schema(constant().value(Value::Null));
+        e.start(Moment::Relative(TimeDelta::days(-15)))
+            .schema(constant().value(Value::Null))
     });
 
     let offsets = effect_offsets(builder.build().unwrap(), 60);
@@ -89,7 +87,7 @@ fn effect_respects_end_time_via_spec() {
         }
     });
 
-    let sim = Dialect::core()
+    let sim = Dialect::primitive()
         .parse_simulation_json(spec)
         .unwrap()
         .build()
@@ -136,7 +134,7 @@ fn effect_respects_both_start_and_end() {
         }
     });
 
-    let sim = Dialect::core()
+    let sim = Dialect::primitive()
         .parse_simulation_json(spec)
         .unwrap()
         .build()
@@ -188,8 +186,8 @@ fn effect_start_before_simulation_start_is_error() {
     let mut builder = Simulation::builder();
     // Simulation: -30d to now. Effect tries to start before the simulation at -60d.
     builder.with_effect("events", |e| {
-        e.set_start(Moment::Relative(TimeDelta::days(-60)));
-        e.set_schema(constant().value(Value::Null));
+        e.start(Moment::Relative(TimeDelta::days(-60)))
+            .schema(constant().value(Value::Null))
     });
 
     let errors = builder.build().unwrap_err();
@@ -216,8 +214,8 @@ fn effect_end_after_simulation_end_is_error() {
     let mut builder = Simulation::builder();
     // Simulation: -30d to now. Effect tries to end after the simulation at +1d.
     builder.with_effect("events", |e| {
-        e.set_end(Moment::Relative(TimeDelta::days(1)));
-        e.set_schema(constant().value(Value::Null));
+        e.end(Moment::Relative(TimeDelta::days(1)))
+            .schema(constant().value(Value::Null))
     });
 
     let errors = builder.build().unwrap_err();
@@ -253,7 +251,7 @@ fn effect_bounds_outside_simulation_via_spec_are_errors() {
         }
     });
 
-    let errors = Dialect::core()
+    let errors = Dialect::primitive()
         .parse_simulation_json(spec)
         .unwrap()
         .build()

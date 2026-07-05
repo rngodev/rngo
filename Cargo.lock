@@ -827,8 +827,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
+name = "rngo"
+version = "0.23.0"
+dependencies = [
+ "rngo-sim",
+]
+
+[[package]]
 name = "rngo-cli"
-version = "0.1.0"
+version = "0.23.0"
 dependencies = [
  "chrono",
  "clap",
@@ -843,7 +850,7 @@ dependencies = [
 
 [[package]]
 name = "rngo-sim"
-version = "0.1.0"
+version = "0.23.0"
 dependencies = [
  "cel",
  "chrono",

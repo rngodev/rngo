@@ -52,7 +52,7 @@ pub struct SelectBuilder {
 
 impl SelectBuilder {
     pub fn option(mut self, weight: u32, builder: impl SchemaBuilder + 'static) -> Self {
-        self.option_builders.push((weight, Box::new(builder)));
+        self.set_option(weight, builder);
         self
     }
 

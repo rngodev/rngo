@@ -50,7 +50,7 @@ impl ObjectBuilder {
     }
 
     pub fn property(mut self, key: &str, builder: impl SchemaBuilder + 'static) -> Self {
-        self.property_builders.insert(key.into(), Box::new(builder));
+        self.set_property(key, builder);
         self
     }
 }

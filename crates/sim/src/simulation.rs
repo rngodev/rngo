@@ -76,8 +76,18 @@ impl SimulationBuilder {
         self
     }
 
+    pub fn seed(mut self, seed: u64) -> Self {
+        self.set_seed(seed);
+        self
+    }
+
     pub fn set_seed(&mut self, seed: u64) -> &mut Self {
         self.seed = seed;
+        self
+    }
+
+    pub fn start(mut self, start: Moment) -> Self {
+        self.set_start(start);
         self
     }
 
@@ -86,18 +96,27 @@ impl SimulationBuilder {
         self
     }
 
+    pub fn end(mut self, end: Moment) -> Self {
+        self.set_end(end);
+        self
+    }
+
     pub fn set_end(&mut self, end: Moment) -> &mut Self {
         self.end = end;
         self
     }
 
-    pub fn add_effect(&mut self, effect: EffectBuilder) {
+    pub fn set_effect(&mut self, effect: EffectBuilder) {
         self.effect_builders.push(effect)
     }
 
-    pub fn with_effect(&mut self, key: &str, f: impl FnOnce(&mut EffectBuilder)) -> &mut Self {
-        let mut builder = Effect::builder(key.into());
-        f(&mut builder);
+    pub fn with_effect(
+        &mut self,
+        key: &str,
+        f: impl FnOnce(EffectBuilder) -> EffectBuilder,
+    ) -> &mut Self {
+        let builder = Effect::builder(key.into());
+        let builder = f(builder);
         self.effect_builders.push(builder);
         self
     }
@@ -118,11 +137,13 @@ impl SimulationBuilder {
         let mut effects = vec![];
 
         for mut effect_builder in self.effect_builders {
-            effect_builder.set_now(now);
-            effect_builder.set_sim_start(start);
-            effect_builder.set_sim_end(end);
-            effect_builder.set_event_log(self.event_log.reader());
-            effect_builder.set_seed(self.seed);
+            effect_builder
+                .set_now(now)
+                .set_sim_start(start)
+                .set_sim_end(end)
+                .set_event_log(self.event_log.reader())
+                .set_seed(self.seed);
+
             match effect_builder.build() {
                 Ok(effect) => effects.push(effect),
                 Err(mut e) => errors.append(&mut e),
