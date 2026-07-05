@@ -1,0 +1,76 @@
+name: release
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+permissions:
+  contents: write
+jobs:
+  crates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          cargo publish -p rngo-sim --verbose
+          sleep 30
+          cargo publish -p rngo --verbose
+          sleep 30
+          cargo publish -p rngo-cli --verbose
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create release
+        uses: softprops/action-gh-release@v2.2.2
+  binaries:
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            bin_ext: ""
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            bin_ext: ""
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            bin_ext: ""
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            bin_ext: ".exe"
+    name: Build for ${{ matrix.target }}
+    needs: release
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+      - name: Install musl dependencies
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build
+        run: cargo build -p rngo-cli --release --target ${{ matrix.target }}
+      - name: Package binary
+        shell: bash
+        run: |
+          BIN=rngo${{ matrix.bin_ext }}
+          ZIP=rngo-${{ github.ref_name }}-${{ matrix.target }}.zip
+
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/${BIN} dist/${BIN}
+          cd dist
+
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            7z a $ZIP $BIN
+          else
+            zip $ZIP $BIN
+          fi
+      - name: Add files to release
+        uses: softprops/action-gh-release@v2.2.2
+        with:
+          files: dist/*.zip
