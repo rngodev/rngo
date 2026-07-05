@@ -8,3 +8,6 @@ clippy:
 
 clippy-fix:
     cargo clippy --fix --workspace --all-targets -- -D warnings
+
+release:
+    bash scripts/release.sh
