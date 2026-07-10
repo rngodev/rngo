@@ -5,10 +5,13 @@ use std::path::{Path, PathBuf};
 use std::{fmt, fs};
 use uuid::Uuid;
 
-pub fn run(base: &Path, stdout: bool) -> Result<(), Box<dyn Error>> {
+pub fn run(base: &Path, stdout: bool, spec_path: Option<&Path>) -> Result<(), Box<dyn Error>> {
     let _ = dotenvy::from_path(base.join(".env"));
 
-    let spec = load_spec(base)?;
+    let spec = match spec_path {
+        Some(path) => load_spec_file(path)?,
+        None => load_spec(base)?,
+    };
 
     let run_dir = new_run_dir(base)?;
     fs::create_dir_all(&run_dir)?;
@@ -38,6 +41,11 @@ pub fn run(base: &Path, stdout: bool) -> Result<(), Box<dyn Error>> {
     effect_dispatch.finish()?;
 
     Ok(())
+}
+
+fn load_spec_file(path: &Path) -> Result<spec::Simulation, Box<dyn Error>> {
+    let value: serde_json::Value = serde_yaml::from_str(&fs::read_to_string(path)?)?;
+    Ok(spec::from_value(value).map_err(join_errors)?)
 }
 
 fn load_spec(base: &Path) -> Result<spec::Simulation, Box<dyn Error>> {
@@ -179,7 +187,7 @@ mod tests {
             }),
         );
 
-        run(base, false).unwrap();
+        run(base, false, None).unwrap();
 
         let content = fs::read_to_string(&output).unwrap();
         assert!(
@@ -229,12 +237,60 @@ mod tests {
             }),
         );
 
-        run(base, false).unwrap();
+        run(base, false, None).unwrap();
 
         let content = fs::read_to_string(&output).unwrap();
         assert!(
             content.lines().count() > 0,
             "stream subprocess should have received events"
+        );
+    }
+
+    #[test]
+    fn spec_flag_uses_given_file_instead_of_rngo_dir() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+        let output = base.join("spec_flag_output.txt");
+
+        // A broken `.rngo/spec.yml` proves it is never read when `--spec` is used.
+        fs::create_dir_all(base.join(".rngo")).unwrap();
+        fs::write(base.join(".rngo/spec.yml"), "not: [valid").unwrap();
+
+        let command = "cat >> ".to_string() + output.to_str().unwrap();
+        let spec_path = base.join("external_spec.yml");
+        write_yaml(
+            &spec_path,
+            &json!({
+                "seed": 1,
+                "start": "2024-01-01",
+                "end": "2024-01-04",
+                "systems": {
+                    "logger": {
+                        "format": {},
+                        "import": { "type": "stream", "command": command }
+                    }
+                },
+                "effects": {
+                    "ping": {
+                        "system": "logger",
+                        "trigger": "hz(1, day)",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "id": { "type": "number", "min": 1, "scale": 0, "step": 1 }
+                            }
+                        }
+                    }
+                }
+            }),
+        );
+
+        run(base, false, Some(&spec_path)).unwrap();
+
+        let content = fs::read_to_string(&output).unwrap();
+        assert!(
+            content.lines().count() > 0,
+            "run should use the spec file passed via --spec"
         );
     }
 }
