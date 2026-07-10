@@ -29,7 +29,7 @@ The server listens on `http://localhost:3000`.
 From the repo root, run:
 
 ```sh
-cargo run -p rngo-cli -- sim run --dir examples/cms
+cargo run -p rngo-cli -- run --dir examples/cms
 ```
 
 This generates ~365 authors and ~1095 posts over the year 2024 and streams SQL `INSERT` statements directly into Postgres via `psql`. Requires `psql` to be installed locally and `DATABASE_URL` to be set in your environment (or `.env`).
@@ -37,7 +37,7 @@ This generates ~365 authors and ~1095 posts over the year 2024 and streams SQL `
 To preview the generated events without writing to the database:
 
 ```sh
-cargo run -p rngo-cli -- sim run --dir examples/cms --stdout
+cargo run -p rngo-cli -- run --dir examples/cms --stdout
 ```
 
 ## API
