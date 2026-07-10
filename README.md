@@ -1,149 +1,38 @@
-# rngo-rs
+# rngo
 
-Rust libraries and binaries for rngo.
+rngo helps you understand what your code does by simulating usage and recording everything.
 
-## rngo CLI
+In particular, rngo is:
+- a [library](https://crates.io/crates/rngo) which implements a simulation specification language and runtime
+- a [CLI](https://rngo.dev/docs/cli) which runs simulations, routes events and captures responses / logs / telemetry
 
-The rngo CLI runs simulations and stores the data locally. You can install the rngo CLI on macOS and Linux using Homebrew:
+## CLI
+
+You can install the rngo CLI on macOS and Linux using Homebrew:
 
 ```bash
 brew install rngodev/tap/cli
 ```
 
-For full documentation, visit [https://rngo.dev/docs/cli](https://rngo.dev/docs/cli)
+You can also download a binary for the [latest release](https://github.com/rngodev/rngo/releases/latest). Or build from source:
 
-## rngo Library
-
-The `rngo` library lets you define and run simulations in Rust code. You can define a simulation with a builder DSL:
-
-```rust
-let mut simulation = rngo::Simulation.builder()
-    .seed(41)
-    .start(TimeDelta.months(-3))
-    .end(TimeDelta.zero())
-    .with_effect("user", |effect| {
-        effect
-            .trigger_expression("hz(10, hour) * (offset * 0.0001)")
-            .schema(
-                object()
-                    .property("id", number().min(1).scale(0).step(1))
-                    .property("name", string().pattern(".{10,50}"))
-                    .property(
-                        "age",
-                        select()
-                            .option(3, number().min(18).max(65))
-                            .option(1, constant().value(Value::Null)),
-                    )
-                    .property("created_at", context().path(["clock", "now"])),
-            )
-          
-    })
-    .with_effect("post", |effect| {
-        effect
-            .trigger_expression("hz(100, hour) * (offset * 0.0001)")
-            .schema(
-                object()
-                    .property("id", number().min(1).scale(0).step(1))
-                    .property(
-                        "user_id",
-                        function()
-                            .expression("user.id")
-                            .variable("user", reference().effect("user")),
-                    )
-                    .property("title", string().pattern("Post: .{10,20}"))
-                    .property(
-                        "tags",
-                        array().min_items(0).max_items(10).items(
-                            select()
-                                .option(1, constant().value("a"))
-                                .option(1, constant().value("b")),
-                        ),
-                    )
-                    .property("created_at", context().path(["clock", "now"])),
-            )
-    })
-    .build()?;
+```bash
+cargo install rngo-cli
 ```
 
-You can also build a simulation from JSON. You'd express the above like this in JSON:
+See [Quick Start](https://rngo.dev/docs/guides/quick-start) for next steps.
 
-```json
-{
-    "seed": 41,
-    "start": "now - months(3)",
-    "end": "now",
-    "effects": {
-        "user": {
-            "schema": {
-                "type": "object",
-                "properties": {
-                    "id": { "type": "number", "min": 1, "scale": 0, "step": 1 },
-                    "name": { "type": "string", "pattern": ".{10,50}" },
-                    "age": {
-                        "type": "select",
-                        "options": [
-                            { "weight": 3, "schema": { "type": "number", "min": 18, "max": 65 } },
-                            { "weight": 1, "schema": { "type": "constant", "value": null } }
-                        ]
-                    },
-                    "created_at": { "type": "context", "path": ["clock", "offset"] }
-                }
-            }
-        },
-        "post": {
-            "schema": {
-                "type": "object",
-                "properties": {
-                    "id": { "type": "number", "min": 1, "scale": 0, "step": 1 },
-                    "user_id": {
-                        "type": "function",
-                        "expression": "user.id",
-                        "variables": {
-                            "user": { "type": "reference", "effect": "user" }
-                        }
-                    },
-                    "title": { "type": "string", "pattern": "Post: .{10,20}" },
-                    "tags": {
-                        "type": "array",
-                        "minItems": 0,
-                        "maxItems": 10,
-                        "items": {
-                            "type": "select",
-                            "options": [
-                                { "weight": 1, "schema": { "type": "constant", "value": "a" } },
-                                { "weight": 1, "schema": { "type": "constant", "value": "b" } }
-                            ]
-                        }
-                    },
-                    "created_at": { "type": "context", "path": ["sim", "offset"] }
-                }
-            }
-        }
-    }
-}
+## Library
+
+Add the library to your Rust project like this:
+
+```bash
+cargo add rngo
 ```
 
-You can parse it like this:
+See [crates.io](https://crates.io/crates/rngo) for more.
 
-```rust
-let value: serde_json::Value = serde_json::from_str(raw).unwrap();
-let builder = rngo::Dialect::primitive().parse_simulation_json(value)?;
-let mut simulation = simulation.build()?;
-```
+## Links
 
-Both produce a `Simulation` which is an iterator that produces events:
-
-```rust
-for event in simulation {
-    println!("{}", serde_json::to_string(&event).unwrap());
-}
-```
-
-Which outputs JSON lines like:
-
-```json
-{"type":"effect","id":1,"key":"user","offset":0,"value":{"id":1,"name":"Gvtlzqnbhf","age":42,"created_at":0},"format":null}
-{"type":"effect","id":2,"key":"post","offset":36,"value":{"id":1,"user_id":1,"title":"Post: Abcdefghijklmno","tags":["a","b","a"],"created_at":36},"format":null}
-{"type":"effect","id":3,"key":"user","offset":371,"value":{"id":2,"name":"Rqmzwlxpjt","age":null,"created_at":371},"format":null}
-...
-```
+- [Homepage](https://rngo.dev)
+- [Documentation](https://rngo.dev/docs)
