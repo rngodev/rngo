@@ -12,26 +12,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    Project {
-        #[command(subcommand)]
-        command: ProjectCommands,
-    },
-    Sim {
-        #[command(subcommand)]
-        command: SimCommands,
-    },
-}
-
-#[derive(Subcommand)]
-enum ProjectCommands {
     Init {
         #[arg(long, default_value = ".")]
         dir: std::path::PathBuf,
     },
-}
-
-#[derive(Subcommand)]
-enum SimCommands {
     Run {
         #[arg(long)]
         stdout: bool,
@@ -46,21 +30,17 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Project { command } => match command {
-            ProjectCommands::Init { dir } => {
-                if let Err(e) = project::init(&dir) {
-                    eprintln!("error: {e}");
-                    std::process::exit(1);
-                }
+        Commands::Init { dir } => {
+            if let Err(e) = project::init(&dir) {
+                eprintln!("error: {e}");
+                std::process::exit(1);
             }
-        },
-        Commands::Sim { command } => match command {
-            SimCommands::Run { stdout, dir, spec } => {
-                if let Err(e) = sim::run(&dir, stdout, spec.as_deref()) {
-                    eprintln!("error: {e}");
-                    std::process::exit(1);
-                }
+        }
+        Commands::Run { stdout, dir, spec } => {
+            if let Err(e) = sim::run(&dir, stdout, spec.as_deref()) {
+                eprintln!("error: {e}");
+                std::process::exit(1);
             }
-        },
+        }
     }
 }

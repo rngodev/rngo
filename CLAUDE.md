@@ -19,8 +19,8 @@ just clippy                     # lint, matching CI (warnings are errors)
 just clippy-fix                 # lint and auto-fix clippy suggestions
 cargo clippy --workspace --all-targets -- -D warnings  # lint (warnings are errors in CI)
 cargo build                     # build
-cargo run -p rngo-cli -- sim run            # run simulation (writes to .rngo/runs/local/<N>/)
-cargo run -p rngo-cli -- sim run --stdout   # run simulation, print all events to stdout as JSON
+cargo run -p rngo-cli -- run            # run simulation (writes to .rngo/runs/local/<N>/)
+cargo run -p rngo-cli -- run --stdout   # run simulation, print all events to stdout as JSON
 ```
 
 ## Architecture
