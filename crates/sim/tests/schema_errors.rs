@@ -9,12 +9,12 @@ fn builder() {
     let mut simulation_builder = Simulation::builder();
 
     simulation_builder
-        .with_effect("number", |e| e.schema(number().min(100).max(18)))
+        .with_effect("number", |e| e.schema(number().minimum(100).maximum(18)))
         .with_effect("object", |e| {
             e.schema(
                 object()
                     .property("name", string())
-                    .property("age", number().min(100).max(18)),
+                    .property("age", number().minimum(100).maximum(18)),
             )
         })
         .with_effect("no_schema", |e| e)
@@ -23,7 +23,7 @@ fn builder() {
                 object().property(
                     "score",
                     select()
-                        .option(1, number().min(100).max(18))
+                        .option(1, number().minimum(100).maximum(18))
                         .option(1, constant().value(0)),
                 ),
             )
@@ -36,7 +36,7 @@ fn builder() {
         .find(|e| matches!(e, BuildError::Schema { effect, .. } if effect == "number"))
         .unwrap();
 
-    assert_eq!(number_error.message(), "min is greater than max");
+    assert_eq!(number_error.message(), "minimum is greater than maximum");
     assert!(number_error.schema_path().unwrap().is_empty());
 
     let object_error = errors
@@ -44,7 +44,7 @@ fn builder() {
         .find(|e| matches!(e, BuildError::Schema { effect, .. } if effect == "object"))
         .unwrap();
 
-    assert_eq!(object_error.message(), "min is greater than max");
+    assert_eq!(object_error.message(), "minimum is greater than maximum");
     let object_path = object_error.schema_path().unwrap();
     assert_eq!(object_path.len(), 1);
     assert_eq!(object_path[0].kind, "property");
@@ -69,7 +69,7 @@ fn builder() {
         .find(|e| matches!(e, BuildError::Schema { effect, .. } if effect == "nested"))
         .unwrap();
 
-    assert_eq!(nested_error.message(), "min is greater than max");
+    assert_eq!(nested_error.message(), "minimum is greater than maximum");
     let nested_path = nested_error.schema_path().unwrap();
     assert_eq!(nested_path.len(), 2);
     assert_eq!(nested_path[0].kind, "property");
@@ -83,7 +83,7 @@ fn spec() {
     let json = r#"{
         "effects": {
             "number": {
-                "schema": { "type": "number", "min": "not-a-number" }
+                "schema": { "type": "number", "minimum": "not-a-number" }
             },
             "object": {
                 "schema": { "type": "object" }
@@ -98,7 +98,7 @@ fn spec() {
                         "score": {
                             "type": "select",
                             "options": [
-                                { "schema": { "type": "number", "min": "not-a-number" } }
+                                { "schema": { "type": "number", "minimum": "not-a-number" } }
                             ]
                         }
                     }
@@ -117,11 +117,11 @@ fn spec() {
     };
 
     let number_error = errors.iter().find(by_effect("number")).unwrap();
-    assert_eq!(number_error.message(), "min must be a number");
+    assert_eq!(number_error.message(), "minimum must be a number");
     let number_path = number_error.path().unwrap();
     assert_eq!(
         number_path.as_slice(),
-        ["effects", "number", "schema", "min"]
+        ["effects", "number", "schema", "minimum"]
     );
 
     let object_error = errors.iter().find(by_effect("object")).unwrap();
@@ -139,7 +139,7 @@ fn spec() {
     assert!(unknown_error.path().is_none());
 
     let nested_error = errors.iter().find(by_effect("nested")).unwrap();
-    assert_eq!(nested_error.message(), "min must be a number");
+    assert_eq!(nested_error.message(), "minimum must be a number");
     let nested_path = nested_error.path().unwrap();
     assert_eq!(
         nested_path.as_slice(),
@@ -152,7 +152,7 @@ fn spec() {
             "options",
             "0",
             "schema",
-            "min"
+            "minimum"
         ]
     );
 }

@@ -12,12 +12,12 @@ let mut simulation = rngo::Simulation.builder()
             .trigger_expression("hz(10, hour) * (offset * 0.0001)")
             .schema(
                 object()
-                    .property("id", number().min(1).scale(0).step(1))
+                    .property("id", number().minimum(1).scale(0).step(1))
                     .property("name", string().pattern(".{10,50}"))
                     .property(
                         "age",
                         select()
-                            .option(3, number().min(18).max(65))
+                            .option(3, number().minimum(18).maximum(65))
                             .option(1, constant().value(Value::Null)),
                     )
                     .property("created_at", context().path(["clock", "now"])),
@@ -29,7 +29,7 @@ let mut simulation = rngo::Simulation.builder()
             .trigger_expression("hz(100, hour) * (offset * 0.0001)")
             .schema(
                 object()
-                    .property("id", number().min(1).scale(0).step(1))
+                    .property("id", number().minimum(1).scale(0).step(1))
                     .property(
                         "user_id",
                         function()
@@ -63,12 +63,12 @@ You can also build a simulation from JSON. You'd express the above like this in 
             "schema": {
                 "type": "object",
                 "properties": {
-                    "id": { "type": "number", "min": 1, "scale": 0, "step": 1 },
+                    "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 },
                     "name": { "type": "string", "pattern": ".{10,50}" },
                     "age": {
                         "type": "select",
                         "options": [
-                            { "weight": 3, "schema": { "type": "number", "min": 18, "max": 65 } },
+                            { "weight": 3, "schema": { "type": "number", "minimum": 18, "maximum": 65 } },
                             { "weight": 1, "schema": { "type": "constant", "value": null } }
                         ]
                     },
@@ -80,7 +80,7 @@ You can also build a simulation from JSON. You'd express the above like this in 
             "schema": {
                 "type": "object",
                 "properties": {
-                    "id": { "type": "number", "min": 1, "scale": 0, "step": 1 },
+                    "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 },
                     "user_id": {
                         "type": "function",
                         "expression": "user.id",
