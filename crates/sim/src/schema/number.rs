@@ -8,8 +8,8 @@ use rand_pcg::Pcg32;
 #[derive(Debug)]
 pub struct Number {
     rng: Pcg32,
-    min: f64,
-    max: f64,
+    minimum: f64,
+    maximum: f64,
     scale: Option<u32>,
     step: Option<f64>,
     current: Option<f64>,
@@ -18,8 +18,8 @@ pub struct Number {
 impl Number {
     pub fn builder() -> NumberBuilder {
         NumberBuilder {
-            min: None,
-            max: None,
+            minimum: None,
+            maximum: None,
             scale: None,
             step: None,
         }
@@ -33,14 +33,16 @@ impl Number {
 impl Schema for Number {
     fn next(&mut self, _context: &SchemaContext) -> SchemaResult {
         let mut value = if let Some(step) = self.step {
-            let current = self
-                .current
-                .get_or_insert(if step >= 0.0 { self.min } else { self.max });
+            let current = self.current.get_or_insert(if step >= 0.0 {
+                self.minimum
+            } else {
+                self.maximum
+            });
             let v = *current;
             *current += step;
             v
         } else {
-            self.rng.random_range(self.min..self.max)
+            self.rng.random_range(self.minimum..self.maximum)
         };
 
         if let Some(scale) = self.scale {
@@ -62,30 +64,30 @@ impl Schema for Number {
 
 #[derive(Debug)]
 pub struct NumberBuilder {
-    min: Option<f64>,
-    max: Option<f64>,
+    minimum: Option<f64>,
+    maximum: Option<f64>,
     scale: Option<u32>,
     step: Option<f64>,
 }
 
 impl NumberBuilder {
-    pub fn min(mut self, min: impl Into<f64>) -> Self {
-        self.set_min(min);
+    pub fn minimum(mut self, minimum: impl Into<f64>) -> Self {
+        self.set_minimum(minimum);
         self
     }
 
-    pub fn set_min(&mut self, min: impl Into<f64>) -> &mut Self {
-        self.min = Some(min.into());
+    pub fn set_minimum(&mut self, minimum: impl Into<f64>) -> &mut Self {
+        self.minimum = Some(minimum.into());
         self
     }
 
-    pub fn max(mut self, max: impl Into<f64>) -> Self {
-        self.set_max(max);
+    pub fn maximum(mut self, maximum: impl Into<f64>) -> Self {
+        self.set_maximum(maximum);
         self
     }
 
-    pub fn set_max(&mut self, max: impl Into<f64>) -> &mut Self {
-        self.max = Some(max.into());
+    pub fn set_maximum(&mut self, maximum: impl Into<f64>) -> &mut Self {
+        self.maximum = Some(maximum.into());
         self
     }
 
@@ -114,9 +116,9 @@ impl SchemaBuilder for NumberBuilder {
     fn build(&self, visitor: SchemaBuildVisitor) -> Result<Box<dyn Schema>, Vec<BuildError>> {
         let mut errors = vec![];
 
-        match (self.min, self.max) {
-            (Some(min), Some(max)) if min > max => {
-                errors.push(visitor.error("min is greater than max"));
+        match (self.minimum, self.maximum) {
+            (Some(minimum), Some(maximum)) if minimum > maximum => {
+                errors.push(visitor.error("minimum is greater than maximum"));
             }
             _ => (),
         }
@@ -124,8 +126,8 @@ impl SchemaBuilder for NumberBuilder {
         if errors.is_empty() {
             Ok(Box::new(Number {
                 rng: visitor.rng(),
-                min: self.min.unwrap_or(f64::MIN),
-                max: self.max.unwrap_or(f64::MAX),
+                minimum: self.minimum.unwrap_or(f64::MIN),
+                maximum: self.maximum.unwrap_or(f64::MAX),
                 scale: self.scale,
                 step: self.step,
                 current: None,
@@ -147,26 +149,26 @@ impl SchemaParser for NumberParser {
         let mut builder = Number::builder();
         let mut errors = vec![];
 
-        if let Some(v) = visitor.spec().fields.get("min") {
+        if let Some(v) = visitor.spec().fields.get("minimum") {
             match v.as_f64() {
-                Some(min) => {
-                    builder.set_min(min);
+                Some(minimum) => {
+                    builder.set_minimum(minimum);
                 }
                 None => errors.push(Error {
-                    path: Some(visitor.absolute_sub_path(vec!["min".into()])),
-                    message: "min must be a number".into(),
+                    path: Some(visitor.absolute_sub_path(vec!["minimum".into()])),
+                    message: "minimum must be a number".into(),
                 }),
             }
         }
 
-        if let Some(v) = visitor.spec().fields.get("max") {
+        if let Some(v) = visitor.spec().fields.get("maximum") {
             match v.as_f64() {
-                Some(max) => {
-                    builder.set_max(max);
+                Some(maximum) => {
+                    builder.set_maximum(maximum);
                 }
                 None => errors.push(Error {
-                    path: Some(visitor.absolute_sub_path(vec!["max".into()])),
-                    message: "max must be a number".into(),
+                    path: Some(visitor.absolute_sub_path(vec!["maximum".into()])),
+                    message: "maximum must be a number".into(),
                 }),
             }
         }

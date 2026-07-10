@@ -172,7 +172,7 @@ mod tests {
                 "schema": {
                     "type": "object",
                     "properties": {
-                        "id": { "type": "number", "min": 1, "scale": 0, "step": 1 }
+                        "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
                     }
                 }
             }),
@@ -222,7 +222,7 @@ mod tests {
                 "schema": {
                     "type": "object",
                     "properties": {
-                        "id": { "type": "number", "min": 1, "scale": 0, "step": 1 }
+                        "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
                     }
                 }
             }),
@@ -277,7 +277,7 @@ mod tests {
                         "schema": {
                             "type": "object",
                             "properties": {
-                                "id": { "type": "number", "min": 1, "scale": 0, "step": 1 }
+                                "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
                             }
                         }
                     }
