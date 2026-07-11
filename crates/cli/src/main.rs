@@ -3,8 +3,9 @@ mod sim;
 
 use clap::{Parser, Subcommand};
 
+/// Simulate code usage, record everything and analyze the results
 #[derive(Parser)]
-#[command(name = "rngo")]
+#[command(name = "rngo", version)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -12,17 +13,29 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Initialize a directory for rngo
+    ///
+    /// Creates a `.rngo` directory, a starter `.rngo/spec.yml`, and
+    /// updates `.gitignore`.
     Init {
+        /// Directory to initialize
         #[arg(long, default_value = ".")]
         dir: std::path::PathBuf,
     },
+    /// Run a simulation
+    ///
+    /// Loads a spec, runs the simulation, routes events to systems,
+    /// and records everything.
     Run {
+        /// Write  events to stdout (instead of routing to systems)
         #[arg(long)]
         stdout: bool,
-        #[arg(long, default_value = ".")]
-        dir: std::path::PathBuf,
+        /// Path to a spec file (instead of building from the `.rngo` directory)
         #[arg(long)]
         spec: Option<std::path::PathBuf>,
+        /// Path to the `.rngo` directory
+        #[arg(long, default_value = ".")]
+        dir: std::path::PathBuf,
     },
 }
 
