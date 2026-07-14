@@ -1,0 +1,34 @@
+value:
+  type: function
+  expression: "givenName + ' ' + familyName"
+  variables:
+    givenName:
+      type: select
+      options:
+        - schema: { type: constant, value: "Alice" }
+        - schema: { type: constant, value: "Marcus" }
+        - schema: { type: constant, value: "Priya" }
+        - schema: { type: constant, value: "James" }
+        - schema: { type: constant, value: "Fatima" }
+        - schema: { type: constant, value: "Noah" }
+        - schema: { type: constant, value: "Sofia" }
+        - schema: { type: constant, value: "Liam" }
+        - schema: { type: constant, value: "Grace" }
+        - schema: { type: constant, value: "Ethan" }
+        - schema: { type: constant, value: "Ana" }
+        - schema: { type: constant, value: "David" }
+    familyName:
+      type: select
+      options:
+        - schema: { type: constant, value: "Johnson" }
+        - schema: { type: constant, value: "Chen" }
+        - schema: { type: constant, value: "Patel" }
+        - schema: { type: constant, value: "O'Connor" }
+        - schema: { type: constant, value: "Al-Sayed" }
+        - schema: { type: constant, value: "Kim" }
+        - schema: { type: constant, value: "Rossi" }
+        - schema: { type: constant, value: "Murphy" }
+        - schema: { type: constant, value: "Nakamura" }
+        - schema: { type: constant, value: "Walker" }
+        - schema: { type: constant, value: "Silva" }
+        - schema: { type: constant, value: "Okafor" }

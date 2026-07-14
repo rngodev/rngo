@@ -4,40 +4,41 @@ A headless CMS API built with [Axum](https://github.com/tokio-rs/axum) and Postg
 
 ## Setup
 
-**Start Postgres:**
+**Start Postgres and API:**
 
 ```sh
-docker compose up -d
+just start
 ```
 
-**Configure the database URL:**
-
-```sh
-echo 'DATABASE_URL=postgres://cms:cms@localhost:5432/cms' > .env
-```
-
-**Start the API** (runs migrations automatically):
-
-```sh
-cargo run
-```
-
-The server listens on `http://localhost:3000`.
+The server listens on `http://localhost:3000`. This will also run migrations.
 
 ## Seeding with rngo
 
 From the repo root, run:
 
 ```sh
-cargo run -p rngo-cli -- run --dir examples/cms
+just rngo-run
 ```
 
 This generates ~365 authors and ~1095 posts over the year 2024 and streams SQL `INSERT` statements directly into Postgres via `psql`. Requires `psql` to be installed locally and `DATABASE_URL` to be set in your environment (or `.env`).
 
-To preview the generated events without writing to the database:
+It will also generate a handful of API requests against the `GET /posts/slug/:slug` endpoint.
+
+Reusable custom schemas defined under `.rngo/schemas/` are referenced from the effects by name instead of being inlined:
+
+- `name` and `email` are enumerations of realistic constant values.
+- `lorem.word`, `lorem.sentence`, and `lorem.paragraph` compose into placeholder text and are used for author bios and post titles/bodies.
+
+To truncate the Postgres database, run:
 
 ```sh
-cargo run -p rngo-cli -- run --dir examples/cms --stdout
+just db-truncate
+```
+
+To connect to the Postgres database, run:
+
+```sh
+just psql
 ```
 
 ## API

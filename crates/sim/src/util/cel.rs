@@ -3,6 +3,7 @@ use cel::objects::Map;
 use cel::{Context, Value};
 use chrono::{DateTime, Duration, FixedOffset};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 fn seconds(n: i64) -> Duration {
     Duration::seconds(n)
@@ -33,9 +34,20 @@ fn hz(n: i64, d: Duration) -> f64 {
     n as f64 / d.num_seconds() as f64
 }
 
+fn join(This(list): This<Arc<Vec<Value>>>, separator: Arc<String>) -> String {
+    list.iter()
+        .map(|v| match v {
+            Value::String(s) => s.to_string(),
+            other => format!("{other:?}"),
+        })
+        .collect::<Vec<_>>()
+        .join(separator.as_str())
+}
+
 pub trait CelContextExt {
     fn with_time(&mut self) -> &mut Self;
     fn with_hertz(&mut self) -> &mut Self;
+    fn with_strings(&mut self) -> &mut Self;
     fn with_now(&mut self, now: DateTime<FixedOffset>) -> &mut Self;
     fn with_simulation(
         &mut self,
@@ -75,6 +87,11 @@ impl CelContextExt for Context<'static> {
 
     fn with_hertz(&mut self) -> &mut Self {
         self.add_function("hz", hz);
+        self
+    }
+
+    fn with_strings(&mut self) -> &mut Self {
+        self.add_function("join", join);
         self
     }
 
@@ -124,6 +141,13 @@ mod tests {
         match eval(ctx, expr) {
             Value::Duration(d) => d,
             v => panic!("expected duration, got {:?}", v),
+        }
+    }
+
+    fn string(ctx: &Context<'static>, expr: &str) -> String {
+        match eval(ctx, expr) {
+            Value::String(s) => (*s).clone(),
+            v => panic!("expected string, got {:?}", v),
         }
     }
 
@@ -256,6 +280,19 @@ mod tests {
         assert_eq!(eval(&ctx, "now.getHours()"), Value::Int(10));
         assert_eq!(eval(&ctx, "now.getMinutes()"), Value::Int(30));
         assert_eq!(eval(&ctx, "now.getSeconds()"), Value::Int(45));
+    }
+
+    #[test]
+    fn join_method_joins_list_of_strings() {
+        let mut ctx = Context::default();
+        ctx.with_strings();
+
+        assert_eq!(
+            string(&ctx, "['a', 'b', 'c'].join('-')"),
+            "a-b-c".to_string()
+        );
+        assert_eq!(string(&ctx, "['solo'].join(', ')"), "solo".to_string());
+        assert_eq!(string(&ctx, "[].join(', ')"), "".to_string());
     }
 
     #[test]

@@ -1,6 +1,7 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::build::{BuildError, SchemaEdge};
 use crate::spec::{self, SchemaParseVisitor, SchemaParser, SpecError as Error};
+use crate::util::cel::CelContextExt;
 use cel::{Context, Program};
 use indexmap::IndexMap;
 use std::collections::HashMap;
@@ -27,6 +28,7 @@ impl Function {
 impl Schema for Function {
     fn next(&mut self, context: &SchemaContext) -> SchemaResult {
         let mut ctx = Context::default();
+        ctx.with_strings();
         for (key, schema) in &mut self.variables {
             match schema.next(context) {
                 SchemaResult::Ok { value } => {

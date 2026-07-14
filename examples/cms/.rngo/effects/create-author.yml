@@ -12,14 +12,11 @@ schema:
       scale: 0
       step: 1
     name:
-      type: string
-      pattern: "[A-Z][a-z]{3,8} [A-Z][a-z]{4,10}"
+      type: name
     email:
-      type: string
-      pattern: "[a-z]{5,10}@[a-z]{4,8}\\.(com|net|org)"
+      type: email
     bio:
-      type: string
-      pattern: "[ -~]{50,200}"
+      type: lorem.sentence
     created_at:
       type: context
       path: ["clock", "now"]

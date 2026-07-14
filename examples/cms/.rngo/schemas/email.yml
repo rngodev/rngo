@@ -1,0 +1,18 @@
+value:
+  type: function
+  expression: "local + '@' + domain"
+  variables:
+    local:
+      type: string
+      pattern: "[a-z]{5,10}"
+    domain:
+      type: select
+      options:
+        - weight: 3
+          schema: { type: constant, value: "gmail.com" }
+        - weight: 2
+          schema: { type: constant, value: "yahoo.com" }
+        - weight: 2
+          schema: { type: constant, value: "outlook.com" }
+        - schema: { type: constant, value: "icloud.com" }
+        - schema: { type: constant, value: "protonmail.com" }

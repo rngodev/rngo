@@ -19,25 +19,19 @@ schema:
           type: reference
           effect: create-author
     title:
-      type: string
-      pattern: "[A-Z][a-z]{3,10}( [a-z]{3,8}){2,5}"
+      type: lorem.sentence
     slug:
       type: string
       pattern: "[a-z]{3,8}-[a-z]{3,8}-[a-z]{3,8}"
     body:
-      type: string
-      pattern: "[ -~]{200,500}"
+      type: lorem.paragraph
     status:
       type: select
       options:
         - weight: 3
-          schema:
-            type: constant
-            value: "published"
+          schema: { type: constant, value: "published" }
         - weight: 1
-          schema:
-            type: constant
-            value: "draft"
+          schema: { type: constant, value: "draft" }
     created_at:
       type: context
       path: ["clock", "now"]
