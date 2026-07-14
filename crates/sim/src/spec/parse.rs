@@ -5,7 +5,22 @@ use crate::schema::SchemaBuilder;
 use crate::simulation::{Simulation, SimulationBuilder};
 use crate::util::time::Moment;
 use crate::{schema, spec};
+use indexmap::IndexMap;
+use std::cell::RefCell;
 use std::rc::Rc;
+
+/// Custom schema names may not shadow these; kept in sync with `Dialect::primitive()`.
+const PRIMITIVE_SCHEMA_TYPES: &[&str] = &[
+    "array",
+    "constant",
+    "context",
+    "function",
+    "number",
+    "object",
+    "reference",
+    "select",
+    "string",
+];
 
 pub struct Dialect {
     schema_parsers: Rc<Vec<Box<dyn SchemaParser>>>,
@@ -74,6 +89,25 @@ impl Dialect {
             };
         };
 
+        for name in spec.schemas.keys() {
+            if PRIMITIVE_SCHEMA_TYPES.contains(&name.as_str()) {
+                errors.push(SpecError {
+                    path: Some(vec!["schemas".into(), name.clone()]),
+                    message: format!(
+                        "\"{name}\" is a primitive schema type and cannot be used as a custom schema name"
+                    ),
+                });
+            }
+        }
+
+        let custom_schema_parser = Rc::new(CustomSchemaParser::new(
+            self.schema_parsers.clone(),
+            spec.schemas
+                .iter()
+                .map(|(name, file)| (name.clone(), file.value.clone()))
+                .collect(),
+        ));
+
         for (key, effect) in &spec.effects {
             let mut effect_builder = Effect::builder(key.clone());
             let effect_moment_parser =
@@ -139,10 +173,11 @@ impl Dialect {
 
             let visitor = SchemaParseVisitor {
                 schema_parsers: self.schema_parsers.clone(),
+                custom_schema_parser: Rc::clone(&custom_schema_parser),
                 simulation_seed: simulation_builder.seed,
-                effect_key: effect_builder.key.clone(),
                 spec: effect.schema.clone(),
                 path: vec![],
+                root: vec!["effects".into(), key.clone(), "schema".into()],
             };
 
             match visitor.parse() {
@@ -261,10 +296,11 @@ pub trait SchemaParser {
 
 pub struct SchemaParseVisitor {
     schema_parsers: Rc<Vec<Box<dyn SchemaParser>>>,
+    custom_schema_parser: Rc<CustomSchemaParser>,
     simulation_seed: u64,
-    effect_key: String,
     spec: super::Schema,
     path: Vec<String>,
+    root: Vec<String>,
 }
 
 impl SchemaParseVisitor {
@@ -273,11 +309,7 @@ impl SchemaParseVisitor {
     }
 
     pub fn absolute_path(&self) -> Vec<String> {
-        let mut path = vec![
-            "effects".to_string(),
-            self.effect_key.to_string(),
-            "schema".to_string(),
-        ];
+        let mut path = self.root.clone();
         path.append(&mut self.path.clone());
         path
     }
@@ -298,10 +330,11 @@ impl SchemaParseVisitor {
 
         let child = SchemaParseVisitor {
             schema_parsers: self.schema_parsers.clone(),
+            custom_schema_parser: Rc::clone(&self.custom_schema_parser),
             simulation_seed: self.simulation_seed,
-            effect_key: self.effect_key.clone(),
             spec,
             path: new_path,
+            root: self.root.clone(),
         };
 
         child.parse()
@@ -311,16 +344,97 @@ impl SchemaParseVisitor {
         let parsers = Rc::clone(&self.schema_parsers);
         let matching: Vec<_> = parsers.iter().filter(|p| p.should_parse(&self)).collect();
 
-        match matching.as_slice() {
-            [parser] => parser.parse(self),
-            [] => Err(vec![SpecError {
+        let custom_name = self
+            .spec
+            .stype
+            .as_deref()
+            .filter(|t| self.custom_schema_parser.has(t))
+            .map(str::to_string);
+
+        let total = matching.len() + custom_name.is_some() as usize;
+
+        if total == 0 {
+            return Err(vec![SpecError {
                 path: None,
                 message: "no schema parser matched".into(),
-            }]),
-            _ => Err(vec![SpecError {
-                path: None,
-                message: format!("{} schema parsers matched", matching.len()),
-            }]),
+            }]);
         }
+
+        if total > 1 {
+            return Err(vec![SpecError {
+                path: None,
+                message: format!("{total} schema parsers matched"),
+            }]);
+        }
+
+        if let Some(name) = custom_name {
+            let custom_schema_parser = Rc::clone(&self.custom_schema_parser);
+            custom_schema_parser.resolve(&name)
+        } else {
+            matching.into_iter().next().unwrap().parse(self)
+        }
+    }
+}
+
+/// Resolves `type: <name>` references to schemas defined under `.rngo/schemas/`.
+///
+/// Each reference site parses its own independent `SchemaBuilder`, so behavior is
+/// identical to inlining the definition literally (including independent RNG at build
+/// time). This re-parses the definition per reference rather than sharing a single
+/// parsed instance, which duplicates cost/memory for large schemas; sharing is left as
+/// a future optimization.
+struct CustomSchemaParser {
+    schema_parsers: Rc<Vec<Box<dyn SchemaParser>>>,
+    specs: IndexMap<String, super::Schema>,
+    resolving: RefCell<Vec<String>>,
+}
+
+impl CustomSchemaParser {
+    fn new(
+        schema_parsers: Rc<Vec<Box<dyn SchemaParser>>>,
+        specs: IndexMap<String, super::Schema>,
+    ) -> Self {
+        CustomSchemaParser {
+            schema_parsers,
+            specs,
+            resolving: RefCell::new(Vec::new()),
+        }
+    }
+
+    fn has(&self, name: &str) -> bool {
+        self.specs.contains_key(name)
+    }
+
+    fn resolve(self: &Rc<Self>, name: &str) -> Result<Box<dyn SchemaBuilder>, Vec<SpecError>> {
+        if self.resolving.borrow().iter().any(|n| n == name) {
+            let mut chain = self.resolving.borrow().clone();
+            chain.push(name.to_string());
+            return Err(vec![SpecError {
+                path: Some(vec!["schemas".into(), name.into(), "value".into()]),
+                message: format!("cyclical schema reference: {}", chain.join(" -> ")),
+            }]);
+        }
+
+        let schema_spec = self
+            .specs
+            .get(name)
+            .unwrap_or_else(|| panic!("expected schema named {name}"))
+            .clone();
+
+        self.resolving.borrow_mut().push(name.to_string());
+
+        let visitor = SchemaParseVisitor {
+            schema_parsers: Rc::clone(&self.schema_parsers),
+            custom_schema_parser: Rc::clone(self),
+            simulation_seed: 0,
+            spec: schema_spec,
+            path: vec![],
+            root: vec!["schemas".into(), name.into(), "value".into()],
+        };
+
+        let result = visitor.parse();
+        self.resolving.borrow_mut().pop();
+
+        result
     }
 }

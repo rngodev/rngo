@@ -33,6 +33,8 @@ pub struct Simulation {
     pub effects: IndexMap<String, Effect>,
     #[serde(default)]
     pub systems: IndexMap<String, System>,
+    #[serde(default)]
+    pub schemas: IndexMap<String, SchemaDefinition>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -76,6 +78,11 @@ pub struct Schema {
     pub stype: Option<String>,
     #[serde(flatten)]
     pub fields: IndexMap<String, Value>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SchemaDefinition {
+    pub value: Schema,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
