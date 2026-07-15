@@ -160,7 +160,6 @@ impl Dialect {
             let visitor = SchemaParseVisitor {
                 schema_parsers: self.schema_parsers.clone(),
                 custom_schema_parser: Rc::clone(&custom_schema_parser),
-                simulation_seed: simulation_builder.seed,
                 spec: effect.schema.clone(),
                 path: vec![],
                 root: vec!["effects".into(), key.clone(), "schema".into()],
@@ -283,7 +282,6 @@ pub trait SchemaParser {
 pub struct SchemaParseVisitor {
     schema_parsers: Rc<Vec<Box<dyn SchemaParser>>>,
     custom_schema_parser: Rc<CustomSchemaParser>,
-    simulation_seed: u64,
     spec: super::Schema,
     path: Vec<String>,
     root: Vec<String>,
@@ -325,7 +323,6 @@ impl SchemaParseVisitor {
         let child = SchemaParseVisitor {
             schema_parsers: self.schema_parsers.clone(),
             custom_schema_parser: Rc::clone(&self.custom_schema_parser),
-            simulation_seed: self.simulation_seed,
             spec,
             path: new_path,
             root: self.root.clone(),
@@ -447,7 +444,6 @@ impl CustomSchemaParser {
         let visitor = SchemaParseVisitor {
             schema_parsers: Rc::clone(&self.schema_parsers),
             custom_schema_parser: Rc::clone(self),
-            simulation_seed: 0,
             spec: schema_type.schema,
             path: vec![],
             root: vec!["schemas".into(), name.into(), "value".into()],
