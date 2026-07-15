@@ -119,8 +119,8 @@ impl SchemaBuilder for FunctionBuilder {
 pub struct FunctionParser {}
 
 impl SchemaParser for FunctionParser {
-    fn should_parse(&self, visitor: &SchemaParseVisitor) -> bool {
-        visitor.spec().stype == Some("function".into())
+    fn key(&self) -> &str {
+        "function"
     }
 
     fn parse(&self, visitor: SchemaParseVisitor) -> Result<Box<dyn SchemaBuilder>, Vec<Error>> {

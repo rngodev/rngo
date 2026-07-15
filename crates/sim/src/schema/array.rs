@@ -107,8 +107,8 @@ impl Schema for Array {
 pub struct ArrayParser {}
 
 impl SchemaParser for ArrayParser {
-    fn should_parse(&self, visitor: &SchemaParseVisitor) -> bool {
-        visitor.spec().stype == Some("array".into())
+    fn key(&self) -> &str {
+        "array"
     }
 
     fn parse(&self, visitor: SchemaParseVisitor) -> Result<Box<dyn SchemaBuilder>, Vec<Error>> {

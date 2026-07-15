@@ -107,8 +107,8 @@ impl SchemaBuilder for ContextBuilder {
 pub struct ContextParser {}
 
 impl SchemaParser for ContextParser {
-    fn should_parse(&self, visitor: &SchemaParseVisitor) -> bool {
-        visitor.spec().stype == Some("context".into())
+    fn key(&self) -> &str {
+        "context"
     }
 
     fn parse(&self, visitor: SchemaParseVisitor) -> Result<Box<dyn SchemaBuilder>, Vec<Error>> {

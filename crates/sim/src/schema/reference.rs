@@ -64,8 +64,8 @@ impl SchemaBuilder for ReferenceBuilder {
 pub struct ReferenceParser {}
 
 impl SchemaParser for ReferenceParser {
-    fn should_parse(&self, visitor: &SchemaParseVisitor) -> bool {
-        visitor.spec().stype == Some("reference".into())
+    fn key(&self) -> &str {
+        "reference"
     }
 
     fn parse(&self, visitor: SchemaParseVisitor) -> Result<Box<dyn SchemaBuilder>, Vec<Error>> {

@@ -5,7 +5,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
-pub use parse::{Dialect, FormatParseContext, FormatParser, SchemaParseVisitor, SchemaParser};
+pub use parse::{
+    ConstantSelectOptions, Dialect, FormatParseContext, FormatParser, SchemaParseVisitor,
+    SchemaParser,
+};
 
 pub fn from_value(value: serde_json::Value) -> Result<Simulation, Vec<SpecError>> {
     let mut track = serde_path_to_error::Track::new();
@@ -34,7 +37,7 @@ pub struct Simulation {
     #[serde(default)]
     pub systems: IndexMap<String, System>,
     #[serde(default)]
-    pub schemas: IndexMap<String, SchemaDefinition>,
+    pub schemas: IndexMap<String, SchemaType>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -81,8 +84,8 @@ pub struct Schema {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct SchemaDefinition {
-    pub value: Schema,
+pub struct SchemaType {
+    pub schema: Schema,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

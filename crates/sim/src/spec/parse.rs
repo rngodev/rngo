@@ -6,21 +6,10 @@ use crate::simulation::{Simulation, SimulationBuilder};
 use crate::util::time::Moment;
 use crate::{schema, spec};
 use indexmap::IndexMap;
+use serde_json::Value;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
-
-/// Custom schema names may not shadow these; kept in sync with `Dialect::primitive()`.
-const PRIMITIVE_SCHEMA_TYPES: &[&str] = &[
-    "array",
-    "constant",
-    "context",
-    "function",
-    "number",
-    "object",
-    "reference",
-    "select",
-    "string",
-];
 
 pub struct Dialect {
     schema_parsers: Rc<Vec<Box<dyn SchemaParser>>>,
@@ -90,7 +79,7 @@ impl Dialect {
         };
 
         for name in spec.schemas.keys() {
-            if PRIMITIVE_SCHEMA_TYPES.contains(&name.as_str()) {
+            if self.schema_parsers.iter().any(|p| p.key() == name) {
                 errors.push(SpecError {
                     path: Some(vec!["schemas".into(), name.clone()]),
                     message: format!(
@@ -102,10 +91,7 @@ impl Dialect {
 
         let custom_schema_parser = Rc::new(CustomSchemaParser::new(
             self.schema_parsers.clone(),
-            spec.schemas
-                .iter()
-                .map(|(name, file)| (name.clone(), file.value.clone()))
-                .collect(),
+            spec.schemas.clone(),
         ));
 
         for (key, effect) in &spec.effects {
@@ -290,7 +276,7 @@ impl FormatParseContext {
 }
 
 pub trait SchemaParser {
-    fn should_parse(&self, visitor: &SchemaParseVisitor) -> bool;
+    fn key(&self) -> &str;
     fn parse(&self, visitor: SchemaParseVisitor) -> Result<Box<dyn SchemaBuilder>, Vec<SpecError>>;
 }
 
@@ -320,6 +306,14 @@ impl SchemaParseVisitor {
         path
     }
 
+    /// Shares the returned `Rc` across every reference site with the same `absolute_path()`,
+    /// so a constant-only `select` embedded in a custom schema is stored once in memory no
+    /// matter how many effects reference that custom schema.
+    pub fn constant_select_options(&self, values: Vec<(Value, u32)>) -> ConstantSelectOptions {
+        self.custom_schema_parser
+            .constant_options(self.absolute_path(), values)
+    }
+
     pub fn parse_child(
         &self,
         mut path: Vec<String>,
@@ -342,7 +336,10 @@ impl SchemaParseVisitor {
 
     fn parse(self) -> Result<Box<dyn SchemaBuilder>, Vec<SpecError>> {
         let parsers = Rc::clone(&self.schema_parsers);
-        let matching: Vec<_> = parsers.iter().filter(|p| p.should_parse(&self)).collect();
+        let matching: Vec<_> = parsers
+            .iter()
+            .filter(|p| self.spec.stype.as_deref() == Some(p.key()))
+            .collect();
 
         let custom_name = self
             .spec
@@ -376,33 +373,57 @@ impl SchemaParseVisitor {
     }
 }
 
+/// A constant select's options, shared (via `Rc`) across every reference site that parses
+/// to the same absolute path.
+pub type ConstantSelectOptions = Rc<Vec<(Value, u32)>>;
+
 /// Resolves `type: <name>` references to schemas defined under `.rngo/schemas/`.
 ///
 /// Each reference site parses its own independent `SchemaBuilder`, so behavior is
 /// identical to inlining the definition literally (including independent RNG at build
 /// time). This re-parses the definition per reference rather than sharing a single
-/// parsed instance, which duplicates cost/memory for large schemas; sharing is left as
-/// a future optimization.
+/// parsed instance, which duplicates cost/memory for large schemas in general; the one
+/// exception is a `select` whose options are all `constant`, which is common for large
+/// enums of literal values (the original motivating case) and cheap to special-case — see
+/// `constant_options` below.
 struct CustomSchemaParser {
     schema_parsers: Rc<Vec<Box<dyn SchemaParser>>>,
-    specs: IndexMap<String, super::Schema>,
+    schema_types: IndexMap<String, super::SchemaType>,
     resolving: RefCell<Vec<String>>,
+    constant_select_cache: RefCell<HashMap<Vec<String>, ConstantSelectOptions>>,
 }
 
 impl CustomSchemaParser {
     fn new(
         schema_parsers: Rc<Vec<Box<dyn SchemaParser>>>,
-        specs: IndexMap<String, super::Schema>,
+        schema_types: IndexMap<String, super::SchemaType>,
     ) -> Self {
         CustomSchemaParser {
             schema_parsers,
-            specs,
+            schema_types,
             resolving: RefCell::new(Vec::new()),
+            constant_select_cache: RefCell::new(HashMap::new()),
         }
     }
 
     fn has(&self, name: &str) -> bool {
-        self.specs.contains_key(name)
+        self.schema_types.contains_key(name)
+    }
+
+    fn constant_options(
+        &self,
+        path: Vec<String>,
+        values: Vec<(Value, u32)>,
+    ) -> ConstantSelectOptions {
+        if let Some(existing) = self.constant_select_cache.borrow().get(&path) {
+            return Rc::clone(existing);
+        }
+
+        let values = Rc::new(values);
+        self.constant_select_cache
+            .borrow_mut()
+            .insert(path, Rc::clone(&values));
+        values
     }
 
     fn resolve(self: &Rc<Self>, name: &str) -> Result<Box<dyn SchemaBuilder>, Vec<SpecError>> {
@@ -415,8 +436,8 @@ impl CustomSchemaParser {
             }]);
         }
 
-        let schema_spec = self
-            .specs
+        let schema_type = self
+            .schema_types
             .get(name)
             .unwrap_or_else(|| panic!("expected schema named {name}"))
             .clone();
@@ -427,7 +448,7 @@ impl CustomSchemaParser {
             schema_parsers: Rc::clone(&self.schema_parsers),
             custom_schema_parser: Rc::clone(self),
             simulation_seed: 0,
-            spec: schema_spec,
+            spec: schema_type.schema,
             path: vec![],
             root: vec!["schemas".into(), name.into(), "value".into()],
         };

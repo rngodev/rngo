@@ -67,8 +67,8 @@ impl SchemaBuilder for StrBuilder {
 pub struct StrParser {}
 
 impl SchemaParser for StrParser {
-    fn should_parse(&self, visitor: &SchemaParseVisitor) -> bool {
-        visitor.spec().stype == Some("string".into())
+    fn key(&self) -> &str {
+        "string"
     }
 
     fn parse(&self, visitor: SchemaParseVisitor) -> Result<Box<dyn SchemaBuilder>, Vec<Error>> {

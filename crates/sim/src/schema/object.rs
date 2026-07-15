@@ -84,8 +84,8 @@ impl SchemaBuilder for ObjectBuilder {
 pub struct ObjectParser {}
 
 impl SchemaParser for ObjectParser {
-    fn should_parse(&self, visitor: &SchemaParseVisitor) -> bool {
-        visitor.spec().stype == Some("object".into())
+    fn key(&self) -> &str {
+        "object"
     }
 
     fn parse(&self, visitor: SchemaParseVisitor) -> Result<Box<dyn SchemaBuilder>, Vec<Error>> {

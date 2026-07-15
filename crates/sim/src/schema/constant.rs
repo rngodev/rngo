@@ -59,8 +59,8 @@ impl SchemaBuilder for ConstantBuilder {
 pub struct ConstantParser {}
 
 impl SchemaParser for ConstantParser {
-    fn should_parse(&self, visitor: &SchemaParseVisitor) -> bool {
-        visitor.spec().stype == Some("constant".into())
+    fn key(&self) -> &str {
+        "constant"
     }
 
     fn parse(&self, visitor: SchemaParseVisitor) -> Result<Box<dyn SchemaBuilder>, Vec<Error>> {

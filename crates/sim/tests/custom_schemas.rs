@@ -35,7 +35,7 @@ fn resolves_custom_schema_independently_per_effect() {
         "end": "2024-01-02",
         "schemas": {
             "title": {
-                "value": {
+                "schema": {
                     "type": "select",
                     "options": [
                         { "schema": { "type": "constant", "value": "Mr." } },
@@ -85,8 +85,8 @@ fn custom_schema_can_reference_another_custom_schema() {
         "start": "2024-01-01",
         "end": "2024-01-02",
         "schemas": {
-            "inner": { "value": { "type": "constant", "value": "x" } },
-            "outer": { "value": { "type": "inner" } }
+            "inner": { "schema": { "type": "constant", "value": "x" } },
+            "outer": { "schema": { "type": "inner" } }
         },
         "effects": {
             "a": {
@@ -105,7 +105,7 @@ fn custom_schema_can_reference_another_custom_schema() {
 fn custom_schema_name_cannot_shadow_primitive_type() {
     let json = r#"{
         "schemas": {
-            "object": { "value": { "type": "constant", "value": 1 } }
+            "object": { "schema": { "type": "constant", "value": 1 } }
         },
         "effects": {
             "a": { "schema": { "type": "constant", "value": 1 } }
@@ -125,8 +125,8 @@ fn custom_schema_name_cannot_shadow_primitive_type() {
 fn cyclical_custom_schema_reference_errors() {
     let json = r#"{
         "schemas": {
-            "a": { "value": { "type": "b" } },
-            "b": { "value": { "type": "a" } }
+            "a": { "schema": { "type": "b" } },
+            "b": { "schema": { "type": "a" } }
         },
         "effects": {
             "e": { "schema": { "type": "a" } }

@@ -340,7 +340,7 @@ mod tests {
         write_yaml(
             base.join(".rngo/schemas/title.yml"),
             &json!({
-                "value": {
+                "schema": {
                     "type": "select",
                     "options": [
                         { "schema": { "type": "constant", "value": "Mr." } },

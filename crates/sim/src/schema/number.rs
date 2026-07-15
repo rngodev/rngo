@@ -141,8 +141,8 @@ impl SchemaBuilder for NumberBuilder {
 pub struct NumberParser {}
 
 impl SchemaParser for NumberParser {
-    fn should_parse(&self, visitor: &SchemaParseVisitor) -> bool {
-        visitor.spec().stype == Some("number".into())
+    fn key(&self) -> &str {
+        "number"
     }
 
     fn parse(&self, visitor: SchemaParseVisitor) -> Result<Box<dyn SchemaBuilder>, Vec<Error>> {

@@ -4,11 +4,12 @@ use crate::spec::{self, SchemaParseVisitor, SchemaParser, SpecError as Error};
 use rand::RngExt;
 use rand_pcg::Pcg32;
 use serde::Deserialize;
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct Select {
     rng: Pcg32,
-    properties: Vec<SelectProperty>,
+    options: SelectOptions,
 }
 
 impl Select {
@@ -24,6 +25,15 @@ impl Select {
 }
 
 #[derive(Debug)]
+enum SelectOptions {
+    /// Shared across every reference site to the custom schema this select was parsed from
+    /// (see `SchemaParseVisitor::constant_select_options`), so a large enum of literal values
+    /// is stored once in memory rather than once per reference site.
+    Constants(spec::ConstantSelectOptions),
+    Schemas(Vec<SelectProperty>),
+}
+
+#[derive(Debug)]
 pub struct SelectProperty {
     pub schema: Box<dyn Schema>,
     pub weight: u32,
@@ -31,17 +41,36 @@ pub struct SelectProperty {
 
 impl Schema for Select {
     fn next(&mut self, context: &SchemaContext) -> SchemaResult {
-        let total_weight: u32 = self.properties.iter().map(|p| p.weight).sum();
-        let mut chosen = self.rng.random_range(0..total_weight);
+        match &mut self.options {
+            SelectOptions::Constants(options) => {
+                let total_weight: u32 = options.iter().map(|(_, weight)| weight).sum();
+                let mut chosen = self.rng.random_range(0..total_weight);
 
-        for property in &mut self.properties {
-            if chosen < property.weight {
-                return property.schema.next(context);
+                for (value, weight) in options.iter() {
+                    if chosen < *weight {
+                        return SchemaResult::Ok {
+                            value: value.clone(),
+                        };
+                    }
+                    chosen -= weight;
+                }
+
+                SchemaResult::Err("no streams available".into())
             }
-            chosen -= property.weight;
-        }
+            SelectOptions::Schemas(properties) => {
+                let total_weight: u32 = properties.iter().map(|p| p.weight).sum();
+                let mut chosen = self.rng.random_range(0..total_weight);
 
-        SchemaResult::Err("no streams available".into())
+                for property in properties {
+                    if chosen < property.weight {
+                        return property.schema.next(context);
+                    }
+                    chosen -= property.weight;
+                }
+
+                SchemaResult::Err("no streams available".into())
+            }
+        }
     }
 }
 
@@ -88,7 +117,7 @@ impl SchemaBuilder for SelectBuilder {
         if errors.is_empty() {
             Ok(Box::new(Select {
                 rng: visitor.rng(),
-                properties,
+                options: SelectOptions::Schemas(properties),
             }))
         } else {
             Err(errors)
@@ -96,20 +125,34 @@ impl SchemaBuilder for SelectBuilder {
     }
 }
 
+#[derive(Debug)]
+struct ConstantSelectBuilder {
+    options: spec::ConstantSelectOptions,
+}
+
+impl SchemaBuilder for ConstantSelectBuilder {
+    fn build(&self, visitor: SchemaBuildVisitor) -> Result<Box<dyn Schema>, Vec<BuildError>> {
+        Ok(Box::new(Select {
+            rng: visitor.rng(),
+            options: SelectOptions::Constants(Rc::clone(&self.options)),
+        }))
+    }
+}
+
+#[derive(Deserialize)]
+struct OptionSpec {
+    weight: Option<u32>,
+    schema: spec::Schema,
+}
+
 pub struct SelectParser {}
 
 impl SchemaParser for SelectParser {
-    fn should_parse(&self, visitor: &SchemaParseVisitor) -> bool {
-        visitor.spec().stype == Some("select".into())
+    fn key(&self) -> &str {
+        "select"
     }
 
     fn parse(&self, visitor: SchemaParseVisitor) -> Result<Box<dyn SchemaBuilder>, Vec<Error>> {
-        #[derive(Deserialize)]
-        struct OptionSpec {
-            weight: Option<u32>,
-            schema: spec::Schema,
-        }
-
         let options_value = match visitor.spec().fields.get("options") {
             Some(v) => v.clone(),
             None => {
@@ -134,6 +177,13 @@ impl SchemaParser for SelectParser {
             }]);
         }
 
+        if option_specs
+            .iter()
+            .all(|option| option.schema.stype.as_deref() == Some("constant"))
+        {
+            return parse_constants(&visitor, option_specs);
+        }
+
         let mut errors = vec![];
         let mut builder = Select::builder();
 
@@ -153,4 +203,35 @@ impl SchemaParser for SelectParser {
             Err(errors)
         }
     }
+}
+
+fn parse_constants(
+    visitor: &SchemaParseVisitor,
+    option_specs: Vec<OptionSpec>,
+) -> Result<Box<dyn SchemaBuilder>, Vec<Error>> {
+    let mut errors = vec![];
+    let mut values = vec![];
+
+    for (i, option) in option_specs.iter().enumerate() {
+        match option.schema.fields.get("value") {
+            Some(value) => values.push((value.clone(), option.weight.unwrap_or(1))),
+            None => errors.push(Error {
+                path: Some(visitor.absolute_sub_path(vec![
+                    "options".into(),
+                    i.to_string(),
+                    "schema".into(),
+                    "value".into(),
+                ])),
+                message: "value must be specified".into(),
+            }),
+        }
+    }
+
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+
+    let options = visitor.constant_select_options(values);
+
+    Ok(Box::new(ConstantSelectBuilder { options }))
 }

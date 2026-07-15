@@ -1,4 +1,4 @@
-value:
+schema:
   type: function
   expression: "givenName + ' ' + familyName"
   variables:
