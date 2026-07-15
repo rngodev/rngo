@@ -5,7 +5,6 @@ use crate::schema::SchemaBuilder;
 use crate::simulation::{Simulation, SimulationBuilder};
 use crate::util::time::Moment;
 use crate::{schema, spec};
-use indexmap::IndexMap;
 use serde_json::Value;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -89,10 +88,21 @@ impl Dialect {
             }
         }
 
-        let custom_schema_parser = Rc::new(CustomSchemaParser::new(
-            self.schema_parsers.clone(),
-            spec.schemas.clone(),
-        ));
+        let custom_schema_state = Rc::new(CustomSchemaState {
+            call_stack: RefCell::new(Vec::new()),
+            constant_select_cache: RefCell::new(HashMap::new()),
+        });
+
+        let custom_schemas: Rc<Vec<CustomSchema>> = Rc::new(
+            spec.schemas
+                .iter()
+                .map(|(name, schema_type)| CustomSchema {
+                    name: name.clone(),
+                    schema_type: schema_type.clone(),
+                    state: Rc::clone(&custom_schema_state),
+                })
+                .collect(),
+        );
 
         for (key, effect) in &spec.effects {
             let mut effect_builder = Effect::builder(key.clone());
@@ -158,8 +168,9 @@ impl Dialect {
             };
 
             let visitor = SchemaParseVisitor {
-                schema_parsers: self.schema_parsers.clone(),
-                custom_schema_parser: Rc::clone(&custom_schema_parser),
+                primitive_schema_parsers: self.schema_parsers.clone(),
+                custom_schema_parsers: Rc::clone(&custom_schemas),
+                custom_schema_state: None,
                 spec: effect.schema.clone(),
                 path: vec![],
                 root: vec!["effects".into(), key.clone(), "schema".into()],
@@ -280,8 +291,11 @@ pub trait SchemaParser {
 }
 
 pub struct SchemaParseVisitor {
-    schema_parsers: Rc<Vec<Box<dyn SchemaParser>>>,
-    custom_schema_parser: Rc<CustomSchemaParser>,
+    primitive_schema_parsers: Rc<Vec<Box<dyn SchemaParser>>>,
+    custom_schema_parsers: Rc<Vec<CustomSchema>>,
+    /// Only present while parsing within a custom schema's own body (i.e. once dispatch has
+    /// entered `CustomSchema::parse`); `None` for an effect's own top-level schema.
+    custom_schema_state: Option<Rc<CustomSchemaState>>,
     spec: super::Schema,
     path: Vec<String>,
     root: Vec<String>,
@@ -304,12 +318,11 @@ impl SchemaParseVisitor {
         path
     }
 
-    /// Shares the returned `Rc` across every reference site with the same `absolute_path()`,
-    /// so a constant-only `select` embedded in a custom schema is stored once in memory no
-    /// matter how many effects reference that custom schema.
-    pub fn constant_select_options(&self, values: Vec<(Value, u32)>) -> ConstantSelectOptions {
-        self.custom_schema_parser
-            .constant_options(self.absolute_path(), values)
+    /// `Some` only while parsing within a custom schema's own body (see
+    /// `CustomSchemaState::constant_select_options`); `None` for an effect's own top-level
+    /// schema, which is only ever parsed once and so has nothing to share/cache.
+    pub(crate) fn custom_schema_state(&self) -> Option<&CustomSchemaState> {
+        self.custom_schema_state.as_deref()
     }
 
     pub fn parse_child(
@@ -321,8 +334,9 @@ impl SchemaParseVisitor {
         new_path.append(&mut path);
 
         let child = SchemaParseVisitor {
-            schema_parsers: self.schema_parsers.clone(),
-            custom_schema_parser: Rc::clone(&self.custom_schema_parser),
+            primitive_schema_parsers: self.primitive_schema_parsers.clone(),
+            custom_schema_parsers: self.custom_schema_parsers.clone(),
+            custom_schema_state: self.custom_schema_state.clone(),
             spec,
             path: new_path,
             root: self.root.clone(),
@@ -332,40 +346,26 @@ impl SchemaParseVisitor {
     }
 
     fn parse(self) -> Result<Box<dyn SchemaBuilder>, Vec<SpecError>> {
-        let parsers = Rc::clone(&self.schema_parsers);
-        let matching: Vec<_> = parsers
+        let schema_parsers = Rc::clone(&self.primitive_schema_parsers);
+        let custom_schemas = Rc::clone(&self.custom_schema_parsers);
+
+        let matching: Vec<&dyn SchemaParser> = schema_parsers
             .iter()
+            .map(|p| p.as_ref())
+            .chain(custom_schemas.iter().map(|s| s as &dyn SchemaParser))
             .filter(|p| self.spec.stype.as_deref() == Some(p.key()))
             .collect();
 
-        let custom_name = self
-            .spec
-            .stype
-            .as_deref()
-            .filter(|t| self.custom_schema_parser.has(t))
-            .map(str::to_string);
-
-        let total = matching.len() + custom_name.is_some() as usize;
-
-        if total == 0 {
-            return Err(vec![SpecError {
+        match matching.len() {
+            0 => Err(vec![SpecError {
                 path: None,
                 message: "no schema parser matched".into(),
-            }]);
-        }
-
-        if total > 1 {
-            return Err(vec![SpecError {
+            }]),
+            1 => matching[0].parse(self),
+            total => Err(vec![SpecError {
                 path: None,
                 message: format!("{total} schema parsers matched"),
-            }]);
-        }
-
-        if let Some(name) = custom_name {
-            let custom_schema_parser = Rc::clone(&self.custom_schema_parser);
-            custom_schema_parser.resolve(&name)
-        } else {
-            matching.into_iter().next().unwrap().parse(self)
+            }]),
         }
     }
 }
@@ -374,7 +374,9 @@ impl SchemaParseVisitor {
 /// to the same absolute path.
 pub type ConstantSelectOptions = Rc<Vec<(Value, u32)>>;
 
-/// Resolves `type: <name>` references to schemas defined under `.rngo/schemas/`.
+/// Resolves `type: <name>` references to schemas defined under `.rngo/schemas/`: wraps a
+/// custom schema's definition together with its name so it can act as a `SchemaParser`,
+/// matched and dispatched the same way as primitive ones.
 ///
 /// Each reference site parses its own independent `SchemaBuilder`, so behavior is
 /// identical to inlining the definition literally (including independent RNG at build
@@ -382,32 +384,25 @@ pub type ConstantSelectOptions = Rc<Vec<(Value, u32)>>;
 /// parsed instance, which duplicates cost/memory for large schemas in general; the one
 /// exception is a `select` whose options are all `constant`, which is common for large
 /// enums of literal values (the original motivating case) and cheap to special-case — see
-/// `constant_options` below.
-struct CustomSchemaParser {
-    schema_parsers: Rc<Vec<Box<dyn SchemaParser>>>,
-    schema_types: IndexMap<String, super::SchemaType>,
-    resolving: RefCell<Vec<String>>,
+/// `constant_select_options` above.
+struct CustomSchema {
+    name: String,
+    schema_type: super::SchemaType,
+    state: Rc<CustomSchemaState>,
+}
+
+/// Cycle-detection stack and constant-`select` cache shared by every `CustomSchema`, so both
+/// stay correct/shared regardless of which effect or custom schema first references a name.
+pub(crate) struct CustomSchemaState {
+    call_stack: RefCell<Vec<String>>,
     constant_select_cache: RefCell<HashMap<Vec<String>, ConstantSelectOptions>>,
 }
 
-impl CustomSchemaParser {
-    fn new(
-        schema_parsers: Rc<Vec<Box<dyn SchemaParser>>>,
-        schema_types: IndexMap<String, super::SchemaType>,
-    ) -> Self {
-        CustomSchemaParser {
-            schema_parsers,
-            schema_types,
-            resolving: RefCell::new(Vec::new()),
-            constant_select_cache: RefCell::new(HashMap::new()),
-        }
-    }
-
-    fn has(&self, name: &str) -> bool {
-        self.schema_types.contains_key(name)
-    }
-
-    fn constant_options(
+impl CustomSchemaState {
+    /// Shares the returned `Rc` across every reference site with the same `path`, so a
+    /// constant-only `select` embedded in a custom schema is stored once in memory no matter
+    /// how many effects reference that custom schema.
+    pub(crate) fn constant_select_options(
         &self,
         path: Vec<String>,
         values: Vec<(Value, u32)>,
@@ -422,35 +417,42 @@ impl CustomSchemaParser {
             .insert(path, Rc::clone(&values));
         values
     }
+}
 
-    fn resolve(self: &Rc<Self>, name: &str) -> Result<Box<dyn SchemaBuilder>, Vec<SpecError>> {
-        if self.resolving.borrow().iter().any(|n| n == name) {
-            let mut chain = self.resolving.borrow().clone();
-            chain.push(name.to_string());
+impl SchemaParser for CustomSchema {
+    fn key(&self) -> &str {
+        &self.name
+    }
+
+    fn parse(&self, visitor: SchemaParseVisitor) -> Result<Box<dyn SchemaBuilder>, Vec<SpecError>> {
+        if self
+            .state
+            .call_stack
+            .borrow()
+            .iter()
+            .any(|n| n == &self.name)
+        {
+            let mut chain = self.state.call_stack.borrow().clone();
+            chain.push(self.name.clone());
             return Err(vec![SpecError {
-                path: Some(vec!["schemas".into(), name.into(), "value".into()]),
+                path: Some(vec!["schemas".into(), self.name.clone(), "value".into()]),
                 message: format!("cyclical schema reference: {}", chain.join(" -> ")),
             }]);
         }
 
-        let schema_type = self
-            .schema_types
-            .get(name)
-            .unwrap_or_else(|| panic!("expected schema named {name}"))
-            .clone();
+        self.state.call_stack.borrow_mut().push(self.name.clone());
 
-        self.resolving.borrow_mut().push(name.to_string());
-
-        let visitor = SchemaParseVisitor {
-            schema_parsers: Rc::clone(&self.schema_parsers),
-            custom_schema_parser: Rc::clone(self),
-            spec: schema_type.schema,
+        let child = SchemaParseVisitor {
+            primitive_schema_parsers: visitor.primitive_schema_parsers.clone(),
+            custom_schema_parsers: visitor.custom_schema_parsers.clone(),
+            custom_schema_state: Some(Rc::clone(&self.state)),
+            spec: self.schema_type.schema.clone(),
             path: vec![],
-            root: vec!["schemas".into(), name.into(), "value".into()],
+            root: vec!["schemas".into(), self.name.clone(), "value".into()],
         };
 
-        let result = visitor.parse();
-        self.resolving.borrow_mut().pop();
+        let result = child.parse();
+        self.state.call_stack.borrow_mut().pop();
 
         result
     }

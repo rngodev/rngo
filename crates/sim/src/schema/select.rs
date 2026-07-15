@@ -27,8 +27,8 @@ impl Select {
 #[derive(Debug)]
 enum SelectOptions {
     /// Shared across every reference site to the custom schema this select was parsed from
-    /// (see `SchemaParseVisitor::constant_select_options`), so a large enum of literal values
-    /// is stored once in memory rather than once per reference site.
+    /// (see `parse_constants` below), so a large enum of literal values is stored once in
+    /// memory rather than once per reference site.
     Constants(spec::ConstantSelectOptions),
     Schemas(Vec<SelectProperty>),
 }
@@ -231,7 +231,10 @@ fn parse_constants(
         return Err(errors);
     }
 
-    let options = visitor.constant_select_options(values);
+    let options = match visitor.custom_schema_state() {
+        Some(state) => state.constant_select_options(visitor.absolute_path(), values),
+        None => Rc::new(values),
+    };
 
     Ok(Box::new(ConstantSelectBuilder { options }))
 }
