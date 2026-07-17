@@ -1,6 +1,6 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::build::{BuildError, SchemaEdge};
-use crate::spec::{self, SchemaParseVisitor, SchemaParser, SpecError as Error};
+use crate::spec::{self, ParseError as Error, SchemaParseVisitor, SchemaParser};
 use indexmap::IndexMap;
 use serde_json::Map;
 
@@ -92,10 +92,10 @@ impl SchemaParser for ObjectParser {
         if let Some(input) = visitor.spec().fields.get("properties") {
             serde_json::from_value::<IndexMap<String, spec::Schema>>(input.clone())
                 .map_err(|err| {
-                    vec![Error {
-                        path: Some(visitor.absolute_sub_path(vec!["properties".into()])),
-                        message: format!("properties parsing failed: {err}"),
-                    }]
+                    vec![
+                        visitor
+                            .input_error("properties", format!("properties parsing failed: {err}")),
+                    ]
                 })
                 .and_then(|properties| {
                     let mut errors = vec![];
@@ -117,10 +117,7 @@ impl SchemaParser for ObjectParser {
                     }
                 })
         } else {
-            Err(vec![Error {
-                path: Some(visitor.absolute_sub_path(vec!["properties".into()])),
-                message: "not specified".into(),
-            }])
+            Err(vec![visitor.input_error("properties", "not specified")])
         }
     }
 }

@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use rngo_sim::{BuildError, SchemaEdge, SpecError};
+use rngo_sim::{BuildError, ParseError, SchemaEdge};
 
 pub trait BuildErrorTestExt {
     fn message(&self) -> &str;
@@ -24,19 +24,19 @@ impl BuildErrorTestExt for BuildError {
     }
 }
 
-pub trait SpecErrorTestExt {
+pub trait ParseErrorTestExt {
     fn message(&self) -> &str;
     fn path(&self) -> Option<&Vec<String>>;
 }
 
-impl SpecErrorTestExt for SpecError {
+impl ParseErrorTestExt for ParseError {
     fn message(&self) -> &str {
-        let SpecError { message, .. } = self;
+        let ParseError::SchemaError { message, .. } = self;
         message
     }
 
     fn path(&self) -> Option<&Vec<String>> {
-        let SpecError { path, .. } = self;
+        let ParseError::SchemaError { path, .. } = self;
         path.as_ref()
     }
 }

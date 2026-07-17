@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use crate::SpecError;
+use crate::ParseError;
 use crate::format::Format;
 use crate::spec::{FormatParseContext, FormatParser};
 
@@ -76,14 +76,14 @@ impl FormatParser for SqlFormatParser {
     fn parse(
         &self,
         context: crate::spec::FormatParseContext,
-    ) -> Result<Box<dyn Format>, Vec<SpecError>> {
+    ) -> Result<Box<dyn Format>, Vec<ParseError>> {
         let format = context.format();
         let table_name: String = format
             .as_ref()
             .and_then(|f| f.fields.get("table"))
             .map(|v| match v.as_str() {
                 Some(table) => Ok(table.to_string()),
-                None => Err(vec![SpecError {
+                None => Err(vec![ParseError::SchemaError {
                     path: None,
                     message: "table must be a string".into(),
                 }]),

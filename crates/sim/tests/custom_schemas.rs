@@ -1,7 +1,7 @@
 mod common;
 
-use common::SpecErrorTestExt;
-use rngo_sim::{Dialect, Simulation, SpecError};
+use common::ParseErrorTestExt;
+use rngo_sim::{Dialect, ParseError, Simulation};
 use std::fmt;
 
 fn build(json: &str) -> Result<Simulation, String> {
@@ -20,7 +20,7 @@ fn join_errors<E: fmt::Display>(errors: Vec<E>) -> String {
         .join("\n")
 }
 
-fn parse_errors(json: &str) -> Vec<SpecError> {
+fn parse_errors(json: &str) -> Vec<ParseError> {
     let value: serde_json::Value = serde_json::from_str(json).unwrap();
     Dialect::primitive()
         .parse_simulation_json(value)

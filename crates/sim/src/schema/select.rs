@@ -1,15 +1,14 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::build::{BuildError, SchemaEdge};
-use crate::spec::{self, SchemaParseVisitor, SchemaParser, SpecError as Error};
+use crate::spec::{self, ParseError as Error, SchemaParseVisitor, SchemaParser};
 use rand::RngExt;
 use rand_pcg::Pcg32;
 use serde::Deserialize;
-use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct Select {
     rng: Pcg32,
-    options: SelectOptions,
+    properties: Vec<SelectProperty>,
 }
 
 impl Select {
@@ -25,15 +24,6 @@ impl Select {
 }
 
 #[derive(Debug)]
-enum SelectOptions {
-    /// Shared across every reference site to the custom schema this select was parsed from
-    /// (see `parse_constants` below), so a large enum of literal values is stored once in
-    /// memory rather than once per reference site.
-    Constants(spec::ConstantSelectOptions),
-    Schemas(Vec<SelectProperty>),
-}
-
-#[derive(Debug)]
 pub struct SelectProperty {
     pub schema: Box<dyn Schema>,
     pub weight: u32,
@@ -41,36 +31,17 @@ pub struct SelectProperty {
 
 impl Schema for Select {
     fn next(&mut self, context: &SchemaContext) -> SchemaResult {
-        match &mut self.options {
-            SelectOptions::Constants(options) => {
-                let total_weight: u32 = options.iter().map(|(_, weight)| weight).sum();
-                let mut chosen = self.rng.random_range(0..total_weight);
+        let total_weight: u32 = self.properties.iter().map(|p| p.weight).sum();
+        let mut chosen = self.rng.random_range(0..total_weight);
 
-                for (value, weight) in options.iter() {
-                    if chosen < *weight {
-                        return SchemaResult::Ok {
-                            value: value.clone(),
-                        };
-                    }
-                    chosen -= weight;
-                }
-
-                SchemaResult::Err("no streams available".into())
+        for property in &mut self.properties {
+            if chosen < property.weight {
+                return property.schema.next(context);
             }
-            SelectOptions::Schemas(properties) => {
-                let total_weight: u32 = properties.iter().map(|p| p.weight).sum();
-                let mut chosen = self.rng.random_range(0..total_weight);
-
-                for property in properties {
-                    if chosen < property.weight {
-                        return property.schema.next(context);
-                    }
-                    chosen -= property.weight;
-                }
-
-                SchemaResult::Err("no streams available".into())
-            }
+            chosen -= property.weight;
         }
+
+        SchemaResult::Err("no streams available".into())
     }
 }
 
@@ -117,25 +88,11 @@ impl SchemaBuilder for SelectBuilder {
         if errors.is_empty() {
             Ok(Box::new(Select {
                 rng: visitor.rng(),
-                options: SelectOptions::Schemas(properties),
+                properties,
             }))
         } else {
             Err(errors)
         }
-    }
-}
-
-#[derive(Debug)]
-struct ConstantSelectBuilder {
-    options: spec::ConstantSelectOptions,
-}
-
-impl SchemaBuilder for ConstantSelectBuilder {
-    fn build(&self, visitor: SchemaBuildVisitor) -> Result<Box<dyn Schema>, Vec<BuildError>> {
-        Ok(Box::new(Select {
-            rng: visitor.rng(),
-            options: SelectOptions::Constants(Rc::clone(&self.options)),
-        }))
     }
 }
 
@@ -156,32 +113,16 @@ impl SchemaParser for SelectParser {
         let options_value = match visitor.spec().fields.get("options") {
             Some(v) => v.clone(),
             None => {
-                return Err(vec![Error {
-                    path: Some(visitor.absolute_path()),
-                    message: "options must be specified".into(),
-                }]);
+                return Err(vec![visitor.schema_error("options must be specified")]);
             }
         };
 
         let option_specs: Vec<OptionSpec> = serde_json::from_value(options_value).map_err(|e| {
-            vec![Error {
-                path: Some(visitor.absolute_sub_path(vec!["options".into()])),
-                message: format!("options parsing failed: {e}"),
-            }]
+            vec![visitor.input_error("options", format!("options parsing failed: {e}"))]
         })?;
 
         if option_specs.is_empty() {
-            return Err(vec![Error {
-                path: Some(visitor.absolute_path()),
-                message: "options must not be empty".into(),
-            }]);
-        }
-
-        if option_specs
-            .iter()
-            .all(|option| option.schema.stype.as_deref() == Some("constant"))
-        {
-            return parse_constants(&visitor, option_specs);
+            return Err(vec![visitor.schema_error("options must not be empty")]);
         }
 
         let mut errors = vec![];
@@ -203,38 +144,4 @@ impl SchemaParser for SelectParser {
             Err(errors)
         }
     }
-}
-
-fn parse_constants(
-    visitor: &SchemaParseVisitor,
-    option_specs: Vec<OptionSpec>,
-) -> Result<Box<dyn SchemaBuilder>, Vec<Error>> {
-    let mut errors = vec![];
-    let mut values = vec![];
-
-    for (i, option) in option_specs.iter().enumerate() {
-        match option.schema.fields.get("value") {
-            Some(value) => values.push((value.clone(), option.weight.unwrap_or(1))),
-            None => errors.push(Error {
-                path: Some(visitor.absolute_sub_path(vec![
-                    "options".into(),
-                    i.to_string(),
-                    "schema".into(),
-                    "value".into(),
-                ])),
-                message: "value must be specified".into(),
-            }),
-        }
-    }
-
-    if !errors.is_empty() {
-        return Err(errors);
-    }
-
-    let options = match visitor.custom_schema_state() {
-        Some(state) => state.constant_select_options(visitor.absolute_path(), values),
-        None => Rc::new(values),
-    };
-
-    Ok(Box::new(ConstantSelectBuilder { options }))
 }

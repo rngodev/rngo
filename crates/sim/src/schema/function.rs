@@ -1,6 +1,6 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::build::{BuildError, SchemaEdge};
-use crate::spec::{self, SchemaParseVisitor, SchemaParser, SpecError as Error};
+use crate::spec::{self, ParseError as Error, SchemaParseVisitor, SchemaParser};
 use crate::util::cel::CelContextExt;
 use cel::{Context, Program};
 use indexmap::IndexMap;
@@ -127,16 +127,12 @@ impl SchemaParser for FunctionParser {
         let expression = match visitor.spec().fields.get("expression") {
             Some(v) if v.is_string() => v.as_str().unwrap().to_string(),
             Some(_) => {
-                return Err(vec![Error {
-                    path: Some(visitor.absolute_sub_path(vec!["expression".into()])),
-                    message: "expression must be a string".into(),
-                }]);
+                return Err(vec![
+                    visitor.input_error("expression", "expression must be a string"),
+                ]);
             }
             None => {
-                return Err(vec![Error {
-                    path: Some(visitor.absolute_path()),
-                    message: "expression must be specified".into(),
-                }]);
+                return Err(vec![visitor.schema_error("expression must be specified")]);
             }
         };
 
@@ -146,10 +142,7 @@ impl SchemaParser for FunctionParser {
         if let Some(vars_value) = visitor.spec().fields.get("variables") {
             let vars: IndexMap<String, spec::Schema> = serde_json::from_value(vars_value.clone())
                 .map_err(|e| {
-                vec![Error {
-                    path: Some(visitor.absolute_sub_path(vec!["variables".into()])),
-                    message: format!("variables parsing failed: {e}"),
-                }]
+                vec![visitor.input_error("variables", format!("variables parsing failed: {e}"))]
             })?;
 
             let mut errors = vec![];

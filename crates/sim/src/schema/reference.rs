@@ -1,7 +1,7 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::build::BuildError;
 use crate::log::{LogIndex, LogIndexConfig};
-use crate::spec::{SchemaParseVisitor, SchemaParser, SpecError as Error};
+use crate::spec::{ParseError as Error, SchemaParseVisitor, SchemaParser};
 
 #[derive(Debug)]
 pub struct Reference {
@@ -74,16 +74,10 @@ impl SchemaParser for ReferenceParser {
         let effect_key = match visitor.spec().fields.get("effect") {
             Some(k) if k.is_string() => k.as_str().unwrap().to_string(),
             Some(_) => {
-                return Err(vec![Error {
-                    path: Some(visitor.absolute_path()),
-                    message: "effect must be a string".into(),
-                }]);
+                return Err(vec![visitor.schema_error("effect must be a string")]);
             }
             None => {
-                return Err(vec![Error {
-                    path: Some(visitor.absolute_path()),
-                    message: "effect must be specified".into(),
-                }]);
+                return Err(vec![visitor.schema_error("effect must be specified")]);
             }
         };
 

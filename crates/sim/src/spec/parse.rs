@@ -1,13 +1,11 @@
-use super::SpecError;
 use crate::effect::Effect;
 use crate::format::{self, Format};
 use crate::schema::SchemaBuilder;
+use crate::schema::custom::CustomParser;
 use crate::simulation::{Simulation, SimulationBuilder};
+use crate::spec::ParseError;
 use crate::util::time::Moment;
 use crate::{schema, spec};
-use serde_json::Value;
-use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 pub struct Dialect {
@@ -46,7 +44,7 @@ impl Dialect {
     pub fn parse_simulation_json(
         &self,
         value: serde_json::Value,
-    ) -> Result<SimulationBuilder, Vec<SpecError>> {
+    ) -> Result<SimulationBuilder, Vec<ParseError>> {
         let spec: spec::Simulation = super::from_value(value)?;
         self.parse_simulation(spec)
     }
@@ -54,7 +52,7 @@ impl Dialect {
     pub fn parse_simulation(
         &self,
         spec: spec::Simulation,
-    ) -> Result<SimulationBuilder, Vec<SpecError>> {
+    ) -> Result<SimulationBuilder, Vec<ParseError>> {
         let mut errors = vec![];
         let mut simulation_builder = Simulation::builder();
         let simulation_moment_parser = Moment::parser();
@@ -79,7 +77,7 @@ impl Dialect {
 
         for name in spec.schemas.keys() {
             if self.schema_parsers.iter().any(|p| p.key() == name) {
-                errors.push(SpecError {
+                errors.push(ParseError::SchemaError {
                     path: Some(vec!["schemas".into(), name.clone()]),
                     message: format!(
                         "\"{name}\" is a primitive schema type and cannot be used as a custom schema name"
@@ -88,19 +86,10 @@ impl Dialect {
             }
         }
 
-        let custom_schema_state = Rc::new(CustomSchemaState {
-            call_stack: RefCell::new(Vec::new()),
-            constant_select_cache: RefCell::new(HashMap::new()),
-        });
-
-        let custom_schemas: Rc<Vec<CustomSchema>> = Rc::new(
+        let custom_schemas: Rc<Vec<CustomParser>> = Rc::new(
             spec.schemas
                 .iter()
-                .map(|(name, schema_type)| CustomSchema {
-                    name: name.clone(),
-                    schema_type: schema_type.clone(),
-                    state: Rc::clone(&custom_schema_state),
-                })
+                .map(|(name, schema_type)| CustomParser::new(name.clone(), schema_type.clone()))
                 .collect(),
         );
 
@@ -152,7 +141,7 @@ impl Dialect {
                     let format = match matching.as_slice() {
                         [parser] => parser.parse(ctx).map(Some),
                         [] => Ok(None),
-                        _ => Err(vec![SpecError {
+                        _ => Err(vec![ParseError::SchemaError {
                             path: None,
                             message: format!("{} schema parsers matched", matching.len()),
                         }]),
@@ -170,10 +159,9 @@ impl Dialect {
             let visitor = SchemaParseVisitor {
                 primitive_schema_parsers: self.schema_parsers.clone(),
                 custom_schema_parsers: Rc::clone(&custom_schemas),
-                custom_schema_state: None,
                 spec: effect.schema.clone(),
-                path: vec![],
-                root: vec!["effects".into(), key.clone(), "schema".into()],
+                type_stack: vec![],
+                path: vec!["effects".into(), key.clone(), "schema".into()],
             };
 
             match visitor.parse() {
@@ -195,7 +183,7 @@ impl Dialect {
 
 pub trait FormatParser {
     fn should_parse(&self, context: &FormatParseContext) -> bool;
-    fn parse(&self, context: FormatParseContext) -> Result<Box<dyn Format>, Vec<SpecError>>;
+    fn parse(&self, context: FormatParseContext) -> Result<Box<dyn Format>, Vec<ParseError>>;
 }
 
 pub struct FormatParseContext {
@@ -204,7 +192,7 @@ pub struct FormatParseContext {
 }
 
 impl FormatParseContext {
-    pub fn new(simulation: super::Simulation, effect_key: String) -> Result<Self, SpecError> {
+    pub fn new(simulation: super::Simulation, effect_key: String) -> Result<Self, ParseError> {
         let effect = simulation
             .effects
             .get(&effect_key)
@@ -221,7 +209,7 @@ impl FormatParseContext {
         if let (Some(ef), Some(sf)) = (effect_ftype, system_ftype)
             && ef != sf
         {
-            return Err(SpecError {
+            return Err(ParseError::SchemaError {
                 path: Some(vec![
                     "effects".into(),
                     effect_key.clone(),
@@ -287,18 +275,16 @@ impl FormatParseContext {
 
 pub trait SchemaParser {
     fn key(&self) -> &str;
-    fn parse(&self, visitor: SchemaParseVisitor) -> Result<Box<dyn SchemaBuilder>, Vec<SpecError>>;
+    fn parse(&self, visitor: SchemaParseVisitor)
+    -> Result<Box<dyn SchemaBuilder>, Vec<ParseError>>;
 }
 
 pub struct SchemaParseVisitor {
     primitive_schema_parsers: Rc<Vec<Box<dyn SchemaParser>>>,
-    custom_schema_parsers: Rc<Vec<CustomSchema>>,
-    /// Only present while parsing within a custom schema's own body (i.e. once dispatch has
-    /// entered `CustomSchema::parse`); `None` for an effect's own top-level schema.
-    custom_schema_state: Option<Rc<CustomSchemaState>>,
+    custom_schema_parsers: Rc<Vec<CustomParser>>,
     spec: super::Schema,
+    type_stack: Vec<String>,
     path: Vec<String>,
-    root: Vec<String>,
 }
 
 impl SchemaParseVisitor {
@@ -306,46 +292,68 @@ impl SchemaParseVisitor {
         &self.spec
     }
 
-    pub fn absolute_path(&self) -> Vec<String> {
-        let mut path = self.root.clone();
-        path.append(&mut self.path.clone());
-        path
+    pub fn path(&self) -> Vec<String> {
+        self.path.clone()
     }
 
-    pub fn absolute_sub_path(&self, mut relative_path: Vec<String>) -> Vec<String> {
-        let mut path = self.absolute_path();
-        path.append(&mut relative_path);
-        path
+    pub fn enter_type(
+        mut self,
+        name: String,
+        spec: super::Schema,
+    ) -> Result<Self, Vec<ParseError>> {
+        if self.type_stack.contains(&name) {
+            let mut cyclic_type_stack = self.type_stack.clone();
+            cyclic_type_stack.push(name.clone());
+            return Err(vec![ParseError::SchemaError {
+                path: Some(vec!["schemas".into(), name, "schema".into()]),
+                message: format!("cyclical types: {}", cyclic_type_stack.join(" -> ")),
+            }]);
+        }
+
+        let path = vec!["schemas".into(), name.clone(), "schema".into()];
+        self.type_stack.push(name);
+        self.path = path;
+        self.spec = spec;
+        Ok(self)
     }
 
-    /// `Some` only while parsing within a custom schema's own body (see
-    /// `CustomSchemaState::constant_select_options`); `None` for an effect's own top-level
-    /// schema, which is only ever parsed once and so has nothing to share/cache.
-    pub(crate) fn custom_schema_state(&self) -> Option<&CustomSchemaState> {
-        self.custom_schema_state.as_deref()
+    pub fn schema_error(&self, message: impl Into<String>) -> ParseError {
+        ParseError::SchemaError {
+            path: Some(self.path().clone()),
+            message: message.into(),
+        }
+    }
+
+    pub fn input_error(&self, input: impl Into<String>, message: impl Into<String>) -> ParseError {
+        let mut path = self.path().clone();
+        path.push(input.into());
+
+        ParseError::SchemaError {
+            path: Some(path),
+            message: message.into(),
+        }
     }
 
     pub fn parse_child(
         &self,
         mut path: Vec<String>,
         spec: super::Schema,
-    ) -> Result<Box<dyn SchemaBuilder>, Vec<SpecError>> {
+    ) -> Result<Box<dyn SchemaBuilder>, Vec<ParseError>> {
         let mut new_path = self.path.clone();
         new_path.append(&mut path);
 
         let child = SchemaParseVisitor {
             primitive_schema_parsers: self.primitive_schema_parsers.clone(),
             custom_schema_parsers: self.custom_schema_parsers.clone(),
-            custom_schema_state: self.custom_schema_state.clone(),
+            type_stack: self.type_stack.clone(),
             spec,
             path: new_path,
-            root: self.root.clone(),
         };
 
         child.parse()
     }
 
-    fn parse(self) -> Result<Box<dyn SchemaBuilder>, Vec<SpecError>> {
+    pub fn parse(self) -> Result<Box<dyn SchemaBuilder>, Vec<ParseError>> {
         let schema_parsers = Rc::clone(&self.primitive_schema_parsers);
         let custom_schemas = Rc::clone(&self.custom_schema_parsers);
 
@@ -357,103 +365,15 @@ impl SchemaParseVisitor {
             .collect();
 
         match matching.len() {
-            0 => Err(vec![SpecError {
+            0 => Err(vec![ParseError::SchemaError {
                 path: None,
                 message: "no schema parser matched".into(),
             }]),
             1 => matching[0].parse(self),
-            total => Err(vec![SpecError {
+            total => Err(vec![ParseError::SchemaError {
                 path: None,
                 message: format!("{total} schema parsers matched"),
             }]),
         }
-    }
-}
-
-/// A constant select's options, shared (via `Rc`) across every reference site that parses
-/// to the same absolute path.
-pub type ConstantSelectOptions = Rc<Vec<(Value, u32)>>;
-
-/// Resolves `type: <name>` references to schemas defined under `.rngo/schemas/`: wraps a
-/// custom schema's definition together with its name so it can act as a `SchemaParser`,
-/// matched and dispatched the same way as primitive ones.
-///
-/// Each reference site parses its own independent `SchemaBuilder`, so behavior is
-/// identical to inlining the definition literally (including independent RNG at build
-/// time). This re-parses the definition per reference rather than sharing a single
-/// parsed instance, which duplicates cost/memory for large schemas in general; the one
-/// exception is a `select` whose options are all `constant`, which is common for large
-/// enums of literal values (the original motivating case) and cheap to special-case — see
-/// `constant_select_options` above.
-struct CustomSchema {
-    name: String,
-    schema_type: super::SchemaType,
-    state: Rc<CustomSchemaState>,
-}
-
-/// Cycle-detection stack and constant-`select` cache shared by every `CustomSchema`, so both
-/// stay correct/shared regardless of which effect or custom schema first references a name.
-pub(crate) struct CustomSchemaState {
-    call_stack: RefCell<Vec<String>>,
-    constant_select_cache: RefCell<HashMap<Vec<String>, ConstantSelectOptions>>,
-}
-
-impl CustomSchemaState {
-    /// Shares the returned `Rc` across every reference site with the same `path`, so a
-    /// constant-only `select` embedded in a custom schema is stored once in memory no matter
-    /// how many effects reference that custom schema.
-    pub(crate) fn constant_select_options(
-        &self,
-        path: Vec<String>,
-        values: Vec<(Value, u32)>,
-    ) -> ConstantSelectOptions {
-        if let Some(existing) = self.constant_select_cache.borrow().get(&path) {
-            return Rc::clone(existing);
-        }
-
-        let values = Rc::new(values);
-        self.constant_select_cache
-            .borrow_mut()
-            .insert(path, Rc::clone(&values));
-        values
-    }
-}
-
-impl SchemaParser for CustomSchema {
-    fn key(&self) -> &str {
-        &self.name
-    }
-
-    fn parse(&self, visitor: SchemaParseVisitor) -> Result<Box<dyn SchemaBuilder>, Vec<SpecError>> {
-        if self
-            .state
-            .call_stack
-            .borrow()
-            .iter()
-            .any(|n| n == &self.name)
-        {
-            let mut chain = self.state.call_stack.borrow().clone();
-            chain.push(self.name.clone());
-            return Err(vec![SpecError {
-                path: Some(vec!["schemas".into(), self.name.clone(), "value".into()]),
-                message: format!("cyclical schema reference: {}", chain.join(" -> ")),
-            }]);
-        }
-
-        self.state.call_stack.borrow_mut().push(self.name.clone());
-
-        let child = SchemaParseVisitor {
-            primitive_schema_parsers: visitor.primitive_schema_parsers.clone(),
-            custom_schema_parsers: visitor.custom_schema_parsers.clone(),
-            custom_schema_state: Some(Rc::clone(&self.state)),
-            spec: self.schema_type.schema.clone(),
-            path: vec![],
-            root: vec!["schemas".into(), self.name.clone(), "value".into()],
-        };
-
-        let result = child.parse();
-        self.state.call_stack.borrow_mut().pop();
-
-        result
     }
 }

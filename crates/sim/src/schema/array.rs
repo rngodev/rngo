@@ -1,6 +1,6 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::build::{BuildError, SchemaEdge};
-use crate::spec::{self, SchemaParseVisitor, SchemaParser, SpecError as Error};
+use crate::spec::{self, ParseError as Error, SchemaParseVisitor, SchemaParser};
 use rand::RngExt;
 use rand_pcg::Pcg32;
 
@@ -114,16 +114,10 @@ impl SchemaParser for ArrayParser {
     fn parse(&self, visitor: SchemaParseVisitor) -> Result<Box<dyn SchemaBuilder>, Vec<Error>> {
         let items_spec = match visitor.spec().fields.get("items") {
             Some(v) => serde_json::from_value::<spec::Schema>(v.clone()).map_err(|e| {
-                vec![Error {
-                    path: Some(visitor.absolute_sub_path(vec!["items".into()])),
-                    message: format!("items parsing failed: {e}"),
-                }]
+                vec![visitor.input_error("items", format!("items parsing failed: {e}"))]
             })?,
             None => {
-                return Err(vec![Error {
-                    path: Some(visitor.absolute_path()),
-                    message: "items must be specified".into(),
-                }]);
+                return Err(vec![visitor.schema_error("items must be specified")]);
             }
         };
 
@@ -136,20 +130,18 @@ impl SchemaParser for ArrayParser {
         if let Some(v) = visitor.spec().fields.get("minItems") {
             match v.as_u64() {
                 Some(n) => min_items = n as usize,
-                None => errors.push(Error {
-                    path: Some(visitor.absolute_sub_path(vec!["minItems".into()])),
-                    message: "minItems must be a non-negative integer".into(),
-                }),
+                None => errors.push(
+                    visitor.input_error("minItems", "minItems must be a non-negative integer"),
+                ),
             }
         }
 
         if let Some(v) = visitor.spec().fields.get("maxItems") {
             match v.as_u64() {
                 Some(n) => max_items = n as usize,
-                None => errors.push(Error {
-                    path: Some(visitor.absolute_sub_path(vec!["maxItems".into()])),
-                    message: "maxItems must be a non-negative integer".into(),
-                }),
+                None => errors.push(
+                    visitor.input_error("maxItems", "maxItems must be a non-negative integer"),
+                ),
             }
         }
 

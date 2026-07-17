@@ -1,7 +1,7 @@
 mod common;
 
-use common::SpecErrorTestExt;
-use rngo_sim::{Dialect, EffectEvent, SpecError};
+use common::ParseErrorTestExt;
+use rngo_sim::{Dialect, EffectEvent, ParseError};
 
 fn parse_and_run(json: &str) -> Vec<EffectEvent> {
     let value: serde_json::Value = serde_json::from_str(json).unwrap();
@@ -13,7 +13,7 @@ fn parse_and_run(json: &str) -> Vec<EffectEvent> {
     simulation.take(3).collect()
 }
 
-fn parse_errors(json: &str) -> Vec<SpecError> {
+fn parse_errors(json: &str) -> Vec<ParseError> {
     let value: serde_json::Value = serde_json::from_str(json).unwrap();
     Dialect::primitive()
         .parse_simulation_json(value)

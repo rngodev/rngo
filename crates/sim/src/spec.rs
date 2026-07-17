@@ -5,27 +5,26 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
-pub use parse::{
-    ConstantSelectOptions, Dialect, FormatParseContext, FormatParser, SchemaParseVisitor,
-    SchemaParser,
-};
+pub use parse::{Dialect, FormatParseContext, FormatParser, SchemaParseVisitor, SchemaParser};
 
-pub fn from_value(value: serde_json::Value) -> Result<Simulation, Vec<SpecError>> {
+pub fn from_value(value: serde_json::Value) -> Result<Simulation, Vec<ParseError>> {
     let mut track = serde_path_to_error::Track::new();
     let deserializer = serde_path_to_error::Deserializer::new(value, &mut track);
     serde_path_to_error::deserialize(deserializer).map_err(|e| {
-        vec![SpecError {
+        vec![ParseError::SchemaError {
             path: Some(e.path().to_string().split('.').map(String::from).collect()),
             message: e.inner().to_string(),
         }]
     })
 }
 
-#[derive(Error, Debug, Serialize, Deserialize)]
+#[derive(Error, Debug)]
 #[error("failed to parse: `{message}`")]
-pub struct SpecError {
-    pub path: Option<Vec<String>>,
-    pub message: String,
+pub enum ParseError {
+    SchemaError {
+        path: Option<Vec<String>>,
+        message: String,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

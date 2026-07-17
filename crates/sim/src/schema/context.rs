@@ -1,7 +1,7 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaResult};
 use crate::build::BuildError;
 use crate::schema::SchemaContext;
-use crate::spec::{SchemaParseVisitor, SchemaParser, SpecError as Error};
+use crate::spec::{ParseError as Error, SchemaParseVisitor, SchemaParser};
 use serde_json;
 
 #[derive(Debug)]
@@ -114,16 +114,10 @@ impl SchemaParser for ContextParser {
     fn parse(&self, visitor: SchemaParseVisitor) -> Result<Box<dyn SchemaBuilder>, Vec<Error>> {
         let path = match visitor.spec().fields.get("path") {
             Some(v) => serde_json::from_value::<Vec<String>>(v.clone()).map_err(|e| {
-                vec![Error {
-                    path: Some(visitor.absolute_sub_path(vec!["path".into()])),
-                    message: format!("path parsing failed: {e}"),
-                }]
+                vec![visitor.input_error("path", format!("path parsing failed: {e}"))]
             })?,
             None => {
-                return Err(vec![Error {
-                    path: Some(visitor.absolute_path()),
-                    message: "path must be specified".into(),
-                }]);
+                return Err(vec![visitor.schema_error("path must be specified")]);
             }
         };
 

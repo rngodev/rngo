@@ -1,5 +1,5 @@
 use super::cel::CelContextExt;
-use crate::spec::SpecError;
+use crate::spec::ParseError;
 use cel::{Context, Program, Value};
 use chrono::{DateTime, FixedOffset, NaiveDate, TimeDelta, TimeZone, Utc};
 
@@ -46,7 +46,7 @@ impl<'a> MomentParser<'a> {
         self
     }
 
-    pub fn parse(&self, field_name: &str, expr: &str) -> Result<Moment, Vec<SpecError>> {
+    pub fn parse(&self, field_name: &str, expr: &str) -> Result<Moment, Vec<ParseError>> {
         if let Ok(dt) = DateTime::parse_from_rfc3339(expr) {
             return Ok(Moment::Absolute(dt));
         }
@@ -70,14 +70,14 @@ impl<'a> MomentParser<'a> {
         };
 
         let program = Program::compile(expr).map_err(|e| {
-            vec![SpecError {
+            vec![ParseError::SchemaError {
                 path: Some(vec![field_name.to_string()]),
                 message: format!("could not compile {} expression: {}", field_name, e),
             }]
         })?;
 
         let value = program.execute(&context).map_err(|e| {
-            vec![SpecError {
+            vec![ParseError::SchemaError {
                 path: Some(vec![field_name.to_string()]),
                 message: format!("could not execute {} expression: {}", field_name, e),
             }]
@@ -90,7 +90,7 @@ impl<'a> MomentParser<'a> {
             Value::Timestamp(dt) => dt.timestamp(),
             Value::Duration(d) => (now + d).timestamp(),
             _ => {
-                return Err(vec![SpecError {
+                return Err(vec![ParseError::SchemaError {
                     path: Some(vec![field_name.to_string()]),
                     message: format!(
                         "{} expression must evaluate to a number or timestamp (seconds relative to now)",
@@ -110,7 +110,7 @@ impl<'a> MomentParser<'a> {
 mod tests {
     use super::*;
 
-    fn parse(expr: &str) -> Result<Moment, Vec<SpecError>> {
+    fn parse(expr: &str) -> Result<Moment, Vec<ParseError>> {
         Moment::parser().parse("field", expr)
     }
 
@@ -214,14 +214,16 @@ mod tests {
     #[test]
     fn error_on_invalid_expression() {
         let errs = parse("???").unwrap_err();
-        assert_eq!(errs[0].path, Some(vec!["field".to_string()]));
-        assert!(errs[0].message.contains("field"));
+        let ParseError::SchemaError { path, message } = &errs[0];
+        assert_eq!(path, &Some(vec!["field".to_string()]));
+        assert!(message.contains("field"));
     }
 
     #[test]
     fn error_on_wrong_type() {
         let errs = parse("true").unwrap_err();
-        assert_eq!(errs[0].path, Some(vec!["field".to_string()]));
-        assert!(errs[0].message.contains("field"));
+        let ParseError::SchemaError { path, message } = &errs[0];
+        assert_eq!(path, &Some(vec!["field".to_string()]));
+        assert!(message.contains("field"));
     }
 }

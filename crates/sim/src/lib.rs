@@ -13,5 +13,5 @@ pub use effect::{Effect, EffectEvent};
 pub use log::{FsProxyLog, Log, LogEvent, SimpleEventLog};
 pub use signal::{Io, Signal};
 pub use simulation::Simulation;
-pub use spec::{Dialect, SpecError};
+pub use spec::{Dialect, ParseError};
 pub use util::time::Moment;
