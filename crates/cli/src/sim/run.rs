@@ -105,6 +105,30 @@ fn load_spec(base: &Path) -> Result<spec::Simulation, Box<dyn Error>> {
         }
     }
 
+    if !spec["schemas"].is_object() {
+        spec["schemas"] = serde_json::json!({});
+    }
+
+    let schemas_dir = base.join(".rngo/schemas");
+    if schemas_dir.is_dir() {
+        let mut paths: Vec<_> = fs::read_dir(&schemas_dir)?
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("yml"))
+            .collect();
+        paths.sort();
+
+        for path in paths {
+            let key = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .ok_or_else(|| format!("invalid filename: {}", path.display()))?
+                .to_string();
+            let schema: serde_json::Value = serde_yaml::from_str(&fs::read_to_string(&path)?)?;
+            spec["schemas"][key] = schema;
+        }
+    }
+
     Ok(spec::from_value(spec).map_err(join_errors)?)
 }
 
@@ -292,5 +316,76 @@ mod tests {
             content.lines().count() > 0,
             "run should use the spec file passed via --spec"
         );
+    }
+
+    #[test]
+    fn schemas_dir_yml_files_are_referenceable_by_type_name() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+        let output = base.join("schemas_output.txt");
+
+        fs::create_dir_all(base.join(".rngo/effects")).unwrap();
+        fs::create_dir_all(base.join(".rngo/systems")).unwrap();
+        fs::create_dir_all(base.join(".rngo/schemas")).unwrap();
+
+        write_yaml(
+            base.join(".rngo/spec.yml"),
+            &json!({
+                "seed": 1,
+                "start": "2024-01-01",
+                "end": "2024-01-02"
+            }),
+        );
+
+        write_yaml(
+            base.join(".rngo/schemas/title.yml"),
+            &json!({
+                "schema": {
+                    "type": "select",
+                    "options": [
+                        { "schema": { "type": "constant", "value": "Mr." } },
+                        { "schema": { "type": "constant", "value": "Mrs." } },
+                        { "schema": { "type": "constant", "value": "Dr." } }
+                    ]
+                }
+            }),
+        );
+
+        write_yaml(
+            base.join(".rngo/effects/ping.yml"),
+            &json!({
+                "system": "logger",
+                "trigger": "hz(1, hour)",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "title": { "type": "title" }
+                    }
+                }
+            }),
+        );
+
+        let command = "cat >> ".to_string() + output.to_str().unwrap();
+        write_yaml(
+            base.join(".rngo/systems/logger.yml"),
+            &json!({
+                "format": {},
+                "import": { "type": "stream", "command": command }
+            }),
+        );
+
+        run(base, false, None).unwrap();
+
+        let content = fs::read_to_string(&output).unwrap();
+        let lines: Vec<_> = content.lines().collect();
+        assert!(!lines.is_empty(), "expected at least one emitted event");
+        for line in lines {
+            let value: serde_json::Value = serde_json::from_str(line).unwrap();
+            let title = value["title"].as_str().unwrap();
+            assert!(
+                ["Mr.", "Mrs.", "Dr."].contains(&title),
+                "unexpected title {title:?}"
+            );
+        }
     }
 }

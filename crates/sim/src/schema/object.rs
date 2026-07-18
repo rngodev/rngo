@@ -1,6 +1,7 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::build::{BuildError, SchemaEdge};
-use crate::spec::{self, SchemaParseVisitor, SchemaParser, SpecError as Error};
+use crate::parse::{SchemaParseVisitor, SchemaParser};
+use crate::spec::{self, ParseError as Error};
 use indexmap::IndexMap;
 use serde_json::Map;
 
@@ -84,25 +85,27 @@ impl SchemaBuilder for ObjectBuilder {
 pub struct ObjectParser {}
 
 impl SchemaParser for ObjectParser {
-    fn should_parse(&self, visitor: &SchemaParseVisitor) -> bool {
-        visitor.spec().stype == Some("object".into())
+    fn key(&self) -> &str {
+        "object"
     }
 
     fn parse(&self, visitor: SchemaParseVisitor) -> Result<Box<dyn SchemaBuilder>, Vec<Error>> {
         if let Some(input) = visitor.spec().fields.get("properties") {
             serde_json::from_value::<IndexMap<String, spec::Schema>>(input.clone())
                 .map_err(|err| {
-                    vec![Error {
-                        path: Some(visitor.absolute_sub_path(vec!["properties".into()])),
-                        message: format!("properties parsing failed: {err}"),
-                    }]
+                    vec![
+                        visitor
+                            .input_error("properties", format!("properties parsing failed: {err}")),
+                    ]
                 })
                 .and_then(|properties| {
                     let mut errors = vec![];
                     let mut builder = Object::builder();
 
                     for (key, schema) in properties.into_iter() {
-                        match visitor.parse_child(vec!["properties".into(), key.clone()], schema) {
+                        match visitor
+                            .parse_input_schema(vec!["properties".into(), key.clone()], schema)
+                        {
                             Ok(stream) => {
                                 builder.set_property(&key, stream);
                             }
@@ -117,10 +120,7 @@ impl SchemaParser for ObjectParser {
                     }
                 })
         } else {
-            Err(vec![Error {
-                path: Some(visitor.absolute_sub_path(vec!["properties".into()])),
-                message: "not specified".into(),
-            }])
+            Err(vec![visitor.input_error("properties", "not specified")])
         }
     }
 }

@@ -9,5 +9,8 @@ db-reset:
 db-truncate:
     psql postgres://cms:cms@localhost:5432/cms -c 'TRUNCATE posts, authors RESTART IDENTITY CASCADE'
 
-sim-run:
-    cargo run --manifest-path ../../Cargo.toml -p rngo-cli -- sim run
+rngo-run:
+    cargo run --manifest-path ../../Cargo.toml -p rngo-cli -- run
+
+psql:
+    psql postgres://cms:cms@localhost:5432/cms

@@ -1,0 +1,10 @@
+schema:
+  type: function
+  expression: "words.join(' ') + '.'"
+  variables:
+    words:
+      type: array
+      minItems: 6
+      maxItems: 14
+      items:
+        type: lorem.word

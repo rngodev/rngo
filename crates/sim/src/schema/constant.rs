@@ -1,7 +1,8 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaResult};
 use crate::build::BuildError;
+use crate::parse::{SchemaParseVisitor, SchemaParser};
 use crate::schema::SchemaContext;
-use crate::spec::{SchemaParseVisitor, SchemaParser, SpecError as Error};
+use crate::spec::ParseError;
 use serde_json::Value;
 
 #[derive(Debug)]
@@ -59,11 +60,14 @@ impl SchemaBuilder for ConstantBuilder {
 pub struct ConstantParser {}
 
 impl SchemaParser for ConstantParser {
-    fn should_parse(&self, visitor: &SchemaParseVisitor) -> bool {
-        visitor.spec().stype == Some("constant".into())
+    fn key(&self) -> &str {
+        "constant"
     }
 
-    fn parse(&self, visitor: SchemaParseVisitor) -> Result<Box<dyn SchemaBuilder>, Vec<Error>> {
+    fn parse(
+        &self,
+        visitor: SchemaParseVisitor,
+    ) -> Result<Box<dyn SchemaBuilder>, Vec<ParseError>> {
         let mut builder = Constant::builder();
 
         match visitor.spec().fields.get("value") {
@@ -71,10 +75,7 @@ impl SchemaParser for ConstantParser {
                 builder.set_value(value.clone());
                 Ok(Box::new(builder))
             }
-            None => Err(vec![Error {
-                path: Some(visitor.absolute_path()),
-                message: "value must be specified".into(),
-            }]),
+            None => Err(vec![visitor.schema_error("value must be specified")]),
         }
     }
 }

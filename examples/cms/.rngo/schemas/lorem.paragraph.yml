@@ -1,0 +1,10 @@
+schema:
+  type: function
+  expression: "sentences.join(' ')"
+  variables:
+    sentences:
+      type: array
+      minItems: 3
+      maxItems: 6
+      items:
+        type: lorem.sentence

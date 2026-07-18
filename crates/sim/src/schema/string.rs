@@ -1,7 +1,8 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaResult};
 use crate::build::BuildError;
+use crate::parse::{SchemaParseVisitor, SchemaParser};
 use crate::schema::SchemaContext;
-use crate::spec::{SchemaParseVisitor, SchemaParser, SpecError as Error};
+use crate::spec::ParseError as Error;
 use rand::distr::Distribution;
 use rand_pcg::Pcg32;
 
@@ -67,8 +68,8 @@ impl SchemaBuilder for StrBuilder {
 pub struct StrParser {}
 
 impl SchemaParser for StrParser {
-    fn should_parse(&self, visitor: &SchemaParseVisitor) -> bool {
-        visitor.spec().stype == Some("string".into())
+    fn key(&self) -> &str {
+        "string"
     }
 
     fn parse(&self, visitor: SchemaParseVisitor) -> Result<Box<dyn SchemaBuilder>, Vec<Error>> {
@@ -79,14 +80,10 @@ impl SchemaParser for StrParser {
                 builder.set_pattern(v.as_str().unwrap());
                 Ok(Box::new(builder))
             }
-            Some(_) => Err(vec![Error {
-                path: Some(visitor.absolute_sub_path(vec!["pattern".into()])),
-                message: "pattern must be a string".into(),
-            }]),
-            None => Err(vec![Error {
-                path: Some(visitor.absolute_path()),
-                message: "pattern must be specified".into(),
-            }]),
+            Some(_) => Err(vec![
+                visitor.input_error("pattern", "pattern must be a string"),
+            ]),
+            None => Err(vec![visitor.schema_error("pattern must be specified")]),
         }
     }
 }

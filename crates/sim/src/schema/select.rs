@@ -1,6 +1,7 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::build::{BuildError, SchemaEdge};
-use crate::spec::{self, SchemaParseVisitor, SchemaParser, SpecError as Error};
+use crate::parse::{SchemaParseVisitor, SchemaParser};
+use crate::spec::{self, ParseError as Error};
 use rand::RngExt;
 use rand_pcg::Pcg32;
 use serde::Deserialize;
@@ -96,42 +97,33 @@ impl SchemaBuilder for SelectBuilder {
     }
 }
 
+#[derive(Deserialize)]
+struct OptionSpec {
+    weight: Option<u32>,
+    schema: spec::Schema,
+}
+
 pub struct SelectParser {}
 
 impl SchemaParser for SelectParser {
-    fn should_parse(&self, visitor: &SchemaParseVisitor) -> bool {
-        visitor.spec().stype == Some("select".into())
+    fn key(&self) -> &str {
+        "select"
     }
 
     fn parse(&self, visitor: SchemaParseVisitor) -> Result<Box<dyn SchemaBuilder>, Vec<Error>> {
-        #[derive(Deserialize)]
-        struct OptionSpec {
-            weight: Option<u32>,
-            schema: spec::Schema,
-        }
-
         let options_value = match visitor.spec().fields.get("options") {
             Some(v) => v.clone(),
             None => {
-                return Err(vec![Error {
-                    path: Some(visitor.absolute_path()),
-                    message: "options must be specified".into(),
-                }]);
+                return Err(vec![visitor.schema_error("options must be specified")]);
             }
         };
 
         let option_specs: Vec<OptionSpec> = serde_json::from_value(options_value).map_err(|e| {
-            vec![Error {
-                path: Some(visitor.absolute_sub_path(vec!["options".into()])),
-                message: format!("options parsing failed: {e}"),
-            }]
+            vec![visitor.input_error("options", format!("options parsing failed: {e}"))]
         })?;
 
         if option_specs.is_empty() {
-            return Err(vec![Error {
-                path: Some(visitor.absolute_path()),
-                message: "options must not be empty".into(),
-            }]);
+            return Err(vec![visitor.schema_error("options must not be empty")]);
         }
 
         let mut errors = vec![];
@@ -139,7 +131,7 @@ impl SchemaParser for SelectParser {
 
         for (i, option) in option_specs.into_iter().enumerate() {
             let path = vec!["options".into(), i.to_string(), "schema".into()];
-            match visitor.parse_child(path, option.schema) {
+            match visitor.parse_input_schema(path, option.schema) {
                 Ok(schema_builder) => {
                     builder.set_option(option.weight.unwrap_or(1), schema_builder);
                 }
