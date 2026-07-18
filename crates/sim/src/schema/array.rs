@@ -1,6 +1,7 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::build::{BuildError, SchemaEdge};
-use crate::spec::{self, ParseError as Error, SchemaParseVisitor, SchemaParser};
+use crate::parse::{SchemaParseVisitor, SchemaParser};
+use crate::spec::{self, ParseError as Error};
 use rand::RngExt;
 use rand_pcg::Pcg32;
 
@@ -121,7 +122,7 @@ impl SchemaParser for ArrayParser {
             }
         };
 
-        let items_builder = visitor.parse_child(vec!["items".into()], items_spec)?;
+        let items_builder = visitor.parse_input_schema(vec!["items".into()], items_spec)?;
 
         let mut errors = vec![];
         let mut min_items = 0usize;

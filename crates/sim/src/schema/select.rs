@@ -1,6 +1,7 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::build::{BuildError, SchemaEdge};
-use crate::spec::{self, ParseError as Error, SchemaParseVisitor, SchemaParser};
+use crate::parse::{SchemaParseVisitor, SchemaParser};
+use crate::spec::{self, ParseError as Error};
 use rand::RngExt;
 use rand_pcg::Pcg32;
 use serde::Deserialize;
@@ -130,7 +131,7 @@ impl SchemaParser for SelectParser {
 
         for (i, option) in option_specs.into_iter().enumerate() {
             let path = vec!["options".into(), i.to_string(), "schema".into()];
-            match visitor.parse_child(path, option.schema) {
+            match visitor.parse_input_schema(path, option.schema) {
                 Ok(schema_builder) => {
                     builder.set_option(option.weight.unwrap_or(1), schema_builder);
                 }

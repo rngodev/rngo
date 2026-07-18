@@ -1,6 +1,6 @@
 use super::SchemaBuilder;
-use crate::ParseError;
-use crate::spec::{self, SchemaParseVisitor, SchemaParser};
+use crate::parse::{SchemaParseVisitor, SchemaParser};
+use crate::{ParseError, spec};
 
 pub(crate) struct CustomParser {
     name: String,
@@ -22,8 +22,6 @@ impl SchemaParser for CustomParser {
         &self,
         visitor: SchemaParseVisitor,
     ) -> Result<Box<dyn SchemaBuilder>, Vec<ParseError>> {
-        let type_visitor =
-            visitor.enter_type(self.name.clone(), self.schema_type.schema.clone())?;
-        type_visitor.parse()
+        visitor.parse_custom_schema(self.name.clone(), self.schema_type.schema.clone())
     }
 }

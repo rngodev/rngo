@@ -1,6 +1,7 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::build::{BuildError, SchemaEdge};
-use crate::spec::{self, ParseError as Error, SchemaParseVisitor, SchemaParser};
+use crate::parse::{SchemaParseVisitor, SchemaParser};
+use crate::spec::{self, ParseError as Error};
 use crate::util::cel::CelContextExt;
 use cel::{Context, Program};
 use indexmap::IndexMap;
@@ -148,7 +149,7 @@ impl SchemaParser for FunctionParser {
             let mut errors = vec![];
             for (key, schema) in vars {
                 let path = vec!["variables".into(), key.clone()];
-                match visitor.parse_child(path, schema) {
+                match visitor.parse_input_schema(path, schema) {
                     Ok(b) => {
                         builder.set_variable(key, b);
                     }

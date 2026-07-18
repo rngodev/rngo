@@ -1,7 +1,8 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::build::BuildError;
 use crate::log::{LogIndex, LogIndexConfig};
-use crate::spec::{ParseError as Error, SchemaParseVisitor, SchemaParser};
+use crate::parse::{SchemaParseVisitor, SchemaParser};
+use crate::spec::ParseError as Error;
 
 #[derive(Debug)]
 pub struct Reference {

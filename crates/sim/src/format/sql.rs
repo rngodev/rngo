@@ -2,7 +2,7 @@ use serde_json::Value;
 
 use crate::ParseError;
 use crate::format::Format;
-use crate::spec::{FormatParseContext, FormatParser};
+use crate::parse::{FormatParseContext, FormatParser};
 
 #[derive(Debug)]
 pub struct SqlFormat {
@@ -73,10 +73,7 @@ impl FormatParser for SqlFormatParser {
         context.is_format_type("sql")
     }
 
-    fn parse(
-        &self,
-        context: crate::spec::FormatParseContext,
-    ) -> Result<Box<dyn Format>, Vec<ParseError>> {
+    fn parse(&self, context: FormatParseContext) -> Result<Box<dyn Format>, Vec<ParseError>> {
         let format = context.format();
         let table_name: String = format
             .as_ref()

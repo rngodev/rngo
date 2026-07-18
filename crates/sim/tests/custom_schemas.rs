@@ -147,6 +147,29 @@ fn cyclical_custom_schema_reference_errors() {
 }
 
 #[test]
+fn malformed_custom_schema_errors() {
+    let json = r#"{
+        "schemas": {
+            "age": { "schema": { "type": "number", "minimum": "not-a-number" } }
+        },
+        "effects": {
+            "a": { "schema": { "type": "age" } }
+        }
+    }"#;
+
+    let errors = parse_errors(json);
+
+    let error = errors
+        .iter()
+        .find(|e| e.message().contains("minimum must be a number"))
+        .unwrap();
+    assert_eq!(
+        error.path().unwrap().as_slice(),
+        ["schemas", "age", "schema", "minimum"]
+    );
+}
+
+#[test]
 fn unknown_custom_schema_type_still_errors_like_before() {
     let json = r#"{
         "effects": {

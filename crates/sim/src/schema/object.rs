@@ -1,6 +1,7 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::build::{BuildError, SchemaEdge};
-use crate::spec::{self, ParseError as Error, SchemaParseVisitor, SchemaParser};
+use crate::parse::{SchemaParseVisitor, SchemaParser};
+use crate::spec::{self, ParseError as Error};
 use indexmap::IndexMap;
 use serde_json::Map;
 
@@ -102,7 +103,9 @@ impl SchemaParser for ObjectParser {
                     let mut builder = Object::builder();
 
                     for (key, schema) in properties.into_iter() {
-                        match visitor.parse_child(vec!["properties".into(), key.clone()], schema) {
+                        match visitor
+                            .parse_input_schema(vec!["properties".into(), key.clone()], schema)
+                        {
                             Ok(stream) => {
                                 builder.set_property(&key, stream);
                             }
