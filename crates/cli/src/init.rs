@@ -1,3 +1,5 @@
+mod skills;
+
 use std::error::Error;
 use std::fs;
 use std::path::Path;
@@ -15,6 +17,8 @@ pub fn init(base: &Path) -> Result<(), Box<dyn Error>> {
     fs::write(&spec_path, format!("key: {name}\nseed: 1\n"))?;
 
     ensure_gitignore(base)?;
+
+    skills::offer_install(base);
 
     Ok(())
 }
