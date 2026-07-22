@@ -9,7 +9,7 @@ use tempfile::TempDir;
 
 const RELEASES_URL: &str = "https://api.github.com/repos/rngodev/agent/releases/latest";
 const USER_AGENT: &str = "rngo-cli";
-const VERSION_FILE: &str = ".rngo-skills-version";
+const VERSION_FILE: &str = ".version";
 
 #[derive(Clone, Copy)]
 enum AgentDir {
@@ -24,11 +24,6 @@ impl AgentDir {
             AgentDir::Agents => ".agents",
         }
     }
-}
-
-struct Release {
-    version: Version,
-    zipball_url: String,
 }
 
 /// A skill directory found inside the extracted release archive, keyed by
@@ -50,27 +45,29 @@ fn try_offer_install(base: &Path) -> Result<(), Box<dyn Error>> {
         (AgentDir::Agents, home.join(".agents").join("skills")),
     ];
 
-    let release = fetch_latest_release()?;
+    let zipball_url = fetch_latest_zipball_url()?;
+    let (_tmp, skills) = fetch_skills(&zipball_url)?;
 
     let present: Vec<_> = global_locations
         .iter()
-        .filter(|(_, dir)| installed_version(dir).is_some())
+        .filter(|(_, dir)| {
+            skills
+                .iter()
+                .any(|(name, _)| dir.join(name).join(VERSION_FILE).exists())
+        })
         .collect();
 
     if present.is_empty() {
-        return offer_fresh_install(base, &release);
+        return offer_fresh_install(base, &skills);
     }
 
     let outdated: Vec<_> = present
         .into_iter()
-        .filter(|(_, dir)| installed_version(dir).is_none_or(|v| v < release.version))
+        .filter(|(_, dir)| location_outdated(dir, &skills).unwrap_or(true))
         .collect();
 
     if outdated.is_empty() {
-        println!(
-            "rngo agent skills are already installed and up to date (v{}).",
-            release.version
-        );
+        println!("rngo agent skills are already installed and up to date.");
         return Ok(());
     }
 
@@ -82,16 +79,14 @@ fn try_offer_install(base: &Path) -> Result<(), Box<dyn Error>> {
 
     let update = Confirm::new()
         .with_prompt(format!(
-            "Your global rngo agent skills are out of date:\n{list}\nUpdate them to v{} now?",
-            release.version
+            "Your global rngo agent skills are out of date:\n{list}\nUpdate them now?"
         ))
         .default(true)
         .interact()?;
 
     if update {
-        let (_tmp, skills) = fetch_skills(&release)?;
         for (_, dir) in &outdated {
-            install_skills(dir, &skills, &release.version)?;
+            install_skills(dir, &skills)?;
         }
         println!("Updated rngo agent skills.");
     }
@@ -99,7 +94,7 @@ fn try_offer_install(base: &Path) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn offer_fresh_install(base: &Path, release: &Release) -> Result<(), Box<dyn Error>> {
+fn offer_fresh_install(base: &Path, skills: &[Skill]) -> Result<(), Box<dyn Error>> {
     let install = Confirm::new()
         .with_prompt("Install rngo agent skills?")
         .default(true)
@@ -135,20 +130,15 @@ fn offer_fresh_install(base: &Path, release: &Release) -> Result<(), Box<dyn Err
         dirs.push(root.join(".agents").join("skills"));
     }
 
-    let (_tmp, skills) = fetch_skills(release)?;
     for dir in &dirs {
-        install_skills(dir, &skills, &release.version)?;
+        install_skills(dir, skills)?;
     }
 
     println!("Installed rngo agent skills.");
     Ok(())
 }
 
-fn install_skills(
-    skills_dir: &Path,
-    skills: &[Skill],
-    version: &Version,
-) -> Result<(), Box<dyn Error>> {
+fn install_skills(skills_dir: &Path, skills: &[Skill]) -> Result<(), Box<dyn Error>> {
     for (name, src) in skills {
         let dest = skills_dir.join(name);
         if dest.exists() {
@@ -156,8 +146,6 @@ fn install_skills(
         }
         copy_dir(src, &dest)?;
     }
-
-    fs::write(skills_dir.join(VERSION_FILE), version.to_string())?;
 
     Ok(())
 }
@@ -179,8 +167,23 @@ fn copy_dir(src: &Path, dest: &Path) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn installed_version(skills_dir: &Path) -> Option<Version> {
-    let content = fs::read_to_string(skills_dir.join(VERSION_FILE)).ok()?;
+fn location_outdated(dir: &Path, skills: &[Skill]) -> Result<bool, Box<dyn Error>> {
+    for (name, src) in skills {
+        let latest_version = skill_version(&src.join(VERSION_FILE))
+            .ok_or_else(|| format!("skill \"{name}\" is missing a {VERSION_FILE} file"))?;
+
+        match skill_version(&dir.join(name).join(VERSION_FILE)) {
+            None => return Ok(true),
+            Some(v) if v < latest_version => return Ok(true),
+            Some(_) => {}
+        }
+    }
+
+    Ok(false)
+}
+
+fn skill_version(path: &Path) -> Option<Version> {
+    let content = fs::read_to_string(path).ok()?;
     Version::parse(content.trim()).ok()
 }
 
@@ -202,8 +205,8 @@ fn list_skills(skills_root: &Path) -> Result<Vec<Skill>, Box<dyn Error>> {
     Ok(skills)
 }
 
-fn fetch_skills(release: &Release) -> Result<(TempDir, Vec<Skill>), Box<dyn Error>> {
-    let zip_bytes = download(&release.zipball_url)?;
+fn fetch_skills(zipball_url: &str) -> Result<(TempDir, Vec<Skill>), Box<dyn Error>> {
+    let zip_bytes = download(zipball_url)?;
     let extracted = extract_skills(&zip_bytes)?;
     let skills = list_skills(&extracted.path().join("skills"))?;
 
@@ -221,7 +224,7 @@ fn extract_skills(zip_bytes: &[u8]) -> Result<TempDir, Box<dyn Error>> {
     Ok(tmp)
 }
 
-fn fetch_latest_release() -> Result<Release, Box<dyn Error>> {
+fn fetch_latest_zipball_url() -> Result<String, Box<dyn Error>> {
     let json: serde_json::Value = ureq::get(RELEASES_URL)
         .header("User-Agent", USER_AGENT)
         .header("Accept", "application/vnd.github+json")
@@ -229,20 +232,10 @@ fn fetch_latest_release() -> Result<Release, Box<dyn Error>> {
         .body_mut()
         .read_json()?;
 
-    let tag_name = json["tag_name"]
+    json["zipball_url"]
         .as_str()
-        .ok_or("latest release is missing a tag_name")?;
-    let version = Version::parse(tag_name.trim_start_matches('v'))?;
-
-    let zipball_url = json["zipball_url"]
-        .as_str()
-        .ok_or("latest release is missing a zipball_url")?
-        .to_string();
-
-    Ok(Release {
-        version,
-        zipball_url,
-    })
+        .map(|s| s.to_string())
+        .ok_or_else(|| "latest release is missing a zipball_url".into())
 }
 
 fn download(url: &str) -> Result<Vec<u8>, Box<dyn Error>> {
@@ -285,13 +278,21 @@ mod tests {
         let zip_bytes = build_zip(&[
             (
                 "agent-abc123/skills/rngo-system-inference/SKILL.md",
-                "---\nname: rngo-system-inference\n---\n\nBody\n",
+                "content",
+            ),
+            (
+                "agent-abc123/skills/rngo-system-inference/.version",
+                "0.2.0",
             ),
             (
                 "agent-abc123/skills/rngo-effect-inference/SKILL.md",
-                "---\nname: rngo-effect-inference\n---\n\nBody\n",
+                "content",
             ),
-            ("agent-abc123/VERSION", "0.1.0"),
+            (
+                "agent-abc123/skills/rngo-effect-inference/.version",
+                "0.2.0",
+            ),
+            ("agent-abc123/VERSION", "0.2.0"),
         ]);
 
         let extracted = extract_skills(&zip_bytes).unwrap();
@@ -300,6 +301,10 @@ mod tests {
         assert_eq!(skills.len(), 2);
         assert_eq!(skills[0].0, "rngo-effect-inference");
         assert_eq!(skills[1].0, "rngo-system-inference");
+        assert_eq!(
+            skill_version(&skills[1].1.join(".version")),
+            Some(Version::new(0, 2, 0))
+        );
     }
 
     #[test]
@@ -308,6 +313,7 @@ mod tests {
         let src = src_root.path().join("rngo-system-inference");
         fs::create_dir_all(src.join("nested")).unwrap();
         fs::write(src.join("SKILL.md"), "content").unwrap();
+        fs::write(src.join(".version"), "0.2.0").unwrap();
         fs::write(src.join("nested").join("extra.md"), "extra").unwrap();
 
         let dest_root = TempDir::new().unwrap();
@@ -319,6 +325,7 @@ mod tests {
             fs::read_to_string(dest.join("SKILL.md")).unwrap(),
             "content"
         );
+        assert_eq!(fs::read_to_string(dest.join(".version")).unwrap(), "0.2.0");
         assert_eq!(
             fs::read_to_string(dest.join("nested").join("extra.md")).unwrap(),
             "extra"
@@ -326,39 +333,60 @@ mod tests {
     }
 
     #[test]
-    fn install_skills_writes_version_marker() {
+    fn install_skills_copies_version_file() {
         let src_root = TempDir::new().unwrap();
         let src = src_root.path().join("rngo-system-inference");
         fs::create_dir_all(&src).unwrap();
         fs::write(src.join("SKILL.md"), "content").unwrap();
+        fs::write(src.join(".version"), "1.2.0").unwrap();
         let skills = vec![("rngo-system-inference".to_string(), src)];
 
         let dest_root = TempDir::new().unwrap();
-        install_skills(dest_root.path(), &skills, &Version::new(1, 2, 0)).unwrap();
+        install_skills(dest_root.path(), &skills).unwrap();
 
-        assert!(
-            dest_root
-                .path()
-                .join("rngo-system-inference")
-                .join("SKILL.md")
-                .exists()
-        );
+        let installed = dest_root.path().join("rngo-system-inference");
+        assert!(installed.join("SKILL.md").exists());
         assert_eq!(
-            installed_version(dest_root.path()),
+            skill_version(&installed.join(".version")),
             Some(Version::new(1, 2, 0))
         );
     }
 
     #[test]
-    fn installed_version_missing_when_no_marker() {
+    fn skill_version_missing_when_no_file() {
         let dir = TempDir::new().unwrap();
-        assert_eq!(installed_version(dir.path()), None);
+        assert_eq!(skill_version(&dir.path().join(".version")), None);
     }
 
     #[test]
-    fn installed_version_none_for_garbage_marker() {
+    fn skill_version_none_for_garbage_content() {
         let dir = TempDir::new().unwrap();
-        fs::write(dir.path().join(VERSION_FILE), "not-a-version").unwrap();
-        assert_eq!(installed_version(dir.path()), None);
+        let path = dir.path().join(".version");
+        fs::write(&path, "not-a-version").unwrap();
+        assert_eq!(skill_version(&path), None);
+    }
+
+    #[test]
+    fn location_outdated_when_missing_or_behind() {
+        let latest_root = TempDir::new().unwrap();
+        let latest_skill = latest_root.path().join("rngo-system-inference");
+        fs::create_dir_all(&latest_skill).unwrap();
+        fs::write(latest_skill.join(".version"), "0.2.0").unwrap();
+        let skills = vec![("rngo-system-inference".to_string(), latest_skill.clone())];
+
+        let empty_dir = TempDir::new().unwrap();
+        assert!(location_outdated(empty_dir.path(), &skills).unwrap());
+
+        let behind_dir = TempDir::new().unwrap();
+        let installed = behind_dir.path().join("rngo-system-inference");
+        fs::create_dir_all(&installed).unwrap();
+        fs::write(installed.join(".version"), "0.1.0").unwrap();
+        assert!(location_outdated(behind_dir.path(), &skills).unwrap());
+
+        let current_dir = TempDir::new().unwrap();
+        let installed = current_dir.path().join("rngo-system-inference");
+        fs::create_dir_all(&installed).unwrap();
+        fs::write(installed.join(".version"), "0.2.0").unwrap();
+        assert!(!location_outdated(current_dir.path(), &skills).unwrap());
     }
 }
