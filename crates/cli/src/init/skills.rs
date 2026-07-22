@@ -1,35 +1,15 @@
-use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
 use dialoguer::{Confirm, Select};
+use semver::Version;
+use tempfile::TempDir;
 
-const BASE_URL: &str = "https://rngo.dev/llm/skills/latest";
-
-struct SkillDef {
-    key: &'static str,
-    name: &'static str,
-    file: &'static str,
-}
-
-const SKILLS: [SkillDef; 3] = [
-    SkillDef {
-        key: "systems",
-        name: "rngo-systems",
-        file: "systems.md",
-    },
-    SkillDef {
-        key: "effects",
-        name: "rngo-effects",
-        file: "effects.md",
-    },
-    SkillDef {
-        key: "schema",
-        name: "rngo-schema",
-        file: "schema.md",
-    },
-];
+const RELEASES_URL: &str = "https://api.github.com/repos/rngodev/agent/releases/latest";
+const USER_AGENT: &str = "rngo-cli";
+const VERSION_FILE: &str = ".rngo-skills-version";
 
 #[derive(Clone, Copy)]
 enum AgentDir {
@@ -46,6 +26,15 @@ impl AgentDir {
     }
 }
 
+struct Release {
+    version: Version,
+    zipball_url: String,
+}
+
+/// A skill directory found inside the extracted release archive, keyed by
+/// its directory name (e.g. `rngo-system-inference`).
+type Skill = (String, PathBuf);
+
 /// Offers to install rngo agent skills, printing a warning instead of
 /// failing `rngo init` if anything (network, prompts) goes wrong.
 pub fn offer_install(base: &Path) {
@@ -61,28 +50,27 @@ fn try_offer_install(base: &Path) -> Result<(), Box<dyn Error>> {
         (AgentDir::Agents, home.join(".agents").join("skills")),
     ];
 
+    let release = fetch_latest_release()?;
+
     let present: Vec<_> = global_locations
         .iter()
-        .filter(|(_, dir)| {
-            SKILLS
-                .iter()
-                .any(|s| dir.join(s.name).join("SKILL.md").exists())
-        })
+        .filter(|(_, dir)| installed_version(dir).is_some())
         .collect();
 
     if present.is_empty() {
-        return offer_fresh_install(base);
+        return offer_fresh_install(base, &release);
     }
-
-    let latest = fetch_versions()?;
 
     let outdated: Vec<_> = present
         .into_iter()
-        .filter(|(_, dir)| location_outdated(dir, &latest).unwrap_or(true))
+        .filter(|(_, dir)| installed_version(dir).is_none_or(|v| v < release.version))
         .collect();
 
     if outdated.is_empty() {
-        println!("rngo agent skills are already installed and up to date.");
+        println!(
+            "rngo agent skills are already installed and up to date (v{}).",
+            release.version
+        );
         return Ok(());
     }
 
@@ -94,14 +82,16 @@ fn try_offer_install(base: &Path) -> Result<(), Box<dyn Error>> {
 
     let update = Confirm::new()
         .with_prompt(format!(
-            "Your global rngo agent skills are out of date:\n{list}\nUpdate them now?"
+            "Your global rngo agent skills are out of date:\n{list}\nUpdate them to v{} now?",
+            release.version
         ))
         .default(true)
         .interact()?;
 
     if update {
+        let (_tmp, skills) = fetch_skills(&release)?;
         for (_, dir) in &outdated {
-            install_skills(dir, &latest)?;
+            install_skills(dir, &skills, &release.version)?;
         }
         println!("Updated rngo agent skills.");
     }
@@ -109,9 +99,9 @@ fn try_offer_install(base: &Path) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn offer_fresh_install(base: &Path) -> Result<(), Box<dyn Error>> {
+fn offer_fresh_install(base: &Path, release: &Release) -> Result<(), Box<dyn Error>> {
     let install = Confirm::new()
-        .with_prompt("Install rngo agent skills (rngo-systems, rngo-effects, rngo-schema)?")
+        .with_prompt("Install rngo agent skills?")
         .default(true)
         .interact()?;
 
@@ -145,99 +135,125 @@ fn offer_fresh_install(base: &Path) -> Result<(), Box<dyn Error>> {
         dirs.push(root.join(".agents").join("skills"));
     }
 
-    let latest = fetch_versions()?;
+    let (_tmp, skills) = fetch_skills(release)?;
     for dir in &dirs {
-        install_skills(dir, &latest)?;
+        install_skills(dir, &skills, &release.version)?;
     }
 
     println!("Installed rngo agent skills.");
     Ok(())
 }
 
-fn install_skills(skills_dir: &Path, latest: &HashMap<String, u64>) -> Result<(), Box<dyn Error>> {
-    for skill in &SKILLS {
-        let version = *latest
-            .get(skill.key)
-            .ok_or_else(|| format!("no version found for skill \"{}\"", skill.key))?;
-        let content = fetch_skill_content(skill.file)?;
-        let content = inject_version(&content, version)?;
+fn install_skills(
+    skills_dir: &Path,
+    skills: &[Skill],
+    version: &Version,
+) -> Result<(), Box<dyn Error>> {
+    for (name, src) in skills {
+        let dest = skills_dir.join(name);
+        if dest.exists() {
+            fs::remove_dir_all(&dest)?;
+        }
+        copy_dir(src, &dest)?;
+    }
 
-        let skill_dir = skills_dir.join(skill.name);
-        fs::create_dir_all(&skill_dir)?;
-        fs::write(skill_dir.join("SKILL.md"), content)?;
+    fs::write(skills_dir.join(VERSION_FILE), version.to_string())?;
+
+    Ok(())
+}
+
+fn copy_dir(src: &Path, dest: &Path) -> Result<(), Box<dyn Error>> {
+    fs::create_dir_all(dest)?;
+
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let dest_path = dest.join(entry.file_name());
+
+        if entry.file_type()?.is_dir() {
+            copy_dir(&entry.path(), &dest_path)?;
+        } else {
+            fs::copy(entry.path(), &dest_path)?;
+        }
     }
 
     Ok(())
 }
 
-fn location_outdated(dir: &Path, latest: &HashMap<String, u64>) -> Result<bool, Box<dyn Error>> {
-    for skill in &SKILLS {
-        let path = dir.join(skill.name).join("SKILL.md");
-        let latest_version = *latest
-            .get(skill.key)
-            .ok_or_else(|| format!("no version found for skill \"{}\"", skill.key))?;
+fn installed_version(skills_dir: &Path) -> Option<Version> {
+    let content = fs::read_to_string(skills_dir.join(VERSION_FILE)).ok()?;
+    Version::parse(content.trim()).ok()
+}
 
-        match installed_version(&path)? {
-            None => return Ok(true),
-            Some(v) if v < latest_version => return Ok(true),
-            Some(_) => {}
+fn list_skills(skills_root: &Path) -> Result<Vec<Skill>, Box<dyn Error>> {
+    if !skills_root.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut skills = Vec::new();
+    for entry in fs::read_dir(skills_root)? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            skills.push((name, entry.path()));
         }
     }
+    skills.sort_by(|a, b| a.0.cmp(&b.0));
 
-    Ok(false)
+    Ok(skills)
 }
 
-fn installed_version(path: &Path) -> Result<Option<u64>, Box<dyn Error>> {
-    if !path.exists() {
-        return Ok(None);
+fn fetch_skills(release: &Release) -> Result<(TempDir, Vec<Skill>), Box<dyn Error>> {
+    let zip_bytes = download(&release.zipball_url)?;
+    let extracted = extract_skills(&zip_bytes)?;
+    let skills = list_skills(&extracted.path().join("skills"))?;
+
+    if skills.is_empty() {
+        return Err("release archive does not contain a skills directory".into());
     }
 
-    let content = fs::read_to_string(path)?;
-    let frontmatter = match parse_frontmatter(&content) {
-        Some(fm) => fm,
-        None => return Ok(None),
-    };
-
-    Ok(frontmatter.get("version").and_then(|v| v.as_u64()))
+    Ok((extracted, skills))
 }
 
-fn parse_frontmatter(content: &str) -> Option<serde_yaml::Mapping> {
-    let rest = content.strip_prefix("---")?;
-    let end = rest.find("\n---")?;
-    let frontmatter = &rest[..end];
-    serde_yaml::from_str(frontmatter).ok()
+fn extract_skills(zip_bytes: &[u8]) -> Result<TempDir, Box<dyn Error>> {
+    let tmp = TempDir::new()?;
+    let mut archive = zip::ZipArchive::new(Cursor::new(zip_bytes))?;
+    archive.extract_unwrapped_root_dir(tmp.path(), zip::read::root_dir_common_filter)?;
+    Ok(tmp)
 }
 
-fn inject_version(content: &str, version: u64) -> Result<String, Box<dyn Error>> {
-    let rest = content
-        .strip_prefix("---")
-        .ok_or("skill content is missing frontmatter")?;
-    let end = rest
-        .find("\n---")
-        .ok_or("skill content has an unterminated frontmatter block")?;
-    let frontmatter = &rest[..end];
-    let body = &rest[end + 4..];
+fn fetch_latest_release() -> Result<Release, Box<dyn Error>> {
+    let json: serde_json::Value = ureq::get(RELEASES_URL)
+        .header("User-Agent", USER_AGENT)
+        .header("Accept", "application/vnd.github+json")
+        .call()?
+        .body_mut()
+        .read_json()?;
 
-    let mut doc: serde_yaml::Mapping = serde_yaml::from_str(frontmatter)?;
-    doc.insert(
-        serde_yaml::Value::String("version".to_string()),
-        serde_yaml::Value::Number(version.into()),
-    );
+    let tag_name = json["tag_name"]
+        .as_str()
+        .ok_or("latest release is missing a tag_name")?;
+    let version = Version::parse(tag_name.trim_start_matches('v'))?;
 
-    let new_frontmatter = serde_yaml::to_string(&doc)?;
-    Ok(format!("---\n{new_frontmatter}---{body}"))
+    let zipball_url = json["zipball_url"]
+        .as_str()
+        .ok_or("latest release is missing a zipball_url")?
+        .to_string();
+
+    Ok(Release {
+        version,
+        zipball_url,
+    })
 }
 
-fn fetch_versions() -> Result<HashMap<String, u64>, Box<dyn Error>> {
-    let url = format!("{BASE_URL}/versions.json");
-    let versions = ureq::get(&url).call()?.body_mut().read_json()?;
-    Ok(versions)
-}
-
-fn fetch_skill_content(file: &str) -> Result<String, Box<dyn Error>> {
-    let url = format!("{BASE_URL}/{file}");
-    let content = ureq::get(&url).call()?.body_mut().read_to_string()?;
-    Ok(content)
+fn download(url: &str) -> Result<Vec<u8>, Box<dyn Error>> {
+    let bytes = ureq::get(url)
+        .header("User-Agent", USER_AGENT)
+        .call()?
+        .body_mut()
+        .with_config()
+        .limit(50 * 1024 * 1024)
+        .read_to_vec()?;
+    Ok(bytes)
 }
 
 fn home_dir() -> Result<PathBuf, Box<dyn Error>> {
@@ -247,44 +263,102 @@ fn home_dir() -> Result<PathBuf, Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+    use zip::write::SimpleFileOptions;
+
+    fn build_zip(entries: &[(&str, &str)]) -> Vec<u8> {
+        let mut buf = Vec::new();
+        {
+            let mut writer = zip::ZipWriter::new(Cursor::new(&mut buf));
+            let options = SimpleFileOptions::default();
+            for (path, content) in entries {
+                writer.start_file(*path, options).unwrap();
+                writer.write_all(content.as_bytes()).unwrap();
+            }
+            writer.finish().unwrap();
+        }
+        buf
+    }
 
     #[test]
-    fn injects_version_into_frontmatter() {
-        let content = "---\nname: rngo-systems\ndescription: does things\n---\n\nBody text\n";
-        let updated = inject_version(content, 3).unwrap();
+    fn extracts_skills_dir_stripping_wrapper() {
+        let zip_bytes = build_zip(&[
+            (
+                "agent-abc123/skills/rngo-system-inference/SKILL.md",
+                "---\nname: rngo-system-inference\n---\n\nBody\n",
+            ),
+            (
+                "agent-abc123/skills/rngo-effect-inference/SKILL.md",
+                "---\nname: rngo-effect-inference\n---\n\nBody\n",
+            ),
+            ("agent-abc123/VERSION", "0.1.0"),
+        ]);
 
-        let frontmatter = parse_frontmatter(&updated).unwrap();
-        assert_eq!(frontmatter.get("version").and_then(|v| v.as_u64()), Some(3));
+        let extracted = extract_skills(&zip_bytes).unwrap();
+        let skills = list_skills(&extracted.path().join("skills")).unwrap();
+
+        assert_eq!(skills.len(), 2);
+        assert_eq!(skills[0].0, "rngo-effect-inference");
+        assert_eq!(skills[1].0, "rngo-system-inference");
+    }
+
+    #[test]
+    fn copies_skill_directory_recursively() {
+        let src_root = TempDir::new().unwrap();
+        let src = src_root.path().join("rngo-system-inference");
+        fs::create_dir_all(src.join("nested")).unwrap();
+        fs::write(src.join("SKILL.md"), "content").unwrap();
+        fs::write(src.join("nested").join("extra.md"), "extra").unwrap();
+
+        let dest_root = TempDir::new().unwrap();
+        let dest = dest_root.path().join("rngo-system-inference");
+
+        copy_dir(&src, &dest).unwrap();
+
         assert_eq!(
-            frontmatter.get("name").and_then(|v| v.as_str()),
-            Some("rngo-systems")
+            fs::read_to_string(dest.join("SKILL.md")).unwrap(),
+            "content"
         );
-        assert!(updated.ends_with("Body text\n"));
+        assert_eq!(
+            fs::read_to_string(dest.join("nested").join("extra.md")).unwrap(),
+            "extra"
+        );
     }
 
     #[test]
-    fn injects_version_replacing_existing() {
-        let content = "---\nname: rngo-systems\nversion: 1\n---\n\nBody\n";
-        let updated = inject_version(content, 2).unwrap();
+    fn install_skills_writes_version_marker() {
+        let src_root = TempDir::new().unwrap();
+        let src = src_root.path().join("rngo-system-inference");
+        fs::create_dir_all(&src).unwrap();
+        fs::write(src.join("SKILL.md"), "content").unwrap();
+        let skills = vec![("rngo-system-inference".to_string(), src)];
 
-        let frontmatter = parse_frontmatter(&updated).unwrap();
-        assert_eq!(frontmatter.get("version").and_then(|v| v.as_u64()), Some(2));
+        let dest_root = TempDir::new().unwrap();
+        install_skills(dest_root.path(), &skills, &Version::new(1, 2, 0)).unwrap();
+
+        assert!(
+            dest_root
+                .path()
+                .join("rngo-system-inference")
+                .join("SKILL.md")
+                .exists()
+        );
+        assert_eq!(
+            installed_version(dest_root.path()),
+            Some(Version::new(1, 2, 0))
+        );
     }
 
     #[test]
-    fn reads_installed_version() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let path = tmp.path().join("SKILL.md");
-        fs::write(&path, "---\nname: rngo-systems\nversion: 3\n---\n\nBody\n").unwrap();
-
-        assert_eq!(installed_version(&path).unwrap(), Some(3));
+    fn installed_version_missing_when_no_marker() {
+        let dir = TempDir::new().unwrap();
+        assert_eq!(installed_version(dir.path()), None);
     }
 
     #[test]
-    fn missing_file_has_no_installed_version() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let path = tmp.path().join("SKILL.md");
-
-        assert_eq!(installed_version(&path).unwrap(), None);
+    fn installed_version_none_for_garbage_marker() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join(VERSION_FILE), "not-a-version").unwrap();
+        assert_eq!(installed_version(dir.path()), None);
     }
 }
