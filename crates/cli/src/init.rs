@@ -1,12 +1,21 @@
-mod skills;
-
 use std::error::Error;
 use std::fs;
 use std::path::Path;
 
 use dialoguer::Confirm;
 
+use crate::skills;
+
 pub fn init(base: &Path) -> Result<(), Box<dyn Error>> {
+    init_project(base)?;
+    skills::offer_install(base);
+    Ok(())
+}
+
+/// Sets up `.rngo` and `.gitignore`, without touching agent skills. Split
+/// out from `init` so tests can exercise it without triggering a network
+/// call and interactive prompt from `skills::offer_install`.
+fn init_project(base: &Path) -> Result<(), Box<dyn Error>> {
     let rngo_dir = base.join(".rngo");
     fs::create_dir_all(&rngo_dir)?;
 
@@ -25,8 +34,6 @@ pub fn init(base: &Path) -> Result<(), Box<dyn Error>> {
         GitignoreOutcome::AlreadyUpToDate => println!(".gitignore already up to date."),
         GitignoreOutcome::Skipped => {}
     }
-
-    skills::offer_install(base);
 
     Ok(())
 }
@@ -105,7 +112,7 @@ mod tests {
             .unwrap()
             .to_string();
 
-        init(base).unwrap();
+        init_project(base).unwrap();
 
         let spec = fs::read_to_string(base.join(".rngo/spec.yml")).unwrap();
         assert_eq!(spec, format!("key: {name}\nseed: 1\n"));
@@ -117,7 +124,7 @@ mod tests {
         let base = tmp.path();
         fs::write(base.join(".gitignore"), "target\n").unwrap();
 
-        init(base).unwrap();
+        init_project(base).unwrap();
         let gitignore = fs::read_to_string(base.join(".gitignore")).unwrap();
         assert_eq!(gitignore, "target\n.rngo/runs\n");
 
@@ -158,7 +165,7 @@ mod tests {
         fs::write(base.join(".rngo/spec.yml"), "seed: 1\n").unwrap();
         fs::write(base.join(".gitignore"), "").unwrap();
 
-        init(base).unwrap();
+        init_project(base).unwrap();
 
         let spec = fs::read_to_string(base.join(".rngo/spec.yml")).unwrap();
         assert_eq!(spec, "seed: 1\n");

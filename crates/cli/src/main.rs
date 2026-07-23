@@ -1,5 +1,6 @@
 mod init;
 mod sim;
+mod skills;
 
 use clap::{Parser, Subcommand};
 
@@ -37,6 +38,27 @@ enum Commands {
         #[arg(long, default_value = ".")]
         dir: std::path::PathBuf,
     },
+    /// Manage rngo agent skills
+    Skills {
+        #[command(subcommand)]
+        command: SkillsCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum SkillsCommands {
+    /// Download the latest rngo agent skills and install them
+    ///
+    /// Idempotent: any previously installed `rngo-` skills in the target
+    /// directory are replaced with the latest release.
+    Install {
+        /// Install into the user's home directory instead of the project
+        #[arg(long)]
+        global: bool,
+        /// Agent directory to install into (e.g. .claude or .agents)
+        #[arg(long)]
+        dir: Option<String>,
+    },
 }
 
 fn main() {
@@ -55,5 +77,13 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        Commands::Skills { command } => match command {
+            SkillsCommands::Install { global, dir } => {
+                if let Err(e) = skills::install(std::path::Path::new("."), global, dir.as_deref()) {
+                    eprintln!("error: {e}");
+                    std::process::exit(1);
+                }
+            }
+        },
     }
 }

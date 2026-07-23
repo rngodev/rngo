@@ -110,27 +110,98 @@ fn offer_fresh_install(base: &Path, skills: &[Skill]) -> Result<(), Box<dyn Erro
         .default(0)
         .interact()?;
 
-    let agent_choice = Select::new()
-        .with_prompt("Where should skills be installed?")
-        .items([".claude", ".agents"])
-        .default(0)
-        .interact()?;
-
     let root = if scope == 0 {
         base.to_path_buf()
     } else {
         home_dir()?
     };
 
-    let dir = if agent_choice == 0 {
-        root.join(".claude").join("skills")
-    } else {
-        root.join(".agents").join("skills")
-    };
+    let agent_dir = prompt_agent_dir()?;
+    let dir = root.join(agent_dir.label()).join("skills");
 
     install_skills(&dir, skills)?;
 
     println!("Installed rngo agent skills.");
+    Ok(())
+}
+
+/// Downloads the latest rngo agent skills and installs them, replacing any
+/// previously installed `rngo-` skills in the target directory(ies).
+///
+/// When `dir` is `None`, installs into every agent directory (`.claude`,
+/// `.agents`) already present under the install root, prompting for one if
+/// neither is present.
+pub fn install(base: &Path, global: bool, dir: Option<&str>) -> Result<(), Box<dyn Error>> {
+    let root = if global {
+        home_dir()?
+    } else {
+        base.to_path_buf()
+    };
+    let targets = resolve_targets(&root, dir, prompt_agent_dir)?;
+
+    let zipball_url = fetch_latest_zipball_url()?;
+    let (_tmp, skills) = fetch_skills(&zipball_url)?;
+
+    for skills_dir in &targets {
+        remove_rngo_skills(skills_dir)?;
+        install_skills(skills_dir, &skills)?;
+        println!("Installed rngo agent skills to {}.", skills_dir.display());
+    }
+
+    Ok(())
+}
+
+fn resolve_targets(
+    root: &Path,
+    dir: Option<&str>,
+    prompt_agent_dir: impl FnOnce() -> Result<AgentDir, Box<dyn Error>>,
+) -> Result<Vec<PathBuf>, Box<dyn Error>> {
+    if let Some(dir) = dir {
+        return Ok(vec![root.join(dir).join("skills")]);
+    }
+
+    let present: Vec<PathBuf> = [AgentDir::Claude, AgentDir::Agents]
+        .into_iter()
+        .filter(|d| root.join(d.label()).exists())
+        .map(|d| root.join(d.label()).join("skills"))
+        .collect();
+
+    if !present.is_empty() {
+        return Ok(present);
+    }
+
+    let chosen = prompt_agent_dir()?;
+    Ok(vec![root.join(chosen.label()).join("skills")])
+}
+
+fn prompt_agent_dir() -> Result<AgentDir, Box<dyn Error>> {
+    let choice = Select::new()
+        .with_prompt("Where should skills be installed?")
+        .items([".claude", ".agents"])
+        .default(0)
+        .interact()?;
+
+    Ok(if choice == 0 {
+        AgentDir::Claude
+    } else {
+        AgentDir::Agents
+    })
+}
+
+/// Removes any existing `rngo-`-prefixed skill directories so a fresh
+/// install can't leave behind skills that were renamed or removed upstream.
+fn remove_rngo_skills(skills_dir: &Path) -> Result<(), Box<dyn Error>> {
+    if !skills_dir.exists() {
+        return Ok(());
+    }
+
+    for entry in fs::read_dir(skills_dir)? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() && entry.file_name().to_string_lossy().starts_with("rngo-") {
+            fs::remove_dir_all(entry.path())?;
+        }
+    }
+
     Ok(())
 }
 
@@ -384,5 +455,73 @@ mod tests {
         fs::create_dir_all(&installed).unwrap();
         fs::write(installed.join(".version"), "0.2.0").unwrap();
         assert!(!location_outdated(current_dir.path(), &skills).unwrap());
+    }
+
+    #[test]
+    fn resolve_targets_uses_explicit_dir_without_prompting() {
+        let tmp = TempDir::new().unwrap();
+        let targets =
+            resolve_targets(tmp.path(), Some(".agents"), || panic!("should not prompt")).unwrap();
+
+        assert_eq!(targets, vec![tmp.path().join(".agents").join("skills")]);
+    }
+
+    #[test]
+    fn resolve_targets_uses_present_agent_dir_without_prompting() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir_all(tmp.path().join(".claude")).unwrap();
+
+        let targets = resolve_targets(tmp.path(), None, || panic!("should not prompt")).unwrap();
+
+        assert_eq!(targets, vec![tmp.path().join(".claude").join("skills")]);
+    }
+
+    #[test]
+    fn resolve_targets_uses_all_present_agent_dirs() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir_all(tmp.path().join(".claude")).unwrap();
+        fs::create_dir_all(tmp.path().join(".agents")).unwrap();
+
+        let mut targets = resolve_targets(tmp.path(), None, || panic!("should not prompt"))
+            .unwrap()
+            .into_iter()
+            .collect::<Vec<_>>();
+        targets.sort();
+
+        let mut expected = vec![
+            tmp.path().join(".claude").join("skills"),
+            tmp.path().join(".agents").join("skills"),
+        ];
+        expected.sort();
+
+        assert_eq!(targets, expected);
+    }
+
+    #[test]
+    fn resolve_targets_prompts_when_neither_agent_dir_present() {
+        let tmp = TempDir::new().unwrap();
+
+        let targets = resolve_targets(tmp.path(), None, || Ok(AgentDir::Agents)).unwrap();
+
+        assert_eq!(targets, vec![tmp.path().join(".agents").join("skills")]);
+    }
+
+    #[test]
+    fn remove_rngo_skills_only_removes_rngo_prefixed_dirs() {
+        let tmp = TempDir::new().unwrap();
+        let skills_dir = tmp.path().join("skills");
+        fs::create_dir_all(skills_dir.join("rngo-system-inference")).unwrap();
+        fs::create_dir_all(skills_dir.join("custom-skill")).unwrap();
+
+        remove_rngo_skills(&skills_dir).unwrap();
+
+        assert!(!skills_dir.join("rngo-system-inference").exists());
+        assert!(skills_dir.join("custom-skill").exists());
+    }
+
+    #[test]
+    fn remove_rngo_skills_no_op_when_dir_missing() {
+        let tmp = TempDir::new().unwrap();
+        remove_rngo_skills(&tmp.path().join("does-not-exist")).unwrap();
     }
 }
