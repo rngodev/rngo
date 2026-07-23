@@ -10,13 +10,18 @@ pub fn init(base: &Path) -> Result<(), Box<dyn Error>> {
 
     let spec_path = rngo_dir.join("spec.yml");
     if spec_path.exists() {
-        return Err(format!("{} already exists", spec_path.display()).into());
+        println!(".rngo is already set up.");
+    } else {
+        let name = project_name(base)?;
+        fs::write(&spec_path, format!("key: {name}\nseed: 1\n"))?;
+        println!("Set up .rngo.");
     }
 
-    let name = project_name(base)?;
-    fs::write(&spec_path, format!("key: {name}\nseed: 1\n"))?;
-
-    ensure_gitignore(base)?;
+    if ensure_gitignore(base)? {
+        println!("Updated .gitignore.");
+    } else {
+        println!(".gitignore already up to date.");
+    }
 
     skills::offer_install(base);
 
@@ -31,7 +36,8 @@ fn project_name(base: &Path) -> Result<String, Box<dyn Error>> {
         .ok_or_else(|| "could not determine project directory name".into())
 }
 
-fn ensure_gitignore(base: &Path) -> Result<(), Box<dyn Error>> {
+/// Returns `true` if `.gitignore` was created or modified.
+fn ensure_gitignore(base: &Path) -> Result<bool, Box<dyn Error>> {
     let path = base.join(".gitignore");
     let entry = ".rngo/runs";
 
@@ -42,7 +48,7 @@ fn ensure_gitignore(base: &Path) -> Result<(), Box<dyn Error>> {
     };
 
     if contents.lines().any(|line| line.trim() == entry) {
-        return Ok(());
+        return Ok(false);
     }
 
     let mut updated = contents;
@@ -53,7 +59,7 @@ fn ensure_gitignore(base: &Path) -> Result<(), Box<dyn Error>> {
     updated.push('\n');
 
     fs::write(&path, updated)?;
-    Ok(())
+    Ok(true)
 }
 
 #[cfg(test)]
@@ -93,20 +99,21 @@ mod tests {
         let gitignore = fs::read_to_string(base.join(".gitignore")).unwrap();
         assert_eq!(gitignore, "target\n.rngo/runs\n");
 
-        // Running again should error because spec.yml already exists, but
-        // let's directly verify ensure_gitignore doesn't duplicate entries.
         ensure_gitignore(base).unwrap();
         let gitignore = fs::read_to_string(base.join(".gitignore")).unwrap();
         assert_eq!(gitignore, "target\n.rngo/runs\n");
     }
 
     #[test]
-    fn errors_if_spec_already_exists() {
+    fn does_not_overwrite_existing_spec() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
         fs::create_dir_all(base.join(".rngo")).unwrap();
         fs::write(base.join(".rngo/spec.yml"), "seed: 1\n").unwrap();
 
-        assert!(init(base).is_err());
+        init(base).unwrap();
+
+        let spec = fs::read_to_string(base.join(".rngo/spec.yml")).unwrap();
+        assert_eq!(spec, "seed: 1\n");
     }
 }
