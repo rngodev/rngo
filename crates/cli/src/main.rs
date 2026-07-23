@@ -1,4 +1,4 @@
-mod project;
+mod init;
 mod sim;
 
 use clap::{Parser, Subcommand};
@@ -44,7 +44,7 @@ fn main() {
 
     match cli.command {
         Commands::Init { dir } => {
-            if let Err(e) = project::init(&dir) {
+            if let Err(e) = init::init(&dir) {
                 eprintln!("error: {e}");
                 std::process::exit(1);
             }
