@@ -112,8 +112,8 @@ fn offer_fresh_install(base: &Path, skills: &[Skill]) -> Result<(), Box<dyn Erro
 
     let agent_choice = Select::new()
         .with_prompt("Where should skills be installed?")
-        .items([".claude", ".agents", "both"])
-        .default(2)
+        .items([".claude", ".agents"])
+        .default(0)
         .interact()?;
 
     let root = if scope == 0 {
@@ -122,17 +122,13 @@ fn offer_fresh_install(base: &Path, skills: &[Skill]) -> Result<(), Box<dyn Erro
         home_dir()?
     };
 
-    let mut dirs = Vec::new();
-    if agent_choice == 0 || agent_choice == 2 {
-        dirs.push(root.join(".claude").join("skills"));
-    }
-    if agent_choice == 1 || agent_choice == 2 {
-        dirs.push(root.join(".agents").join("skills"));
-    }
+    let dir = if agent_choice == 0 {
+        root.join(".claude").join("skills")
+    } else {
+        root.join(".agents").join("skills")
+    };
 
-    for dir in &dirs {
-        install_skills(dir, skills)?;
-    }
+    install_skills(&dir, skills)?;
 
     println!("Installed rngo agent skills.");
     Ok(())

@@ -4,6 +4,8 @@ use std::error::Error;
 use std::fs;
 use std::path::Path;
 
+use dialoguer::Confirm;
+
 pub fn init(base: &Path) -> Result<(), Box<dyn Error>> {
     let rngo_dir = base.join(".rngo");
     fs::create_dir_all(&rngo_dir)?;
@@ -17,10 +19,11 @@ pub fn init(base: &Path) -> Result<(), Box<dyn Error>> {
         println!("Set up .rngo.");
     }
 
-    if ensure_gitignore(base)? {
-        println!("Updated .gitignore.");
-    } else {
-        println!(".gitignore already up to date.");
+    match ensure_gitignore(base, confirm_create_gitignore)? {
+        GitignoreOutcome::Created => println!("Created .gitignore."),
+        GitignoreOutcome::Updated => println!("Updated .gitignore."),
+        GitignoreOutcome::AlreadyUpToDate => println!(".gitignore already up to date."),
+        GitignoreOutcome::Skipped => {}
     }
 
     skills::offer_install(base);
@@ -36,19 +39,40 @@ fn project_name(base: &Path) -> Result<String, Box<dyn Error>> {
         .ok_or_else(|| "could not determine project directory name".into())
 }
 
-/// Returns `true` if `.gitignore` was created or modified.
-fn ensure_gitignore(base: &Path) -> Result<bool, Box<dyn Error>> {
+fn confirm_create_gitignore() -> bool {
+    Confirm::new()
+        .with_prompt("No .gitignore found. Create one?")
+        .default(true)
+        .interact()
+        .unwrap_or(false)
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum GitignoreOutcome {
+    Created,
+    Updated,
+    AlreadyUpToDate,
+    Skipped,
+}
+
+fn ensure_gitignore(
+    base: &Path,
+    confirm_create: impl FnOnce() -> bool,
+) -> Result<GitignoreOutcome, Box<dyn Error>> {
     let path = base.join(".gitignore");
     let entry = ".rngo/runs";
 
-    let contents = if path.exists() {
-        fs::read_to_string(&path)?
-    } else {
-        String::new()
-    };
+    if !path.exists() {
+        if !confirm_create() {
+            return Ok(GitignoreOutcome::Skipped);
+        }
+        fs::write(&path, format!("{entry}\n"))?;
+        return Ok(GitignoreOutcome::Created);
+    }
 
+    let contents = fs::read_to_string(&path)?;
     if contents.lines().any(|line| line.trim() == entry) {
-        return Ok(false);
+        return Ok(GitignoreOutcome::AlreadyUpToDate);
     }
 
     let mut updated = contents;
@@ -59,7 +83,7 @@ fn ensure_gitignore(base: &Path) -> Result<bool, Box<dyn Error>> {
     updated.push('\n');
 
     fs::write(&path, updated)?;
-    Ok(true)
+    Ok(GitignoreOutcome::Updated)
 }
 
 #[cfg(test)]
@@ -68,9 +92,10 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn creates_spec_and_gitignore() {
+    fn creates_spec() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
+        fs::write(base.join(".gitignore"), "").unwrap();
         let name = base
             .canonicalize()
             .unwrap()
@@ -84,9 +109,6 @@ mod tests {
 
         let spec = fs::read_to_string(base.join(".rngo/spec.yml")).unwrap();
         assert_eq!(spec, format!("key: {name}\nseed: 1\n"));
-
-        let gitignore = fs::read_to_string(base.join(".gitignore")).unwrap();
-        assert_eq!(gitignore, ".rngo/runs\n");
     }
 
     #[test]
@@ -99,9 +121,33 @@ mod tests {
         let gitignore = fs::read_to_string(base.join(".gitignore")).unwrap();
         assert_eq!(gitignore, "target\n.rngo/runs\n");
 
-        ensure_gitignore(base).unwrap();
+        let outcome = ensure_gitignore(base, || panic!("should not prompt")).unwrap();
+        assert_eq!(outcome, GitignoreOutcome::AlreadyUpToDate);
         let gitignore = fs::read_to_string(base.join(".gitignore")).unwrap();
         assert_eq!(gitignore, "target\n.rngo/runs\n");
+    }
+
+    #[test]
+    fn creates_gitignore_when_confirmed() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+
+        let outcome = ensure_gitignore(base, || true).unwrap();
+        assert_eq!(outcome, GitignoreOutcome::Created);
+
+        let gitignore = fs::read_to_string(base.join(".gitignore")).unwrap();
+        assert_eq!(gitignore, ".rngo/runs\n");
+    }
+
+    #[test]
+    fn skips_gitignore_when_declined() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+
+        let outcome = ensure_gitignore(base, || false).unwrap();
+        assert_eq!(outcome, GitignoreOutcome::Skipped);
+
+        assert!(!base.join(".gitignore").exists());
     }
 
     #[test]
@@ -110,6 +156,7 @@ mod tests {
         let base = tmp.path();
         fs::create_dir_all(base.join(".rngo")).unwrap();
         fs::write(base.join(".rngo/spec.yml"), "seed: 1\n").unwrap();
+        fs::write(base.join(".gitignore"), "").unwrap();
 
         init(base).unwrap();
 
