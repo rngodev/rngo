@@ -85,6 +85,7 @@ fn sync_configured_agent(dir: &Path, skills: &[Skill]) -> Result<(), Box<dyn Err
             return Ok(());
         }
 
+        ui::outcome(format!("{}:", dir.display()));
         install_skills(dir, skills)?;
         ui::outcome("Installed rngo agent skills.");
         return Ok(());
@@ -104,6 +105,7 @@ fn sync_configured_agent(dir: &Path, skills: &[Skill]) -> Result<(), Box<dyn Err
         .interact()?;
 
     if update {
+        ui::outcome(format!("{}:", dir.display()));
         install_skills(dir, skills)?;
         ui::outcome("Updated rngo agent skills.");
     }
@@ -161,6 +163,7 @@ fn offer_install_globally(base: &Path, skills: &[Skill]) -> Result<(), Box<dyn E
 
     if update {
         for (_, dir) in &outdated {
+            ui::outcome(format!("{}:", dir.display()));
             install_skills(dir, skills)?;
         }
         ui::outcome("Updated rngo agent skills.");
@@ -194,6 +197,7 @@ fn offer_fresh_install(base: &Path, skills: &[Skill]) -> Result<(), Box<dyn Erro
     let agent_dir = prompt_agent_dir(&root)?;
     let dir = root.join(agent_dir.label()).join("skills");
 
+    ui::outcome(format!("{}:", dir.display()));
     install_skills(&dir, skills)?;
 
     ui::outcome("Installed rngo agent skills.");
@@ -203,9 +207,10 @@ fn offer_fresh_install(base: &Path, skills: &[Skill]) -> Result<(), Box<dyn Erro
 /// Downloads the latest rngo agent skills and installs them, replacing any
 /// previously installed `rngo-` skills in the target directory(ies).
 ///
-/// When `agent` is `None`, installs into every agent directory (`.claude`,
-/// `.agents`) already present under the install root, prompting for one if
-/// neither is present.
+/// When `agent` is `None`, the project's configured agent (`.rngo/spec.yml`)
+/// is used if present. Failing that, it installs into every agent directory
+/// (`.claude`, `.agents`, ...) already present under the install root,
+/// prompting for one if none are present.
 pub fn install(base: &Path, global: bool, agent: Option<AgentDir>) -> Result<(), Box<dyn Error>> {
     let root = if global {
         home_dir()?
@@ -214,7 +219,6 @@ pub fn install(base: &Path, global: bool, agent: Option<AgentDir>) -> Result<(),
     };
 
     let targets = if agent.is_none()
-        && !global
         && let Some(config) = agent::load(base)?
         && let Some(config_dir) = config.config_dir()
     {
