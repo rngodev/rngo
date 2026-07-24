@@ -38,6 +38,15 @@ enum Commands {
         #[arg(long, default_value = ".")]
         dir: std::path::PathBuf,
     },
+    /// Manage the rngo coding agent integration
+    Agent {
+        #[command(subcommand)]
+        command: AgentCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum AgentCommands {
     /// Manage rngo agent skills
     Skills {
         #[command(subcommand)]
@@ -55,9 +64,9 @@ enum SkillsCommands {
         /// Install into the user's home directory instead of the project
         #[arg(long)]
         global: bool,
-        /// Agent directory to install into (e.g. .claude or .agents)
+        /// Coding agent to install skills for
         #[arg(long)]
-        dir: Option<String>,
+        agent: Option<skills::AgentDir>,
     },
 }
 
@@ -77,13 +86,15 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        Commands::Skills { command } => match command {
-            SkillsCommands::Install { global, dir } => {
-                if let Err(e) = skills::install(std::path::Path::new("."), global, dir.as_deref()) {
-                    eprintln!("error: {e}");
-                    std::process::exit(1);
+        Commands::Agent { command } => match command {
+            AgentCommands::Skills { command } => match command {
+                SkillsCommands::Install { global, agent } => {
+                    if let Err(e) = skills::install(std::path::Path::new("."), global, agent) {
+                        eprintln!("error: {e}");
+                        std::process::exit(1);
+                    }
                 }
-            }
+            },
         },
     }
 }
