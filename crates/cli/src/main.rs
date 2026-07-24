@@ -1,3 +1,4 @@
+mod agent;
 mod init;
 mod sim;
 mod skills;

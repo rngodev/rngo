@@ -8,6 +8,8 @@ use dialoguer::{Confirm, Select};
 use semver::Version;
 use tempfile::TempDir;
 
+use crate::agent::{self, AgentConfig};
+
 const RELEASES_URL: &str = "https://api.github.com/repos/rngodev/agent/releases/latest";
 const USER_AGENT: &str = "rngo-cli";
 const VERSION_FILE: &str = ".version";
@@ -15,6 +17,8 @@ const VERSION_FILE: &str = ".version";
 #[derive(Clone, Copy, ValueEnum)]
 pub enum AgentDir {
     Claude,
+    Cursor,
+    Codex,
     Generic,
 }
 
@@ -22,6 +26,8 @@ impl AgentDir {
     fn label(self) -> &'static str {
         match self {
             AgentDir::Claude => ".claude",
+            AgentDir::Cursor => ".cursor",
+            AgentDir::Codex => ".codex",
             AgentDir::Generic => ".agents",
         }
     }
@@ -29,6 +35,8 @@ impl AgentDir {
     fn display_name(self) -> &'static str {
         match self {
             AgentDir::Claude => "Claude Code",
+            AgentDir::Cursor => "Cursor",
+            AgentDir::Codex => "Codex",
             AgentDir::Generic => "Generic",
         }
     }
@@ -40,16 +48,18 @@ type Skill = (String, PathBuf);
 
 /// Offers to install rngo agent skills, printing a warning instead of
 /// failing `rngo init` if anything (network, prompts) goes wrong.
-pub fn offer_install(base: &Path) {
-    if let Err(e) = try_offer_install(base) {
+pub fn offer_install(base: &Path, agent: Option<&AgentConfig>) {
+    if let Err(e) = try_offer_install(base, agent) {
         eprintln!("warning: could not check rngo agent skills: {e}");
     }
 }
 
-fn try_offer_install(base: &Path) -> Result<(), Box<dyn Error>> {
+fn try_offer_install(base: &Path, agent: Option<&AgentConfig>) -> Result<(), Box<dyn Error>> {
     let home = home_dir()?;
     let global_locations = [
         (AgentDir::Claude, home.join(".claude").join("skills")),
+        (AgentDir::Cursor, home.join(".cursor").join("skills")),
+        (AgentDir::Codex, home.join(".codex").join("skills")),
         (AgentDir::Generic, home.join(".agents").join("skills")),
     ];
 
@@ -66,7 +76,7 @@ fn try_offer_install(base: &Path) -> Result<(), Box<dyn Error>> {
         .collect();
 
     if present.is_empty() {
-        return offer_fresh_install(base, &skills);
+        return offer_fresh_install(base, &skills, agent);
     }
 
     let outdated: Vec<_> = present
@@ -102,7 +112,11 @@ fn try_offer_install(base: &Path) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn offer_fresh_install(base: &Path, skills: &[Skill]) -> Result<(), Box<dyn Error>> {
+fn offer_fresh_install(
+    base: &Path,
+    skills: &[Skill],
+    agent: Option<&AgentConfig>,
+) -> Result<(), Box<dyn Error>> {
     let install = Confirm::new()
         .with_prompt("Install rngo agent skills?")
         .default(true)
@@ -112,20 +126,26 @@ fn offer_fresh_install(base: &Path, skills: &[Skill]) -> Result<(), Box<dyn Erro
         return Ok(());
     }
 
-    let scope = Select::new()
-        .with_prompt("Install skills locally (this project) or globally (all projects)?")
-        .items(["Local", "Global"])
-        .default(0)
-        .interact()?;
-
-    let root = if scope == 0 {
-        base.to_path_buf()
+    let dir = if let Some(agent) = agent
+        && let Some(config_dir) = agent.config_dir()
+    {
+        base.join(config_dir).join("skills")
     } else {
-        home_dir()?
-    };
+        let scope = Select::new()
+            .with_prompt("Install skills locally (this project) or globally (all projects)?")
+            .items(["Local", "Global"])
+            .default(0)
+            .interact()?;
 
-    let agent_dir = prompt_agent_dir(&root)?;
-    let dir = root.join(agent_dir.label()).join("skills");
+        let root = if scope == 0 {
+            base.to_path_buf()
+        } else {
+            home_dir()?
+        };
+
+        let agent_dir = prompt_agent_dir(&root)?;
+        root.join(agent_dir.label()).join("skills")
+    };
 
     install_skills(&dir, skills)?;
 
@@ -145,7 +165,16 @@ pub fn install(base: &Path, global: bool, agent: Option<AgentDir>) -> Result<(),
     } else {
         base.to_path_buf()
     };
-    let targets = resolve_targets(&root, agent, || prompt_agent_dir(&root))?;
+
+    let targets = if agent.is_none()
+        && !global
+        && let Some(config) = agent::load(base)?
+        && let Some(config_dir) = config.config_dir()
+    {
+        vec![root.join(config_dir).join("skills")]
+    } else {
+        resolve_targets(&root, agent, || prompt_agent_dir(&root))?
+    };
 
     let zipball_url = fetch_latest_zipball_url()?;
     let (_tmp, skills) = fetch_skills(&zipball_url)?;
@@ -168,11 +197,16 @@ fn resolve_targets(
         return Ok(vec![root.join(agent.label()).join("skills")]);
     }
 
-    let present: Vec<PathBuf> = [AgentDir::Claude, AgentDir::Generic]
-        .into_iter()
-        .filter(|d| root.join(d.label()).exists())
-        .map(|d| root.join(d.label()).join("skills"))
-        .collect();
+    let present: Vec<PathBuf> = [
+        AgentDir::Claude,
+        AgentDir::Cursor,
+        AgentDir::Codex,
+        AgentDir::Generic,
+    ]
+    .into_iter()
+    .filter(|d| root.join(d.label()).exists())
+    .map(|d| root.join(d.label()).join("skills"))
+    .collect();
 
     if !present.is_empty() {
         return Ok(present);
@@ -183,7 +217,12 @@ fn resolve_targets(
 }
 
 fn prompt_agent_dir(root: &Path) -> Result<AgentDir, Box<dyn Error>> {
-    let options = [AgentDir::Claude, AgentDir::Generic];
+    let options = [
+        AgentDir::Claude,
+        AgentDir::Cursor,
+        AgentDir::Codex,
+        AgentDir::Generic,
+    ];
     let items: Vec<String> = options
         .iter()
         .map(|d| {
