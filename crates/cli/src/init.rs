@@ -5,10 +5,10 @@ use std::path::Path;
 use dialoguer::{Confirm, Input, Select};
 
 use crate::agent::{self, AgentConfig};
-use crate::skills;
+use crate::{skills, ui};
 
 pub fn init(base: &Path) -> Result<(), Box<dyn Error>> {
-    let agent = init_project(base, prompt_agent_config)?;
+    let agent = init_project(base, prompt_key, prompt_seed, prompt_agent_config)?;
     skills::offer_install(base, agent.as_ref());
     Ok(())
 }
@@ -18,6 +18,8 @@ pub fn init(base: &Path) -> Result<(), Box<dyn Error>> {
 /// call and interactive prompt from `skills::offer_install`.
 fn init_project(
     base: &Path,
+    prompt_key: impl FnOnce(&str) -> String,
+    prompt_seed: impl FnOnce() -> u64,
     prompt_agent: impl FnOnce() -> Option<AgentConfig>,
 ) -> Result<Option<AgentConfig>, Box<dyn Error>> {
     let rngo_dir = base.join(".rngo");
@@ -25,32 +27,54 @@ fn init_project(
 
     let spec_path = rngo_dir.join("spec.yml");
     let agent = if spec_path.exists() {
-        println!(".rngo is already set up.");
+        ui::outcome(".rngo is already set up.");
         agent::load(base)?
     } else {
-        let name = project_name(base)?;
+        let default_key = project_name(base)?;
+        let key = prompt_key(&default_key);
+        let seed = prompt_seed();
         let agent = prompt_agent();
-        fs::write(&spec_path, spec_yaml(&name, agent.as_ref()))?;
-        println!("Set up .rngo.");
+        fs::write(&spec_path, spec_yaml(&key, seed, agent.as_ref()))?;
+        ui::outcome("Set up .rngo.");
         agent
     };
 
     match ensure_gitignore(base, confirm_create_gitignore)? {
-        GitignoreOutcome::Created => println!("Created .gitignore."),
-        GitignoreOutcome::Updated => println!("Updated .gitignore."),
-        GitignoreOutcome::AlreadyUpToDate => println!(".gitignore already up to date."),
+        GitignoreOutcome::Created => ui::outcome("Created .gitignore."),
+        GitignoreOutcome::Updated => ui::outcome("Updated .gitignore."),
+        GitignoreOutcome::AlreadyUpToDate => ui::outcome(".gitignore already up to date."),
         GitignoreOutcome::Skipped => {}
     }
 
     Ok(agent)
 }
 
-fn spec_yaml(name: &str, agent: Option<&AgentConfig>) -> String {
-    let mut spec = format!("key: {name}\nseed: 1\n");
+fn spec_yaml(key: &str, seed: u64, agent: Option<&AgentConfig>) -> String {
+    let mut spec = format!("key: {key}\nseed: {seed}\n");
     if let Some(agent) = agent {
         spec.push_str(&agent.to_yaml_field());
     }
     spec
+}
+
+/// Asks for the project's key, defaulting to the directory name. Errors
+/// (e.g. no TTY) fall back to the default.
+fn prompt_key(default: &str) -> String {
+    Input::with_theme(&ui::theme())
+        .with_prompt("Project key")
+        .default(default.to_string())
+        .interact_text()
+        .unwrap_or_else(|_| default.to_string())
+}
+
+/// Asks for the project's seed, defaulting to 1. Errors (e.g. no TTY) fall
+/// back to the default.
+fn prompt_seed() -> u64 {
+    Input::with_theme(&ui::theme())
+        .with_prompt("Default seed")
+        .default(1)
+        .interact_text()
+        .unwrap_or(1)
 }
 
 /// Asks whether to configure a coding agent and, if so, which one. Errors
@@ -60,7 +84,7 @@ fn prompt_agent_config() -> Option<AgentConfig> {
 }
 
 fn try_prompt_agent_config() -> Result<Option<AgentConfig>, Box<dyn Error>> {
-    let configure = Confirm::new()
+    let configure = Confirm::with_theme(&ui::theme())
         .with_prompt("Would you like to configure a coding agent?")
         .default(true)
         .interact()?;
@@ -70,7 +94,7 @@ fn try_prompt_agent_config() -> Result<Option<AgentConfig>, Box<dyn Error>> {
     }
 
     let options = ["Claude Code", "Cursor", "Codex", "Custom"];
-    let choice = Select::new()
+    let choice = Select::with_theme(&ui::theme())
         .with_prompt("Which coding agent do you use?")
         .items(options)
         .default(0)
@@ -81,8 +105,12 @@ fn try_prompt_agent_config() -> Result<Option<AgentConfig>, Box<dyn Error>> {
         1 => AgentConfig::cursor(),
         2 => AgentConfig::codex(),
         _ => {
-            let config: String = Input::new().with_prompt("Config path").interact_text()?;
-            let command: String = Input::new().with_prompt("Command").interact_text()?;
+            let config: String = Input::with_theme(&ui::theme())
+                .with_prompt("Config path")
+                .interact_text()?;
+            let command: String = Input::with_theme(&ui::theme())
+                .with_prompt("Command")
+                .interact_text()?;
             AgentConfig::Custom { config, command }
         }
     };
@@ -99,7 +127,7 @@ fn project_name(base: &Path) -> Result<String, Box<dyn Error>> {
 }
 
 fn confirm_create_gitignore() -> bool {
-    Confirm::new()
+    Confirm::with_theme(&ui::theme())
         .with_prompt("No .gitignore found. Create one?")
         .default(true)
         .interact()
@@ -164,7 +192,7 @@ mod tests {
             .unwrap()
             .to_string();
 
-        init_project(base, || None).unwrap();
+        init_project(base, |d| d.to_string(), || 1, || None).unwrap();
 
         let spec = fs::read_to_string(base.join(".rngo/spec.yml")).unwrap();
         assert_eq!(spec, format!("key: {name}\nseed: 1\n"));
@@ -176,7 +204,7 @@ mod tests {
         let base = tmp.path();
         fs::write(base.join(".gitignore"), "target\n").unwrap();
 
-        init_project(base, || None).unwrap();
+        init_project(base, |d| d.to_string(), || 1, || None).unwrap();
         let gitignore = fs::read_to_string(base.join(".gitignore")).unwrap();
         assert_eq!(gitignore, "target\n.rngo/runs\n");
 
@@ -217,7 +245,7 @@ mod tests {
         fs::write(base.join(".rngo/spec.yml"), "seed: 1\n").unwrap();
         fs::write(base.join(".gitignore"), "").unwrap();
 
-        init_project(base, || None).unwrap();
+        init_project(base, |d| d.to_string(), || 1, || None).unwrap();
 
         let spec = fs::read_to_string(base.join(".rngo/spec.yml")).unwrap();
         assert_eq!(spec, "seed: 1\n");
@@ -229,7 +257,13 @@ mod tests {
         let base = tmp.path();
         fs::write(base.join(".gitignore"), "").unwrap();
 
-        let agent = init_project(base, || Some(AgentConfig::cursor())).unwrap();
+        let agent = init_project(
+            base,
+            |d| d.to_string(),
+            || 1,
+            || Some(AgentConfig::cursor()),
+        )
+        .unwrap();
 
         assert_eq!(agent, Some(AgentConfig::cursor()));
         let spec = fs::read_to_string(base.join(".rngo/spec.yml")).unwrap();
@@ -242,12 +276,17 @@ mod tests {
         let base = tmp.path();
         fs::write(base.join(".gitignore"), "").unwrap();
 
-        init_project(base, || {
-            Some(AgentConfig::Custom {
-                config: ".agents".to_string(),
-                command: "myagent".to_string(),
-            })
-        })
+        init_project(
+            base,
+            |d| d.to_string(),
+            || 1,
+            || {
+                Some(AgentConfig::Custom {
+                    config: ".agents".to_string(),
+                    command: "myagent".to_string(),
+                })
+            },
+        )
         .unwrap();
 
         let spec = fs::read_to_string(base.join(".rngo/spec.yml")).unwrap();
@@ -269,7 +308,13 @@ mod tests {
         .unwrap();
         fs::write(base.join(".gitignore"), "").unwrap();
 
-        let agent = init_project(base, || panic!("should not prompt")).unwrap();
+        let agent = init_project(
+            base,
+            |_| panic!("should not prompt"),
+            || panic!("should not prompt"),
+            || panic!("should not prompt"),
+        )
+        .unwrap();
 
         assert_eq!(agent, Some(AgentConfig::codex()));
     }
