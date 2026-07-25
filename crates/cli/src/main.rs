@@ -39,15 +39,6 @@ enum Commands {
         #[arg(long, default_value = ".")]
         dir: std::path::PathBuf,
     },
-    /// Manage the rngo coding agent integration
-    Agent {
-        #[command(subcommand)]
-        command: AgentCommands,
-    },
-}
-
-#[derive(Subcommand)]
-enum AgentCommands {
     /// Manage rngo agent skills
     Skills {
         #[command(subcommand)]
@@ -84,15 +75,13 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        Commands::Agent { command } => match command {
-            AgentCommands::Skills { command } => match command {
-                SkillsCommands::Install { path } => {
-                    if let Err(e) = skills::install(std::path::Path::new("."), path) {
-                        eprintln!("error: {e}");
-                        std::process::exit(1);
-                    }
+        Commands::Skills { command } => match command {
+            SkillsCommands::Install { path } => {
+                if let Err(e) = skills::install(std::path::Path::new("."), path) {
+                    eprintln!("error: {e}");
+                    std::process::exit(1);
                 }
-            },
+            }
         },
     }
 }
