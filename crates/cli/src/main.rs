@@ -1,4 +1,3 @@
-mod agent;
 mod init;
 mod sim;
 mod skills;
@@ -63,12 +62,9 @@ enum SkillsCommands {
     /// Idempotent: any previously installed `rngo-` skills in the target
     /// directory are replaced with the latest release.
     Install {
-        /// Install into the user's home directory instead of the project
+        /// Where to install skills. Skips the interactive location prompt.
         #[arg(long)]
-        global: bool,
-        /// Coding agent to install skills for
-        #[arg(long)]
-        agent: Option<skills::AgentDir>,
+        path: Option<std::path::PathBuf>,
     },
 }
 
@@ -90,8 +86,8 @@ fn main() {
         }
         Commands::Agent { command } => match command {
             AgentCommands::Skills { command } => match command {
-                SkillsCommands::Install { global, agent } => {
-                    if let Err(e) = skills::install(std::path::Path::new("."), global, agent) {
+                SkillsCommands::Install { path } => {
+                    if let Err(e) = skills::install(std::path::Path::new("."), path) {
                         eprintln!("error: {e}");
                         std::process::exit(1);
                     }

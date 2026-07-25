@@ -3,45 +3,15 @@ use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use clap::ValueEnum;
-use dialoguer::{Confirm, Select};
+use dialoguer::{Confirm, Input, Select};
 use semver::Version;
 use tempfile::TempDir;
 
-use crate::agent::{self, AgentConfig};
 use crate::ui;
 
 const RELEASES_URL: &str = "https://api.github.com/repos/rngodev/agent/releases/latest";
 const USER_AGENT: &str = "rngo-cli";
 const VERSION_FILE: &str = ".version";
-
-#[derive(Clone, Copy, ValueEnum)]
-pub enum AgentDir {
-    Claude,
-    Cursor,
-    Codex,
-    Generic,
-}
-
-impl AgentDir {
-    fn label(self) -> &'static str {
-        match self {
-            AgentDir::Claude => ".claude",
-            AgentDir::Cursor => ".cursor",
-            AgentDir::Codex => ".codex",
-            AgentDir::Generic => ".agents",
-        }
-    }
-
-    fn display_name(self) -> &'static str {
-        match self {
-            AgentDir::Claude => "Claude Code",
-            AgentDir::Cursor => "Cursor",
-            AgentDir::Codex => "Codex",
-            AgentDir::Generic => "Generic",
-        }
-    }
-}
 
 /// A skill directory found inside the extracted release archive, keyed by
 /// its directory name (e.g. `rngo-system-inference`).
@@ -49,132 +19,15 @@ type Skill = (String, PathBuf);
 
 /// Offers to install rngo agent skills, printing a warning instead of
 /// failing `rngo init` if anything (network, prompts) goes wrong.
-pub fn offer_install(base: &Path, agent: Option<&AgentConfig>) {
-    if let Err(e) = try_offer_install(base, agent) {
+pub fn offer_install(base: &Path) {
+    if let Err(e) = try_offer_install(base) {
         eprintln!("warning: could not check rngo agent skills: {e}");
     }
 }
 
-fn try_offer_install(base: &Path, agent: Option<&AgentConfig>) -> Result<(), Box<dyn Error>> {
-    let zipball_url = fetch_latest_zipball_url()?;
-    let (_tmp, skills) = fetch_skills(&zipball_url)?;
-
-    if let Some(agent) = agent
-        && let Some(config_dir) = agent.config_dir()
-    {
-        return sync_configured_agent(&base.join(config_dir).join("skills"), &skills);
-    }
-
-    offer_install_globally(base, &skills)
-}
-
-/// Installs, updates, or reports up-to-date status for the single skills
-/// directory implied by the project's configured agent.
-fn sync_configured_agent(dir: &Path, skills: &[Skill]) -> Result<(), Box<dyn Error>> {
-    let installed = skills
-        .iter()
-        .any(|(name, _)| dir.join(name).join(VERSION_FILE).exists());
-
-    if !installed {
-        let install = Confirm::with_theme(&ui::theme())
-            .with_prompt("Install rngo agent skills?")
-            .default(true)
-            .interact()?;
-
-        if !install {
-            return Ok(());
-        }
-
-        ui::outcome(format!("{}:", dir.display()));
-        install_skills(dir, skills)?;
-        ui::outcome("Installed rngo agent skills.");
-        return Ok(());
-    }
-
-    if !location_outdated(dir, skills).unwrap_or(true) {
-        ui::outcome("rngo agent skills are already installed and up to date.");
-        return Ok(());
-    }
-
-    let update = Confirm::with_theme(&ui::theme())
-        .with_prompt(format!(
-            "Your rngo agent skills are out of date ({}). Update them now?",
-            display_path(dir)
-        ))
-        .default(true)
-        .interact()?;
-
-    if update {
-        ui::outcome(format!("{}:", dir.display()));
-        install_skills(dir, skills)?;
-        ui::outcome("Updated rngo agent skills.");
-    }
-
-    Ok(())
-}
-
-/// Falls back to scanning every global (home-directory) agent location when
-/// the project has no configured agent, offering a fresh local/global install
-/// if none of them have rngo skills installed.
-fn offer_install_globally(base: &Path, skills: &[Skill]) -> Result<(), Box<dyn Error>> {
-    let home = home_dir()?;
-    let global_locations = [
-        (AgentDir::Claude, home.join(".claude").join("skills")),
-        (AgentDir::Cursor, home.join(".cursor").join("skills")),
-        (AgentDir::Codex, home.join(".codex").join("skills")),
-        (AgentDir::Generic, home.join(".agents").join("skills")),
-    ];
-
-    let present: Vec<_> = global_locations
-        .iter()
-        .filter(|(_, dir)| {
-            skills
-                .iter()
-                .any(|(name, _)| dir.join(name).join(VERSION_FILE).exists())
-        })
-        .collect();
-
-    if present.is_empty() {
-        return offer_fresh_install(base, skills);
-    }
-
-    let outdated: Vec<_> = present
-        .into_iter()
-        .filter(|(_, dir)| location_outdated(dir, skills).unwrap_or(true))
-        .collect();
-
-    if outdated.is_empty() {
-        ui::outcome("rngo agent skills are already installed globally and are up to date.");
-        return Ok(());
-    }
-
-    let list = outdated
-        .iter()
-        .map(|(agent, dir)| format!("  {} ({})", agent.label(), dir.display()))
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    let update = Confirm::with_theme(&ui::theme())
-        .with_prompt(format!(
-            "Your global rngo agent skills are out of date:\n{list}\nUpdate them now?"
-        ))
-        .default(true)
-        .interact()?;
-
-    if update {
-        for (_, dir) in &outdated {
-            ui::outcome(format!("{}:", dir.display()));
-            install_skills(dir, skills)?;
-        }
-        ui::outcome("Updated rngo agent skills.");
-    }
-
-    Ok(())
-}
-
-fn offer_fresh_install(base: &Path, skills: &[Skill]) -> Result<(), Box<dyn Error>> {
+fn try_offer_install(base: &Path) -> Result<(), Box<dyn Error>> {
     let install = Confirm::with_theme(&ui::theme())
-        .with_prompt("Install rngo agent skills?")
+        .with_prompt("Would you like to install agent skills?")
         .default(true)
         .interact()?;
 
@@ -182,108 +35,50 @@ fn offer_fresh_install(base: &Path, skills: &[Skill]) -> Result<(), Box<dyn Erro
         return Ok(());
     }
 
-    let scope = Select::with_theme(&ui::theme())
-        .with_prompt("Install skills locally (this project) or globally (all projects)?")
-        .items(["Local", "Global"])
-        .default(0)
-        .interact()?;
-
-    let root = if scope == 0 {
-        base.to_path_buf()
-    } else {
-        home_dir()?
-    };
-
-    let agent_dir = prompt_agent_dir(&root)?;
-    let dir = root.join(agent_dir.label()).join("skills");
-
-    ui::outcome(format!("{}:", dir.display()));
-    install_skills(&dir, skills)?;
-
-    ui::outcome("Installed rngo agent skills.");
-    Ok(())
+    let dir = prompt_location(base)?;
+    do_install(&dir)
 }
 
-/// Downloads the latest rngo agent skills and installs them, replacing any
-/// previously installed `rngo-` skills in the target directory(ies).
-///
-/// When `agent` is `None`, the project's configured agent (`.rngo/spec.yml`)
-/// is used if present. Failing that, it installs into every agent directory
-/// (`.claude`, `.agents`, ...) already present under the install root,
-/// prompting for one if none are present.
-pub fn install(base: &Path, global: bool, agent: Option<AgentDir>) -> Result<(), Box<dyn Error>> {
-    let root = if global {
-        home_dir()?
-    } else {
-        base.to_path_buf()
+/// Downloads the latest rngo agent skills and installs them into `path`,
+/// replacing any previously installed `rngo-` skills there. Prompts for a
+/// location (from a set of common presets, or a custom one) when `path`
+/// isn't given.
+pub fn install(base: &Path, path: Option<PathBuf>) -> Result<(), Box<dyn Error>> {
+    let dir = match path {
+        Some(path) => path,
+        None => prompt_location(base)?,
     };
 
-    let targets = if agent.is_none()
-        && let Some(config) = agent::load(base)?
-        && let Some(config_dir) = config.config_dir()
-    {
-        vec![root.join(config_dir).join("skills")]
-    } else {
-        resolve_targets(&root, agent, || prompt_agent_dir(&root))?
-    };
+    do_install(&dir)
+}
 
+fn do_install(dir: &Path) -> Result<(), Box<dyn Error>> {
     let zipball_url = fetch_latest_zipball_url()?;
     let (_tmp, skills) = fetch_skills(&zipball_url)?;
 
-    for skills_dir in &targets {
-        ui::outcome(format!("{}:", skills_dir.display()));
-        remove_stale_skills(skills_dir, &skills)?;
-        install_skills(skills_dir, &skills)?;
-    }
+    ui::outcome(format!("{}:", dir.display()));
+    remove_stale_skills(dir, &skills)?;
+    install_skills(dir, &skills)?;
 
     Ok(())
 }
 
-fn resolve_targets(
-    root: &Path,
-    agent: Option<AgentDir>,
-    prompt_agent_dir: impl FnOnce() -> Result<AgentDir, Box<dyn Error>>,
-) -> Result<Vec<PathBuf>, Box<dyn Error>> {
-    if let Some(agent) = agent {
-        return Ok(vec![root.join(agent.label()).join("skills")]);
-    }
-
-    let present: Vec<PathBuf> = [
-        AgentDir::Claude,
-        AgentDir::Cursor,
-        AgentDir::Codex,
-        AgentDir::Generic,
-    ]
-    .into_iter()
-    .filter(|d| root.join(d.label()).exists())
-    .map(|d| root.join(d.label()).join("skills"))
-    .collect();
-
-    if !present.is_empty() {
-        return Ok(present);
-    }
-
-    let chosen = prompt_agent_dir()?;
-    Ok(vec![root.join(chosen.label()).join("skills")])
-}
-
-fn prompt_agent_dir(root: &Path) -> Result<AgentDir, Box<dyn Error>> {
-    let options = [
-        AgentDir::Claude,
-        AgentDir::Cursor,
-        AgentDir::Codex,
-        AgentDir::Generic,
+/// Asks where to install skills: a set of common local/global presets, or a
+/// custom path.
+fn prompt_location(base: &Path) -> Result<PathBuf, Box<dyn Error>> {
+    let home = home_dir()?;
+    let presets: [(&str, PathBuf); 4] = [
+        ("Standard Local", base.join(".agents").join("skills")),
+        ("Claude Local", base.join(".claude").join("skills")),
+        ("Standard Global", home.join(".agents").join("skills")),
+        ("Claude Global", home.join(".claude").join("skills")),
     ];
-    let items: Vec<String> = options
+
+    let mut items: Vec<String> = presets
         .iter()
-        .map(|d| {
-            format!(
-                "{}: {}",
-                d.display_name(),
-                display_path(&root.join(d.label()))
-            )
-        })
+        .map(|(label, path)| format!("{label} ({})", display_path(path)))
         .collect();
+    items.push("Other".to_string());
 
     let choice = Select::with_theme(&ui::theme())
         .with_prompt("Where should skills be installed?")
@@ -291,7 +86,29 @@ fn prompt_agent_dir(root: &Path) -> Result<AgentDir, Box<dyn Error>> {
         .default(0)
         .interact()?;
 
-    Ok(options[choice])
+    match presets.get(choice) {
+        Some((_, path)) => Ok(path.clone()),
+        None => {
+            let input: String = Input::with_theme(&ui::theme())
+                .with_prompt("Path")
+                .interact_text()?;
+            Ok(expand_tilde(&input))
+        }
+    }
+}
+
+/// Expands a leading `~` in a user-entered path to the home directory.
+fn expand_tilde(path: &str) -> PathBuf {
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Ok(home) = home_dir() {
+            return home.join(rest);
+        }
+    } else if path == "~"
+        && let Ok(home) = home_dir()
+    {
+        return home;
+    }
+    PathBuf::from(path)
 }
 
 /// Renders `path` with the user's home directory abbreviated to `~`, for
@@ -371,21 +188,6 @@ fn copy_dir(src: &Path, dest: &Path) -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
-}
-
-fn location_outdated(dir: &Path, skills: &[Skill]) -> Result<bool, Box<dyn Error>> {
-    for (name, src) in skills {
-        let latest_version = skill_version(&src.join(VERSION_FILE))
-            .ok_or_else(|| format!("skill \"{name}\" is missing a {VERSION_FILE} file"))?;
-
-        match skill_version(&dir.join(name).join(VERSION_FILE)) {
-            None => return Ok(true),
-            Some(v) if v < latest_version => return Ok(true),
-            Some(_) => {}
-        }
-    }
-
-    Ok(false)
 }
 
 fn skill_version(path: &Path) -> Option<Version> {
@@ -586,97 +388,16 @@ mod tests {
     }
 
     #[test]
-    fn location_outdated_when_missing_or_behind() {
-        let latest_root = TempDir::new().unwrap();
-        let latest_skill = latest_root.path().join("rngo-system-inference");
-        fs::create_dir_all(&latest_skill).unwrap();
-        fs::write(latest_skill.join(".version"), "0.2.0").unwrap();
-        let skills = vec![("rngo-system-inference".to_string(), latest_skill.clone())];
-
-        let empty_dir = TempDir::new().unwrap();
-        assert!(location_outdated(empty_dir.path(), &skills).unwrap());
-
-        let behind_dir = TempDir::new().unwrap();
-        let installed = behind_dir.path().join("rngo-system-inference");
-        fs::create_dir_all(&installed).unwrap();
-        fs::write(installed.join(".version"), "0.1.0").unwrap();
-        assert!(location_outdated(behind_dir.path(), &skills).unwrap());
-
-        let current_dir = TempDir::new().unwrap();
-        let installed = current_dir.path().join("rngo-system-inference");
-        fs::create_dir_all(&installed).unwrap();
-        fs::write(installed.join(".version"), "0.2.0").unwrap();
-        assert!(!location_outdated(current_dir.path(), &skills).unwrap());
+    fn expand_tilde_expands_leading_home_dir() {
+        let home = home_dir().unwrap();
+        assert_eq!(expand_tilde("~/foo/skills"), home.join("foo/skills"));
+        assert_eq!(expand_tilde("~"), home);
     }
 
     #[test]
-    fn sync_configured_agent_reports_up_to_date_without_prompting() {
-        let src_root = TempDir::new().unwrap();
-        let src = src_root.path().join("rngo-system-inference");
-        fs::create_dir_all(&src).unwrap();
-        fs::write(src.join(".version"), "1.0.0").unwrap();
-        let skills = vec![("rngo-system-inference".to_string(), src)];
-
-        let dest_root = TempDir::new().unwrap();
-        let dir = dest_root.path().join("skills");
-        fs::create_dir_all(dir.join("rngo-system-inference")).unwrap();
-        fs::write(dir.join("rngo-system-inference").join(".version"), "1.0.0").unwrap();
-
-        // Up to date at `dir` should short-circuit before any prompt is
-        // reached (dialoguer would error without a TTY, panicking or
-        // returning Err from this call).
-        sync_configured_agent(&dir, &skills).unwrap();
-    }
-
-    #[test]
-    fn resolve_targets_uses_explicit_dir_without_prompting() {
-        let tmp = TempDir::new().unwrap();
-        let targets = resolve_targets(tmp.path(), Some(AgentDir::Generic), || {
-            panic!("should not prompt")
-        })
-        .unwrap();
-
-        assert_eq!(targets, vec![tmp.path().join(".agents").join("skills")]);
-    }
-
-    #[test]
-    fn resolve_targets_uses_present_agent_dir_without_prompting() {
-        let tmp = TempDir::new().unwrap();
-        fs::create_dir_all(tmp.path().join(".claude")).unwrap();
-
-        let targets = resolve_targets(tmp.path(), None, || panic!("should not prompt")).unwrap();
-
-        assert_eq!(targets, vec![tmp.path().join(".claude").join("skills")]);
-    }
-
-    #[test]
-    fn resolve_targets_uses_all_present_agent_dirs() {
-        let tmp = TempDir::new().unwrap();
-        fs::create_dir_all(tmp.path().join(".claude")).unwrap();
-        fs::create_dir_all(tmp.path().join(".agents")).unwrap();
-
-        let mut targets = resolve_targets(tmp.path(), None, || panic!("should not prompt"))
-            .unwrap()
-            .into_iter()
-            .collect::<Vec<_>>();
-        targets.sort();
-
-        let mut expected = vec![
-            tmp.path().join(".claude").join("skills"),
-            tmp.path().join(".agents").join("skills"),
-        ];
-        expected.sort();
-
-        assert_eq!(targets, expected);
-    }
-
-    #[test]
-    fn resolve_targets_prompts_when_neither_agent_dir_present() {
-        let tmp = TempDir::new().unwrap();
-
-        let targets = resolve_targets(tmp.path(), None, || Ok(AgentDir::Generic)).unwrap();
-
-        assert_eq!(targets, vec![tmp.path().join(".agents").join("skills")]);
+    fn expand_tilde_leaves_other_paths_unchanged() {
+        assert_eq!(expand_tilde("./foo/skills"), PathBuf::from("./foo/skills"));
+        assert_eq!(expand_tilde("/abs/skills"), PathBuf::from("/abs/skills"));
     }
 
     #[test]

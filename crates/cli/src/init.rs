@@ -2,14 +2,13 @@ use std::error::Error;
 use std::fs;
 use std::path::Path;
 
-use dialoguer::{Confirm, Input, Select};
+use dialoguer::{Confirm, Input};
 
-use crate::agent::{self, AgentConfig};
 use crate::{skills, ui};
 
 pub fn init(base: &Path) -> Result<(), Box<dyn Error>> {
-    let agent = init_project(base, prompt_key, prompt_seed, prompt_agent_config)?;
-    skills::offer_install(base, agent.as_ref());
+    init_project(base, prompt_key, prompt_seed)?;
+    skills::offer_install(base);
     Ok(())
 }
 
@@ -20,24 +19,20 @@ fn init_project(
     base: &Path,
     prompt_key: impl FnOnce(&str) -> String,
     prompt_seed: impl FnOnce() -> u64,
-    prompt_agent: impl FnOnce() -> Option<AgentConfig>,
-) -> Result<Option<AgentConfig>, Box<dyn Error>> {
+) -> Result<(), Box<dyn Error>> {
     let rngo_dir = base.join(".rngo");
     fs::create_dir_all(&rngo_dir)?;
 
     let spec_path = rngo_dir.join("spec.yml");
-    let agent = if spec_path.exists() {
+    if spec_path.exists() {
         ui::outcome(".rngo is already set up.");
-        agent::load(base)?
     } else {
         let default_key = project_name(base)?;
         let key = prompt_key(&default_key);
         let seed = prompt_seed();
-        let agent = prompt_agent();
-        fs::write(&spec_path, spec_yaml(&key, seed, agent.as_ref()))?;
+        fs::write(&spec_path, spec_yaml(&key, seed))?;
         ui::outcome("Set up .rngo.");
-        agent
-    };
+    }
 
     match ensure_gitignore(base, confirm_create_gitignore)? {
         GitignoreOutcome::Created => ui::outcome("Created .gitignore."),
@@ -46,15 +41,11 @@ fn init_project(
         GitignoreOutcome::Skipped => {}
     }
 
-    Ok(agent)
+    Ok(())
 }
 
-fn spec_yaml(key: &str, seed: u64, agent: Option<&AgentConfig>) -> String {
-    let mut spec = format!("key: {key}\nseed: {seed}\n");
-    if let Some(agent) = agent {
-        spec.push_str(&agent.to_yaml_field());
-    }
-    spec
+fn spec_yaml(key: &str, seed: u64) -> String {
+    format!("key: {key}\nseed: {seed}\n")
 }
 
 /// Asks for the project's key, defaulting to the directory name. Errors
@@ -75,47 +66,6 @@ fn prompt_seed() -> u64 {
         .default(1)
         .interact_text()
         .unwrap_or(1)
-}
-
-/// Asks whether to configure a coding agent and, if so, which one. Errors
-/// (e.g. no TTY) are swallowed so `rngo init` still succeeds non-interactively.
-fn prompt_agent_config() -> Option<AgentConfig> {
-    try_prompt_agent_config().unwrap_or(None)
-}
-
-fn try_prompt_agent_config() -> Result<Option<AgentConfig>, Box<dyn Error>> {
-    let configure = Confirm::with_theme(&ui::theme())
-        .with_prompt("Would you like to configure a coding agent?")
-        .default(true)
-        .interact()?;
-
-    if !configure {
-        return Ok(None);
-    }
-
-    let options = ["Claude Code", "Cursor", "Codex", "Custom"];
-    let choice = Select::with_theme(&ui::theme())
-        .with_prompt("Which coding agent do you use?")
-        .items(options)
-        .default(0)
-        .interact()?;
-
-    let agent = match choice {
-        0 => AgentConfig::claude_code(),
-        1 => AgentConfig::cursor(),
-        2 => AgentConfig::codex(),
-        _ => {
-            let config: String = Input::with_theme(&ui::theme())
-                .with_prompt("Config path")
-                .interact_text()?;
-            let command: String = Input::with_theme(&ui::theme())
-                .with_prompt("Command")
-                .interact_text()?;
-            AgentConfig::Custom { config, command }
-        }
-    };
-
-    Ok(Some(agent))
 }
 
 fn project_name(base: &Path) -> Result<String, Box<dyn Error>> {
@@ -192,7 +142,7 @@ mod tests {
             .unwrap()
             .to_string();
 
-        init_project(base, |d| d.to_string(), || 1, || None).unwrap();
+        init_project(base, |d| d.to_string(), || 1).unwrap();
 
         let spec = fs::read_to_string(base.join(".rngo/spec.yml")).unwrap();
         assert_eq!(spec, format!("key: {name}\nseed: 1\n"));
@@ -204,7 +154,7 @@ mod tests {
         let base = tmp.path();
         fs::write(base.join(".gitignore"), "target\n").unwrap();
 
-        init_project(base, |d| d.to_string(), || 1, || None).unwrap();
+        init_project(base, |d| d.to_string(), || 1).unwrap();
         let gitignore = fs::read_to_string(base.join(".gitignore")).unwrap();
         assert_eq!(gitignore, "target\n.rngo/runs\n");
 
@@ -245,77 +195,25 @@ mod tests {
         fs::write(base.join(".rngo/spec.yml"), "seed: 1\n").unwrap();
         fs::write(base.join(".gitignore"), "").unwrap();
 
-        init_project(base, |d| d.to_string(), || 1, || None).unwrap();
+        init_project(base, |d| d.to_string(), || 1).unwrap();
 
         let spec = fs::read_to_string(base.join(".rngo/spec.yml")).unwrap();
         assert_eq!(spec, "seed: 1\n");
     }
 
     #[test]
-    fn writes_named_agent_to_spec() {
+    fn does_not_prompt_when_spec_already_exists() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
-        fs::write(base.join(".gitignore"), "").unwrap();
-
-        let agent = init_project(
-            base,
-            |d| d.to_string(),
-            || 1,
-            || Some(AgentConfig::cursor()),
-        )
-        .unwrap();
-
-        assert_eq!(agent, Some(AgentConfig::cursor()));
-        let spec = fs::read_to_string(base.join(".rngo/spec.yml")).unwrap();
-        assert!(spec.ends_with("agent: cursor\n"), "spec was: {spec:?}");
-    }
-
-    #[test]
-    fn writes_custom_agent_to_spec() {
-        let tmp = TempDir::new().unwrap();
-        let base = tmp.path();
+        fs::create_dir_all(base.join(".rngo")).unwrap();
+        fs::write(base.join(".rngo/spec.yml"), "key: test\nseed: 1\n").unwrap();
         fs::write(base.join(".gitignore"), "").unwrap();
 
         init_project(
             base,
-            |d| d.to_string(),
-            || 1,
-            || {
-                Some(AgentConfig::Custom {
-                    config: ".agents".to_string(),
-                    command: "myagent".to_string(),
-                })
-            },
-        )
-        .unwrap();
-
-        let spec = fs::read_to_string(base.join(".rngo/spec.yml")).unwrap();
-        assert!(
-            spec.ends_with("agent:\n  config: .agents\n  command: myagent\n"),
-            "spec was: {spec:?}"
-        );
-    }
-
-    #[test]
-    fn does_not_prompt_for_agent_when_spec_already_exists() {
-        let tmp = TempDir::new().unwrap();
-        let base = tmp.path();
-        fs::create_dir_all(base.join(".rngo")).unwrap();
-        fs::write(
-            base.join(".rngo/spec.yml"),
-            "key: test\nseed: 1\nagent: codex\n",
-        )
-        .unwrap();
-        fs::write(base.join(".gitignore"), "").unwrap();
-
-        let agent = init_project(
-            base,
             |_| panic!("should not prompt"),
             || panic!("should not prompt"),
-            || panic!("should not prompt"),
         )
         .unwrap();
-
-        assert_eq!(agent, Some(AgentConfig::codex()));
     }
 }
