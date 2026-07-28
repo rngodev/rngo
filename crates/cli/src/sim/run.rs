@@ -1,5 +1,5 @@
 use crate::sim::effect::EffectDispatch;
-use rngo_sim::{Dialect, FsProxyLog, SimpleEventLog, spec};
+use rngo_sim::{Dialect, SimpleEventLog, SqliteProxyLog, spec};
 use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::{fmt, fs};
@@ -21,7 +21,7 @@ pub fn run(base: &Path, stdout: bool, spec_path: Option<&Path>) -> Result<(), Bo
     )?;
     update_last_symlink(base, &run_dir)?;
 
-    let log = FsProxyLog::new(Box::new(SimpleEventLog::default()), run_dir.clone());
+    let log = SqliteProxyLog::new(Box::new(SimpleEventLog::default()), run_dir.clone());
 
     let simulation_builder = Dialect::primitive()
         .parse_simulation(spec.clone())
