@@ -1,5 +1,6 @@
 mod fs_proxy;
 mod simple;
+mod sqlite_proxy;
 
 use crate::Signal;
 use crate::effect::EffectEvent;
@@ -7,6 +8,7 @@ use std::rc::Rc;
 
 pub use fs_proxy::FsProxyLog;
 pub use simple::SimpleEventLog;
+pub use sqlite_proxy::SqliteProxyLog;
 
 pub trait Log: std::fmt::Debug {
     fn push(&mut self, event: LogEvent);
