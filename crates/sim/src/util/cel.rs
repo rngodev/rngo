@@ -5,6 +5,35 @@ use chrono::{DateTime, Duration, FixedOffset};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+pub(crate) fn json_to_cel(value: serde_json::Value) -> Value {
+    match value {
+        serde_json::Value::Bool(b) => Value::Bool(b),
+        serde_json::Value::Number(n) => {
+            if n.is_i64() {
+                Value::Int(n.as_i64().unwrap())
+            } else if n.is_u64() {
+                let safe_i64 = (n.as_u64().unwrap().min(i64::MAX as u64)) as i64;
+                Value::Int(safe_i64)
+            } else if n.is_f64() {
+                Value::Float(n.as_f64().unwrap())
+            } else {
+                eprintln!("number is not an integer or float: {n}");
+                Value::Int(0)
+            }
+        }
+        serde_json::Value::String(s) => Value::String(s.into()),
+        serde_json::Value::Array(a) => {
+            Value::List(a.into_iter().map(json_to_cel).collect::<Vec<_>>().into())
+        }
+        serde_json::Value::Object(o) => Value::Map(Map::from(
+            o.into_iter()
+                .map(|(k, v)| (k, json_to_cel(v)))
+                .collect::<HashMap<_, _>>(),
+        )),
+        serde_json::Value::Null => Value::Null,
+    }
+}
+
 fn seconds(n: i64) -> Duration {
     Duration::seconds(n)
 }
