@@ -1,6 +1,6 @@
 use chrono::Utc;
 use handlebars::Handlebars;
-use rngo_sim::{EffectEvent, Io, Signal, spec};
+use rngo_sim::{EffectEvent, Level, Signal, spec};
 use std::collections::HashMap;
 use std::error::Error;
 use std::io::{BufRead, BufReader, Write};
@@ -69,7 +69,7 @@ impl EffectDispatch {
                                     let _ = tx.send(Signal {
                                         effect_id: None,
                                         system: system_key.clone(),
-                                        io: Io::Stdout,
+                                        level: Level::Info,
                                         data,
                                         timestamp: Utc::now(),
                                     });
@@ -90,7 +90,7 @@ impl EffectDispatch {
                                     let _ = tx.send(Signal {
                                         effect_id: None,
                                         system: system_key.clone(),
-                                        io: Io::Stderr,
+                                        level: Level::Error,
                                         data,
                                         timestamp: Utc::now(),
                                     });
@@ -140,7 +140,10 @@ impl EffectDispatch {
                 .output()?;
 
             let timestamp = Utc::now();
-            for (bytes, io) in [(&output.stdout, Io::Stdout), (&output.stderr, Io::Stderr)] {
+            for (bytes, level) in [
+                (&output.stdout, Level::Info),
+                (&output.stderr, Level::Error),
+            ] {
                 for line in BufReader::new(bytes.as_slice())
                     .lines()
                     .map_while(Result::ok)
@@ -149,7 +152,7 @@ impl EffectDispatch {
                         let _ = self.signal_tx.send(Signal {
                             effect_id: Some(effect_event.id),
                             system: system_key.clone(),
-                            io,
+                            level,
                             data: line,
                             timestamp,
                         });
@@ -161,7 +164,7 @@ impl EffectDispatch {
                 let _ = self.signal_tx.send(Signal {
                     effect_id: Some(effect_event.id),
                     system: system_key.clone(),
-                    io: Io::Stderr,
+                    level: Level::Error,
                     data: format!("command exited with {}", output.status),
                     timestamp,
                 });

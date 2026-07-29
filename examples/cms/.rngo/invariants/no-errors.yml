@@ -1,5 +1,5 @@
 type: sql
 query: >
   select count(*) from signals
-  where io = 'stderr';
+  where level = 'error';
 expect: result == 0
