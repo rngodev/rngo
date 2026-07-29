@@ -44,9 +44,21 @@ pub fn run(base: &Path, stdout: bool, spec_path: Option<&Path>) -> Result<(), Bo
         let outcomes =
             rngo_sim::invariant::evaluate_from_log(&run_dir.join("log.sqlite"), &spec.invariants)
                 .map_err(join_errors)?;
-        let json = serde_json::to_string_pretty(&outcomes)?;
-        fs::write(run_dir.join("invariants.json"), &json)?;
-        println!("{json}");
+        fs::write(
+            run_dir.join("invariants.json"),
+            serde_json::to_string_pretty(&outcomes)?,
+        )?;
+
+        let passed = outcomes.values().filter(|o| o.passed).count();
+        println!("{passed}/{} invariants passed", outcomes.len());
+
+        for (key, outcome) in &outcomes {
+            if outcome.passed {
+                continue;
+            }
+            let spec::Invariant::Sql { expect, .. } = &spec.invariants[key];
+            println!("{key} failed - got {}, expected '{expect}'", outcome.value);
+        }
     }
 
     Ok(())
