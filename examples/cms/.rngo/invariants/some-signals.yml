@@ -1,0 +1,4 @@
+type: sql
+query: >
+  select count(*) from signals;
+expect: result > 0
