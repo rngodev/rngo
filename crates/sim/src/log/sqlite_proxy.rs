@@ -1,5 +1,5 @@
 use crate::log::LogReader;
-use crate::signal::Io;
+use crate::signal::Level;
 use crate::{Log, LogEvent};
 use rusqlite::Connection;
 use std::path::PathBuf;
@@ -37,7 +37,7 @@ impl SqliteProxyLog {
                     effect_id INTEGER,
                     timestamp TEXT NOT NULL,
                     system TEXT NOT NULL,
-                    io TEXT NOT NULL,
+                    level TEXT NOT NULL,
                     data TEXT NOT NULL
                 );
 
@@ -93,16 +93,17 @@ impl Log for SqliteProxyLog {
             LogEvent::Signal(s) => {
                 self.connection
                     .prepare_cached(
-                        "INSERT INTO signals (effect_id, timestamp, system, io, data) VALUES (?1, ?2, ?3, ?4, ?5)",
+                        "INSERT INTO signals (effect_id, timestamp, system, level, data) VALUES (?1, ?2, ?3, ?4, ?5)",
                     )
                     .unwrap()
                     .execute(rusqlite::params![
                         s.effect_id.map(|id| id as i64),
                         s.timestamp.to_rfc3339(),
                         s.system,
-                        match s.io {
-                            Io::Stdout => "stdout",
-                            Io::Stderr => "stderr",
+                        match s.level {
+                            Level::Error => "error",
+                            Level::Warning => "warning",
+                            Level::Info => "info",
                         },
                         s.data,
                     ])
@@ -163,7 +164,7 @@ mod tests {
             effect_id: Some(1),
             timestamp: Utc::now(),
             system: "logger".to_string(),
-            io: Io::Stdout,
+            level: Level::Info,
             data: "hello".to_string(),
         }));
         log.push(LogEvent::Error("boom".to_string()));
