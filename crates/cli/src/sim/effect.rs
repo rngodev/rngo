@@ -153,6 +153,16 @@ impl EffectDispatch {
                     }
                 }
             }
+
+            if !output.status.success() {
+                let _ = self.signal_tx.send(Signal {
+                    effect_id: Some(effect_event.id),
+                    system: system_key.clone(),
+                    io: Io::Stderr,
+                    data: format!("command exited with {}", output.status),
+                    timestamp,
+                });
+            }
         }
 
         Ok(())

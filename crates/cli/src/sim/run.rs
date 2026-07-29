@@ -266,6 +266,64 @@ mod tests {
     }
 
     #[test]
+    fn exec_import_records_signal_when_command_fails() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+
+        fs::create_dir_all(base.join(".rngo/effects")).unwrap();
+        fs::create_dir_all(base.join(".rngo/systems")).unwrap();
+        fs::create_dir_all(base.join(".rngo/invariants")).unwrap();
+
+        write_yaml(
+            base.join(".rngo/spec.yml"),
+            &json!({
+                "seed": 1,
+                "start": "2024-01-01",
+                "end": "2024-01-04"
+            }),
+        );
+
+        write_yaml(
+            base.join(".rngo/invariants/has-failure-signal.yml"),
+            &json!({
+                "type": "sql",
+                "query": "SELECT COUNT(*) FROM signals WHERE data LIKE 'command exited with%'",
+                "expect": "result >= 1"
+            }),
+        );
+
+        write_yaml(
+            base.join(".rngo/effects/ping.yml"),
+            &json!({
+                "system": "logger",
+                "trigger": "hz(1, day)",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
+                    }
+                }
+            }),
+        );
+
+        write_yaml(
+            base.join(".rngo/systems/logger.yml"),
+            &json!({
+                "format": {},
+                "import": { "type": "exec", "command": "exit 1" }
+            }),
+        );
+
+        run(base, false, None).unwrap();
+
+        let invariants_path = base.join(".rngo/runs/last/invariants.json");
+        let content = fs::read_to_string(&invariants_path).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+        assert_eq!(value["has-failure-signal"]["passed"], true);
+    }
+
+    #[test]
     fn stream_import_pipes_events_to_subprocess() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
