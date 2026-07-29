@@ -24,6 +24,8 @@ This generates ~365 authors and ~1095 posts over the year 2024 and streams SQL `
 
 It will also generate a handful of API requests against the `GET /posts/slug/:slug` endpoint.
 
+The API logs to stdout and, as structured JSON, to `logs/app.log`. A non-interactive signal defined at `.rngo/signals/app-log.yml` tails that file for the duration of the run, recording each log line as a signal associated with the `api` system (but no particular effect).
+
 Reusable custom schemas defined under `.rngo/schemas/` are referenced from the effects by name instead of being inlined:
 
 - `name` and `email` are enumerations of realistic constant values.

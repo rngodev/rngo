@@ -1,0 +1,4 @@
+system: api
+export:
+  type: stream
+  command: tail -F logs/app.log
