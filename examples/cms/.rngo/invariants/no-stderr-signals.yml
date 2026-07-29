@@ -1,0 +1,5 @@
+type: sql
+query: >
+  select count(*) from signals
+  where io = 'stderr';
+expect: result == 0

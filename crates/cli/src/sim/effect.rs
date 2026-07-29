@@ -12,6 +12,7 @@ pub struct EffectDispatch {
     effect_systems: HashMap<String, String>,
     stdinpipes: HashMap<String, ChildStdin>,
     children: HashMap<String, Child>,
+    reader_threads: Vec<thread::JoinHandle<()>>,
     hbs: Handlebars<'static>,
     signal_tx: Sender<Signal>,
 }
@@ -32,6 +33,7 @@ impl EffectDispatch {
 
         let mut stdinpipes = HashMap::new();
         let mut children = HashMap::new();
+        let mut reader_threads = vec![];
         let mut hbs = Handlebars::new();
 
         for system_key in effect_systems.values() {
@@ -59,7 +61,7 @@ impl EffectDispatch {
                     if let Some(stdout) = child.stdout.take() {
                         let tx = signal_tx.clone();
                         let system_key = system_key.clone();
-                        thread::spawn(move || {
+                        reader_threads.push(thread::spawn(move || {
                             for line in BufReader::new(stdout).lines() {
                                 if let Ok(data) = line
                                     && !data.is_empty()
@@ -73,13 +75,13 @@ impl EffectDispatch {
                                     });
                                 }
                             }
-                        });
+                        }));
                     }
 
                     if let Some(stderr) = child.stderr.take() {
                         let tx = signal_tx.clone();
                         let system_key = system_key.clone();
-                        thread::spawn(move || {
+                        reader_threads.push(thread::spawn(move || {
                             for line in BufReader::new(stderr).lines() {
                                 if let Ok(data) = line
                                     && !data.is_empty()
@@ -94,7 +96,7 @@ impl EffectDispatch {
                                     });
                                 }
                             }
-                        });
+                        }));
                     }
 
                     children.insert(system_key.clone(), child);
@@ -109,6 +111,7 @@ impl EffectDispatch {
             effect_systems,
             stdinpipes,
             children,
+            reader_threads,
             hbs,
             signal_tx,
         })
@@ -153,6 +156,16 @@ impl EffectDispatch {
                     }
                 }
             }
+
+            if !output.status.success() {
+                let _ = self.signal_tx.send(Signal {
+                    effect_id: Some(effect_event.id),
+                    system: system_key.clone(),
+                    io: Io::Stderr,
+                    data: format!("command exited with {}", output.status),
+                    timestamp,
+                });
+            }
         }
 
         Ok(())
@@ -162,6 +175,12 @@ impl EffectDispatch {
         drop(self.stdinpipes);
         for (_, mut child) in self.children {
             child.wait()?;
+        }
+        // Children have exited, so their stdout/stderr pipes have hit EOF; joining guarantees
+        // every line they wrote has already been turned into a `Signal` before callers do a
+        // final drain of the signal channel.
+        for handle in self.reader_threads {
+            let _ = handle.join();
         }
         Ok(())
     }
