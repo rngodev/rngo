@@ -27,10 +27,10 @@ pub fn run(base: &Path, stdout: bool, spec_path: Option<&Path>) -> Result<(), Bo
         .parse_simulation(spec.clone())
         .map_err(join_errors)?;
 
-    let simulation = simulation_builder.log(log).build().map_err(join_errors)?;
+    let mut simulation = simulation_builder.log(log).build().map_err(join_errors)?;
     let mut effect_dispatch = EffectDispatch::new(&spec, simulation.signal_tx())?;
 
-    for effect_event in simulation {
+    for effect_event in &mut simulation {
         if stdout {
             println!("{}", serde_json::to_string(&effect_event)?);
         } else {
@@ -39,6 +39,10 @@ pub fn run(base: &Path, stdout: bool, spec_path: Option<&Path>) -> Result<(), Bo
     }
 
     effect_dispatch.finish()?;
+    // Stream systems' subprocesses may emit output right up until they receive EOF and exit,
+    // which `finish()` waits for above; `simulation.finish()` drains those trailing signals
+    // and drops the simulation, committing the event log before invariants are evaluated below.
+    simulation.finish();
 
     if !spec.invariants.is_empty() {
         let outcomes =
@@ -321,6 +325,70 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(&content).unwrap();
 
         assert_eq!(value["has-failure-signal"]["passed"], true);
+    }
+
+    #[test]
+    fn stream_import_does_not_drop_trailing_signal() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+
+        fs::create_dir_all(base.join(".rngo/effects")).unwrap();
+        fs::create_dir_all(base.join(".rngo/systems")).unwrap();
+        fs::create_dir_all(base.join(".rngo/invariants")).unwrap();
+
+        write_yaml(
+            base.join(".rngo/spec.yml"),
+            &json!({
+                "seed": 1,
+                "start": "2024-01-01",
+                "end": "2024-01-04"
+            }),
+        );
+
+        // Every event fed to `cat` is echoed straight back out over stdout, so the number of
+        // signals recorded should match the number of effects exactly - including the one
+        // produced by the very last event, which arrives only after the subprocess is closed.
+        write_yaml(
+            base.join(".rngo/invariants/matches-effect-count.yml"),
+            &json!({
+                "type": "sql",
+                "query": "SELECT (SELECT COUNT(*) FROM effects) - (SELECT COUNT(*) FROM signals)",
+                "expect": "result == 0"
+            }),
+        );
+
+        write_yaml(
+            base.join(".rngo/effects/ping.yml"),
+            &json!({
+                "system": "logger",
+                "trigger": "hz(1, day)",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
+                    }
+                }
+            }),
+        );
+
+        write_yaml(
+            base.join(".rngo/systems/logger.yml"),
+            &json!({
+                "format": {},
+                "import": { "type": "stream", "command": "cat" }
+            }),
+        );
+
+        run(base, false, None).unwrap();
+
+        let invariants_path = base.join(".rngo/runs/last/invariants.json");
+        let content = fs::read_to_string(&invariants_path).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+        assert_eq!(
+            value["matches-effect-count"]["passed"], true,
+            "expected signal count to match effect count, got {value}"
+        );
     }
 
     #[test]

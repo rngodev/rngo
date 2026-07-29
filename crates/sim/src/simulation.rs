@@ -22,15 +22,31 @@ impl Simulation {
     pub fn signal_tx(&self) -> Sender<Signal> {
         self.signal_tx.clone()
     }
+
+    /// Pushes any signals currently waiting in the channel into the event log.
+    fn drain_signals(&mut self) {
+        for signal in self.signal_rx.try_iter() {
+            self.event_log.push(signal.into());
+        }
+    }
+
+    /// Finalizes the simulation once effect dispatch has fully shut down.
+    ///
+    /// Iteration already drains signals before computing each event, but signals sent after
+    /// the last event (e.g. a `stream` system's subprocess flushing its output once it
+    /// receives EOF) arrive after the last `next()` call, so this drains once more. Taking
+    /// `self` by value also ensures the event log is dropped - and so commits any pending
+    /// writes - before this returns.
+    pub fn finish(mut self) {
+        self.drain_signals();
+    }
 }
 
 impl Iterator for Simulation {
     type Item = EffectEvent;
 
     fn next(&mut self) -> Option<Self::Item> {
-        for signal in self.signal_rx.try_iter() {
-            self.event_log.push(signal.into());
-        }
+        self.drain_signals();
 
         loop {
             self.effects
