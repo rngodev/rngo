@@ -69,12 +69,14 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        Commands::Run { stdout, dir, spec } => {
-            if let Err(e) = sim::run(&dir, stdout, spec.as_deref()) {
+        Commands::Run { stdout, dir, spec } => match sim::run(&dir, stdout, spec.as_deref()) {
+            Ok(true) => {}
+            Ok(false) => std::process::exit(1),
+            Err(e) => {
                 eprintln!("error: {e}");
                 std::process::exit(1);
             }
-        }
+        },
         Commands::Skills { command } => match command {
             SkillsCommands::Install { path } => {
                 if let Err(e) = skills::install(std::path::Path::new("."), path) {

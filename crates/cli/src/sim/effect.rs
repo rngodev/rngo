@@ -86,7 +86,6 @@ impl EffectDispatch {
                                 if let Ok(data) = line
                                     && !data.is_empty()
                                 {
-                                    eprintln!("[{system_key}] {data}");
                                     let _ = tx.send(Signal {
                                         effect_id: None,
                                         system: system_key.clone(),

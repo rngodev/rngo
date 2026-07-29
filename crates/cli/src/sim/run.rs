@@ -1,11 +1,17 @@
 use crate::sim::effect::EffectDispatch;
+use crate::sim::status::StatusLog;
+use chrono::{DateTime, FixedOffset};
+use console::style;
 use rngo_sim::{Dialect, SimpleEventLog, SqliteProxyLog, spec};
+use std::cell::Cell;
+use std::collections::HashMap;
 use std::error::Error;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::{fmt, fs};
 use uuid::Uuid;
 
-pub fn run(base: &Path, stdout: bool, spec_path: Option<&Path>) -> Result<(), Box<dyn Error>> {
+pub fn run(base: &Path, stdout: bool, spec_path: Option<&Path>) -> Result<bool, Box<dyn Error>> {
     let _ = dotenvy::from_path(base.join(".env"));
 
     let spec = match spec_path {
@@ -21,13 +27,28 @@ pub fn run(base: &Path, stdout: bool, spec_path: Option<&Path>) -> Result<(), Bo
     )?;
     update_last_symlink(base, &run_dir)?;
 
-    let log = SqliteProxyLog::new(Box::new(SimpleEventLog::default()), run_dir.clone());
+    let effect_systems: HashMap<String, String> = spec
+        .effects
+        .iter()
+        .filter_map(|(k, v)| v.system.as_ref().map(|s| (k.clone(), s.clone())))
+        .collect();
+    let sim_start: Rc<Cell<Option<DateTime<FixedOffset>>>> = Rc::new(Cell::new(None));
+
+    let log = StatusLog::new(
+        Box::new(SqliteProxyLog::new(
+            Box::new(SimpleEventLog::default()),
+            run_dir.clone(),
+        )),
+        effect_systems,
+        sim_start.clone(),
+    );
 
     let simulation_builder = Dialect::primitive()
         .parse_simulation(spec.clone())
         .map_err(join_errors)?;
 
     let mut simulation = simulation_builder.log(log).build().map_err(join_errors)?;
+    sim_start.set(Some(simulation.start()));
     let mut effect_dispatch = EffectDispatch::new(&spec, simulation.signal_tx())?;
 
     for effect_event in &mut simulation {
@@ -44,6 +65,8 @@ pub fn run(base: &Path, stdout: bool, spec_path: Option<&Path>) -> Result<(), Bo
     // and drops the simulation, committing the event log before invariants are evaluated below.
     simulation.finish();
 
+    let mut all_passed = true;
+
     if !spec.invariants.is_empty() {
         let outcomes =
             rngo_sim::invariant::evaluate_from_log(&run_dir.join("log.sqlite"), &spec.invariants)
@@ -53,6 +76,8 @@ pub fn run(base: &Path, stdout: bool, spec_path: Option<&Path>) -> Result<(), Bo
             serde_json::to_string_pretty(&outcomes)?,
         )?;
 
+        println!();
+        println!("{}", style("Audit").bold());
         let passed = outcomes.values().filter(|o| o.passed).count();
         println!("{passed}/{} invariants passed", outcomes.len());
 
@@ -60,12 +85,13 @@ pub fn run(base: &Path, stdout: bool, spec_path: Option<&Path>) -> Result<(), Bo
             if outcome.passed {
                 continue;
             }
+            all_passed = false;
             let spec::Invariant::Sql { expect, .. } = &spec.invariants[key];
             println!("{key} failed - got {}, expected '{expect}'", outcome.value);
         }
     }
 
-    Ok(())
+    Ok(all_passed)
 }
 
 fn load_spec_file(path: &Path) -> Result<spec::Simulation, Box<dyn Error>> {
