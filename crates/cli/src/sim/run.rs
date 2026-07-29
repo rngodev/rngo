@@ -40,6 +40,27 @@ pub fn run(base: &Path, stdout: bool, spec_path: Option<&Path>) -> Result<(), Bo
 
     effect_dispatch.finish()?;
 
+    if !spec.invariants.is_empty() {
+        let outcomes =
+            rngo_sim::invariant::evaluate_from_log(&run_dir.join("log.sqlite"), &spec.invariants)
+                .map_err(join_errors)?;
+        fs::write(
+            run_dir.join("invariants.json"),
+            serde_json::to_string_pretty(&outcomes)?,
+        )?;
+
+        let passed = outcomes.values().filter(|o| o.passed).count();
+        println!("{passed}/{} invariants passed", outcomes.len());
+
+        for (key, outcome) in &outcomes {
+            if outcome.passed {
+                continue;
+            }
+            let spec::Invariant::Sql { expect, .. } = &spec.invariants[key];
+            println!("{key} failed - got {}, expected '{expect}'", outcome.value);
+        }
+    }
+
     Ok(())
 }
 
@@ -126,6 +147,30 @@ fn load_spec(base: &Path) -> Result<spec::Simulation, Box<dyn Error>> {
                 .to_string();
             let schema: serde_json::Value = serde_yaml::from_str(&fs::read_to_string(&path)?)?;
             spec["schemas"][key] = schema;
+        }
+    }
+
+    if !spec["invariants"].is_object() {
+        spec["invariants"] = serde_json::json!({});
+    }
+
+    let invariants_dir = base.join(".rngo/invariants");
+    if invariants_dir.is_dir() {
+        let mut paths: Vec<_> = fs::read_dir(&invariants_dir)?
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("yml"))
+            .collect();
+        paths.sort();
+
+        for path in paths {
+            let key = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .ok_or_else(|| format!("invalid filename: {}", path.display()))?
+                .to_string();
+            let invariant: serde_json::Value = serde_yaml::from_str(&fs::read_to_string(&path)?)?;
+            spec["invariants"][key] = invariant;
         }
     }
 
@@ -387,5 +432,105 @@ mod tests {
                 "unexpected title {title:?}"
             );
         }
+    }
+
+    #[test]
+    fn invariants_are_evaluated_and_written_to_run_dir() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+
+        fs::create_dir_all(base.join(".rngo/effects")).unwrap();
+
+        write_yaml(
+            base.join(".rngo/spec.yml"),
+            &json!({
+                "seed": 1,
+                "start": "2024-01-01",
+                "end": "2024-01-04",
+                "invariants": {
+                    "hasEvents": {
+                        "type": "sql",
+                        "query": "SELECT COUNT(*) FROM effects",
+                        "expect": "result >= 1"
+                    },
+                    "tooMany": {
+                        "type": "sql",
+                        "query": "SELECT COUNT(*) FROM effects",
+                        "expect": "result > 1000"
+                    }
+                }
+            }),
+        );
+
+        write_yaml(
+            base.join(".rngo/effects/ping.yml"),
+            &json!({
+                "trigger": "hz(1, day)",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
+                    }
+                }
+            }),
+        );
+
+        run(base, false, None).unwrap();
+
+        let invariants_path = base.join(".rngo/runs/last/invariants.json");
+        let content = fs::read_to_string(&invariants_path).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+        assert_eq!(value["hasEvents"]["passed"], true);
+        assert!(value["hasEvents"]["value"].as_i64().unwrap() >= 1);
+        assert_eq!(value["tooMany"]["passed"], false);
+    }
+
+    #[test]
+    fn invariants_dir_yml_files_are_merged_into_spec() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+
+        fs::create_dir_all(base.join(".rngo/effects")).unwrap();
+        fs::create_dir_all(base.join(".rngo/invariants")).unwrap();
+
+        write_yaml(
+            base.join(".rngo/spec.yml"),
+            &json!({
+                "seed": 1,
+                "start": "2024-01-01",
+                "end": "2024-01-04"
+            }),
+        );
+
+        write_yaml(
+            base.join(".rngo/invariants/has-events.yml"),
+            &json!({
+                "type": "sql",
+                "query": "SELECT COUNT(*) FROM effects",
+                "expect": "result >= 1"
+            }),
+        );
+
+        write_yaml(
+            base.join(".rngo/effects/ping.yml"),
+            &json!({
+                "trigger": "hz(1, day)",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
+                    }
+                }
+            }),
+        );
+
+        run(base, false, None).unwrap();
+
+        let invariants_path = base.join(".rngo/runs/last/invariants.json");
+        let content = fs::read_to_string(&invariants_path).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+        assert_eq!(value["has-events"]["passed"], true);
     }
 }

@@ -33,6 +33,8 @@ pub struct Simulation {
     pub systems: IndexMap<String, System>,
     #[serde(default)]
     pub schemas: IndexMap<String, SchemaType>,
+    #[serde(default)]
+    pub invariants: IndexMap<String, Invariant>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -95,4 +97,11 @@ pub struct System {
 pub enum SystemImport {
     Stream { command: String },
     Exec { command: String },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type")]
+pub enum Invariant {
+    Sql { query: String, expect: String },
 }

@@ -2,7 +2,7 @@ use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResu
 use crate::build::{BuildError, SchemaEdge};
 use crate::parse::{SchemaParseVisitor, SchemaParser};
 use crate::spec::{self, ParseError as Error};
-use crate::util::cel::CelContextExt;
+use crate::util::cel::{CelContextExt, json_to_cel};
 use cel::{Context, Program};
 use indexmap::IndexMap;
 use std::collections::HashMap;
@@ -163,35 +163,6 @@ impl SchemaParser for FunctionParser {
         }
 
         Ok(Box::new(builder))
-    }
-}
-
-fn json_to_cel(value: serde_json::Value) -> cel::Value {
-    match value {
-        serde_json::Value::Bool(b) => cel::Value::Bool(b),
-        serde_json::Value::Number(n) => {
-            if n.is_i64() {
-                cel::Value::Int(n.as_i64().unwrap())
-            } else if n.is_u64() {
-                let safe_i64 = (n.as_u64().unwrap().min(i64::MAX as u64)) as i64;
-                cel::Value::Int(safe_i64)
-            } else if n.is_f64() {
-                cel::Value::Float(n.as_f64().unwrap())
-            } else {
-                eprintln!("number is not an integer or float: {n}");
-                cel::Value::Int(0)
-            }
-        }
-        serde_json::Value::String(s) => cel::Value::String(s.into()),
-        serde_json::Value::Array(a) => {
-            cel::Value::List(a.into_iter().map(json_to_cel).collect::<Vec<_>>().into())
-        }
-        serde_json::Value::Object(o) => cel::Value::Map(cel::objects::Map::from(
-            o.into_iter()
-                .map(|(k, v)| (k, json_to_cel(v)))
-                .collect::<HashMap<_, _>>(),
-        )),
-        serde_json::Value::Null => cel::Value::Null,
     }
 }
 

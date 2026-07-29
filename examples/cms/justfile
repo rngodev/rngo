@@ -1,13 +1,21 @@
 start:
-    docker compose up -d
+    docker compose up -d --wait
     cargo run
 
 db-reset:
+    just install-sqlx
     docker compose down -v
-    docker compose up -d
+    docker compose up -d --wait
+    just migrate
 
 db-truncate:
     psql postgres://cms:cms@localhost:5432/cms -c 'TRUNCATE posts, authors RESTART IDENTITY CASCADE'
+
+migrate:
+    sqlx migrate run
+
+install-sqlx:
+    cargo install sqlx-cli --no-default-features --features postgres,rustls
 
 rngo-run:
     cargo run --manifest-path ../../Cargo.toml -p rngo-cli -- run

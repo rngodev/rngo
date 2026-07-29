@@ -1,0 +1,4 @@
+type: sql
+query: >
+  select count(*) from effects;
+expect: result > 0
