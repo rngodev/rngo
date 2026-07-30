@@ -1,14 +1,11 @@
 use crate::sim::effect::EffectDispatch;
 use crate::sim::signal::SignalDispatch;
 use crate::sim::status::StatusLog;
-use chrono::{DateTime, FixedOffset};
 use console::style;
 use rngo_sim::{Dialect, SimpleEventLog, SqliteProxyLog, spec};
-use std::cell::Cell;
 use std::collections::HashMap;
 use std::error::Error;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 use std::{fmt, fs};
 use uuid::Uuid;
 
@@ -33,15 +30,12 @@ pub fn run(base: &Path, stdout: bool, spec_path: Option<&Path>) -> Result<bool, 
         .iter()
         .filter_map(|(k, v)| v.system.as_ref().map(|s| (k.clone(), s.clone())))
         .collect();
-    let sim_start: Rc<Cell<Option<DateTime<FixedOffset>>>> = Rc::new(Cell::new(None));
-
     let log = StatusLog::new(
         Box::new(SqliteProxyLog::new(
             Box::new(SimpleEventLog::default()),
             run_dir.clone(),
         )),
         effect_systems,
-        sim_start.clone(),
     );
 
     let simulation_builder = Dialect::primitive()
@@ -49,7 +43,6 @@ pub fn run(base: &Path, stdout: bool, spec_path: Option<&Path>) -> Result<bool, 
         .map_err(join_errors)?;
 
     let mut simulation = simulation_builder.log(log).build().map_err(join_errors)?;
-    sim_start.set(Some(simulation.start()));
     let mut effect_dispatch = EffectDispatch::new(&spec, simulation.signal_tx())?;
     let signal_dispatch = SignalDispatch::new(&spec, simulation.signal_tx())?;
 

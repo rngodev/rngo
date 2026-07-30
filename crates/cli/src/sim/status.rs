@@ -1,7 +1,6 @@
-use chrono::{DateTime, FixedOffset, TimeDelta};
+use chrono::{DateTime, FixedOffset};
 use console::{Term, style};
 use rngo_sim::{Log, LogEvent, LogReader};
-use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -22,27 +21,21 @@ struct SystemStats {
 pub struct StatusLog {
     child: Box<dyn Log>,
     effect_systems: HashMap<String, String>,
-    start: Rc<Cell<Option<DateTime<FixedOffset>>>>,
     term: Term,
     stats: BTreeMap<String, SystemStats>,
-    last_offset: u64,
+    last_timestamp: Option<DateTime<FixedOffset>>,
     rendered_lines: usize,
     last_render: Option<Instant>,
 }
 
 impl StatusLog {
-    pub fn new(
-        child: Box<dyn Log>,
-        effect_systems: HashMap<String, String>,
-        start: Rc<Cell<Option<DateTime<FixedOffset>>>>,
-    ) -> Self {
+    pub fn new(child: Box<dyn Log>, effect_systems: HashMap<String, String>) -> Self {
         StatusLog {
             child,
             effect_systems,
-            start,
             term: Term::stderr(),
             stats: BTreeMap::new(),
-            last_offset: 0,
+            last_timestamp: None,
             rendered_lines: 0,
             last_render: None,
         }
@@ -62,10 +55,8 @@ impl StatusLog {
         }
         self.last_render = Some(now);
 
-        let time = match self.start.get() {
-            Some(start) => (start + TimeDelta::seconds(self.last_offset as i64))
-                .format("%Y-%m-%d %H:%M:%S")
-                .to_string(),
+        let time = match self.last_timestamp {
+            Some(timestamp) => timestamp.format("%Y-%m-%d %H:%M:%S").to_string(),
             None => "-".to_string(),
         };
 
@@ -97,7 +88,7 @@ impl Log for StatusLog {
     fn push(&mut self, event: LogEvent) {
         match &event {
             LogEvent::Effect(e) => {
-                self.last_offset = e.offset;
+                self.last_timestamp = Some(e.timestamp);
                 if let Some(system) = self.effect_systems.get(&e.key) {
                     self.stats.entry(system.clone()).or_default().effects += 1;
                 }

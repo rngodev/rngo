@@ -159,6 +159,7 @@ mod tests {
             id: 1,
             key: "ping".to_string(),
             offset: 42,
+            timestamp: Utc::now().fixed_offset(),
             value: serde_json::json!({ "a": 1 }),
             format: Some("json".to_string()),
         }));
@@ -206,6 +207,7 @@ mod tests {
                 id: i as u64,
                 key: "ping".to_string(),
                 offset: i as u64,
+                timestamp: Utc::now().fixed_offset(),
                 value: serde_json::json!(i),
                 format: None,
             }));

@@ -63,6 +63,7 @@ impl Iterator for Effect {
                 id: last_id + 1,
                 key: self.key.clone(),
                 offset: trigger_event.sim_offset,
+                timestamp: self.sim_start + TimeDelta::seconds(trigger_event.sim_offset as i64),
                 format: self.format.as_ref().map(|f| f.format(&value)),
                 value,
             })),
@@ -76,6 +77,7 @@ pub struct EffectEvent {
     pub id: u64,
     pub key: String,
     pub offset: u64,
+    pub timestamp: DateTime<FixedOffset>,
     pub value: Value,
     pub format: Option<String>,
 }
