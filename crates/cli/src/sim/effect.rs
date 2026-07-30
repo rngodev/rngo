@@ -68,6 +68,7 @@ impl EffectDispatch {
                                 {
                                     let _ = tx.send(Signal {
                                         effect_id: None,
+                                        key: None,
                                         system: system_key.clone(),
                                         level: Level::Info,
                                         data,
@@ -88,6 +89,7 @@ impl EffectDispatch {
                                 {
                                     let _ = tx.send(Signal {
                                         effect_id: None,
+                                        key: None,
                                         system: system_key.clone(),
                                         level: Level::Error,
                                         data,
@@ -150,6 +152,7 @@ impl EffectDispatch {
                     if !line.is_empty() {
                         let _ = self.signal_tx.send(Signal {
                             effect_id: Some(effect_event.id),
+                            key: None,
                             system: system_key.clone(),
                             level,
                             data: line,
@@ -162,6 +165,7 @@ impl EffectDispatch {
             if !output.status.success() {
                 let _ = self.signal_tx.send(Signal {
                     effect_id: Some(effect_event.id),
+                    key: None,
                     system: system_key.clone(),
                     level: Level::Error,
                     data: format!("command exited with {}", output.status),
