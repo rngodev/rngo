@@ -3,7 +3,7 @@ use crate::build::{BuildError, SimulationKey};
 use crate::effect::{Effect, EffectBuilder, EffectEvent};
 use crate::log::{Log, SimpleEventLog};
 use crate::util::time::Moment;
-use chrono::{DateTime, FixedOffset, TimeDelta, Utc};
+use chrono::{TimeDelta, Utc};
 use std::sync::mpsc::{self, Receiver, Sender};
 
 #[derive(Debug)]
@@ -12,7 +12,6 @@ pub struct Simulation {
     effects: Vec<Effect>,
     signal_tx: Sender<Signal>,
     signal_rx: Receiver<Signal>,
-    start: DateTime<FixedOffset>,
 }
 
 impl Simulation {
@@ -22,11 +21,6 @@ impl Simulation {
 
     pub fn signal_tx(&self) -> Sender<Signal> {
         self.signal_tx.clone()
-    }
-
-    /// The resolved, absolute start of the simulated time range.
-    pub fn start(&self) -> DateTime<FixedOffset> {
-        self.start
     }
 
     /// Pushes any signals currently waiting in the channel into the event log.
@@ -179,7 +173,6 @@ impl SimulationBuilder {
                 effects,
                 signal_tx,
                 signal_rx,
-                start,
             })
         } else {
             Err(errors)
