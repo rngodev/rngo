@@ -53,7 +53,7 @@ The workspace has two crates:
 - `stream`: spawns one long-lived subprocess per system, writes formatted event lines to its stdin.
 - `exec`: runs a fresh `sh -c <command>` per event; the command string is a Handlebars template rendered with the event's JSON value.
 
-An effect opts into a system by setting `system: <system-key>`. The format used is resolved by merging the effect-level `format` over the system-level `format`.
+An effect opts into a system by setting `system: <system-key>`. The format used is resolved by merging the effect-level `format` over the system-level `format`. A `stream` system with no effects writing to it is still spawned for the run's duration, but only as a signal source (e.g. tailing a log file) - there is no separate "signal" concept.
 
 ### Schema types (all in `sim/src/schema/`)
 
