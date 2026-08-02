@@ -35,7 +35,6 @@ impl SqliteProxyLog {
 
                 CREATE TABLE IF NOT EXISTS signals (
                     effect_id INTEGER,
-                    key TEXT,
                     timestamp TEXT NOT NULL,
                     system TEXT NOT NULL,
                     level TEXT NOT NULL,
@@ -94,12 +93,11 @@ impl Log for SqliteProxyLog {
             LogEvent::Signal(s) => {
                 self.connection
                     .prepare_cached(
-                        "INSERT INTO signals (effect_id, key, timestamp, system, level, data) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                        "INSERT INTO signals (effect_id, timestamp, system, level, data) VALUES (?1, ?2, ?3, ?4, ?5)",
                     )
                     .unwrap()
                     .execute(rusqlite::params![
                         s.effect_id.map(|id| id as i64),
-                        s.key,
                         s.timestamp.to_rfc3339(),
                         s.system,
                         match s.level {
@@ -165,7 +163,6 @@ mod tests {
         }));
         log.push(LogEvent::Signal(Signal {
             effect_id: Some(1),
-            key: None,
             timestamp: Utc::now(),
             system: "logger".to_string(),
             level: Level::Info,

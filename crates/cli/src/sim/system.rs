@@ -7,8 +7,22 @@ use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::Sender;
 use std::thread;
+use std::time::{Duration, Instant};
 
-pub struct EffectDispatch {
+/// How long to give a system's subprocess to exit on its own (e.g. after its stdin is closed)
+/// before it's forcibly killed. Some systems (e.g. a `tail -F` used as a signal source) never
+/// exit on their own, so this bounds shutdown; a subprocess that finishes right as the
+/// simulation does can otherwise be killed before the OS has even scheduled it to run, losing
+/// its entire output.
+const SHUTDOWN_GRACE: Duration = Duration::from_millis(200);
+const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(5);
+
+/// Spawns each `stream` system's subprocess for the lifetime of the simulation and each `exec`
+/// system's Handlebars command template, then dispatches effect events to the system an effect
+/// writes to. A system with no effects writing to it (no `system: <key>` reference) is still
+/// spawned if it's a `stream` system, turning its stdout/stderr into signals with no associated
+/// effect - a non-interactive signal source.
+pub struct SystemDispatch {
     effect_systems: HashMap<String, String>,
     stdinpipes: HashMap<String, ChildStdin>,
     children: HashMap<String, Child>,
@@ -17,7 +31,7 @@ pub struct EffectDispatch {
     signal_tx: Sender<Signal>,
 }
 
-impl EffectDispatch {
+impl SystemDispatch {
     pub fn new(spec: &spec::Simulation, signal_tx: Sender<Signal>) -> Result<Self, Box<dyn Error>> {
         let effect_systems: HashMap<String, String> = spec
             .effects
@@ -25,28 +39,20 @@ impl EffectDispatch {
             .filter_map(|(k, v)| v.system.as_ref().map(|s| (k.clone(), s.clone())))
             .collect();
 
-        let system_imports: HashMap<String, spec::SystemImport> = spec
-            .systems
-            .iter()
-            .map(|(k, v)| (k.clone(), v.import.clone()))
-            .collect();
+        for system_key in effect_systems.values() {
+            if !spec.systems.contains_key(system_key) {
+                return Err(format!("effect references unknown system: {system_key}").into());
+            }
+        }
 
         let mut stdinpipes = HashMap::new();
         let mut children = HashMap::new();
         let mut reader_threads = vec![];
         let mut hbs = Handlebars::new();
 
-        for system_key in effect_systems.values() {
-            let import = system_imports
-                .get(system_key)
-                .ok_or_else(|| format!("effect references unknown system: {system_key}"))?;
-
-            match import {
+        for (system_key, system) in &spec.systems {
+            match &system.import {
                 spec::SystemImport::Stream { command } => {
-                    if stdinpipes.contains_key(system_key) {
-                        continue;
-                    }
-
                     let mut child = Command::new("sh")
                         .arg("-c")
                         .arg(command)
@@ -68,7 +74,6 @@ impl EffectDispatch {
                                 {
                                     let _ = tx.send(Signal {
                                         effect_id: None,
-                                        key: None,
                                         system: system_key.clone(),
                                         level: Level::Info,
                                         data,
@@ -89,7 +94,6 @@ impl EffectDispatch {
                                 {
                                     let _ = tx.send(Signal {
                                         effect_id: None,
-                                        key: None,
                                         system: system_key.clone(),
                                         level: Level::Error,
                                         data,
@@ -152,7 +156,6 @@ impl EffectDispatch {
                     if !line.is_empty() {
                         let _ = self.signal_tx.send(Signal {
                             effect_id: Some(effect_event.id),
-                            key: None,
                             system: system_key.clone(),
                             level,
                             data: line,
@@ -165,7 +168,6 @@ impl EffectDispatch {
             if !output.status.success() {
                 let _ = self.signal_tx.send(Signal {
                     effect_id: Some(effect_event.id),
-                    key: None,
                     system: system_key.clone(),
                     level: Level::Error,
                     data: format!("command exited with {}", output.status),
@@ -177,14 +179,28 @@ impl EffectDispatch {
         Ok(())
     }
 
-    pub fn finish(self) -> Result<(), Box<dyn Error>> {
+    /// Closes every system's stdin, which triggers exit for subprocesses that react to EOF (e.g.
+    /// `cat`), then gives each remaining child a grace period before killing it - covering
+    /// signal-source subprocesses (e.g. `tail -F`) that never exit on their own. Reader threads
+    /// are joined last so trailing output has already become a `Signal` before the caller does a
+    /// final drain of the signal channel.
+    pub fn finish(mut self) -> Result<(), Box<dyn Error>> {
         drop(self.stdinpipes);
-        for (_, mut child) in self.children {
-            child.wait()?;
+
+        for child in self.children.values_mut() {
+            let deadline = Instant::now() + SHUTDOWN_GRACE;
+            loop {
+                match child.try_wait() {
+                    Ok(Some(_)) | Err(_) => break,
+                    Ok(None) if Instant::now() >= deadline => break,
+                    Ok(None) => thread::sleep(SHUTDOWN_POLL_INTERVAL),
+                }
+            }
+            let _ = child.kill();
         }
-        // Children have exited, so their stdout/stderr pipes have hit EOF; joining guarantees
-        // every line they wrote has already been turned into a `Signal` before callers do a
-        // final drain of the signal channel.
+        for (_, mut child) in self.children {
+            let _ = child.wait();
+        }
         for handle in self.reader_threads {
             let _ = handle.join();
         }

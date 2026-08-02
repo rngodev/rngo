@@ -12,9 +12,6 @@ pub enum Level {
 #[derive(Clone, Debug, Serialize)]
 pub struct Signal {
     pub effect_id: Option<u64>,
-    /// Set to the signal's spec key when it comes from a non-interactive `.rngo/signals/*.yml`
-    /// source rather than an effect.
-    pub key: Option<String>,
     pub timestamp: DateTime<Utc>,
     pub system: String,
     pub level: Level,

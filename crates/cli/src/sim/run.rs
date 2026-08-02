@@ -1,6 +1,5 @@
-use crate::sim::effect::EffectDispatch;
-use crate::sim::signal::SignalDispatch;
 use crate::sim::status::StatusLog;
+use crate::sim::system::SystemDispatch;
 use console::style;
 use rngo_sim::{Dialect, SimpleEventLog, SqliteProxyLog, spec};
 use std::collections::HashMap;
@@ -43,24 +42,21 @@ pub fn run(base: &Path, stdout: bool, spec_path: Option<&Path>) -> Result<bool, 
         .map_err(join_errors)?;
 
     let mut simulation = simulation_builder.log(log).build().map_err(join_errors)?;
-    let mut effect_dispatch = EffectDispatch::new(&spec, simulation.signal_tx())?;
-    let signal_dispatch = SignalDispatch::new(&spec, simulation.signal_tx())?;
+    let mut system_dispatch = SystemDispatch::new(&spec, simulation.signal_tx())?;
 
     for effect_event in &mut simulation {
         if stdout {
             println!("{}", serde_json::to_string(&effect_event)?);
         } else {
-            effect_dispatch.send(&effect_event)?;
+            system_dispatch.send(&effect_event)?;
         }
     }
 
-    effect_dispatch.finish()?;
-    // Non-interactive signal sources have no natural end, so they're killed rather than waited
-    // on; `finish()` joins their reader threads first so trailing output becomes a `Signal`.
-    signal_dispatch.finish()?;
-    // Stream systems' subprocesses may emit output right up until they receive EOF and exit,
-    // which `finish()` waits for above; `simulation.finish()` drains those trailing signals
-    // and drops the simulation, committing the event log before invariants are evaluated below.
+    // Closes stdin on every stream system (triggering exit for those that react to EOF) and
+    // kills any stragglers - including signal-source systems with no natural end - after a
+    // grace period; `simulation.finish()` drains the trailing signals this produces and drops
+    // the simulation, committing the event log before invariants are evaluated below.
+    system_dispatch.finish()?;
     simulation.finish();
 
     let mut all_passed = true;
@@ -199,30 +195,6 @@ fn load_spec(base: &Path) -> Result<spec::Simulation, Box<dyn Error>> {
                 .to_string();
             let invariant: serde_json::Value = serde_yaml::from_str(&fs::read_to_string(&path)?)?;
             spec["invariants"][key] = invariant;
-        }
-    }
-
-    if !spec["signals"].is_object() {
-        spec["signals"] = serde_json::json!({});
-    }
-
-    let signals_dir = base.join(".rngo/signals");
-    if signals_dir.is_dir() {
-        let mut paths: Vec<_> = fs::read_dir(&signals_dir)?
-            .filter_map(|e| e.ok())
-            .map(|e| e.path())
-            .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("yml"))
-            .collect();
-        paths.sort();
-
-        for path in paths {
-            let key = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .ok_or_else(|| format!("invalid filename: {}", path.display()))?
-                .to_string();
-            let signal: serde_json::Value = serde_yaml::from_str(&fs::read_to_string(&path)?)?;
-            spec["signals"][key] = signal;
         }
     }
 
@@ -709,12 +681,12 @@ mod tests {
     }
 
     #[test]
-    fn non_interactive_signal_produces_keyed_signal_rows() {
+    fn system_with_no_effects_is_a_signal_source() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
         fs::create_dir_all(base.join(".rngo/effects")).unwrap();
-        fs::create_dir_all(base.join(".rngo/signals")).unwrap();
+        fs::create_dir_all(base.join(".rngo/systems")).unwrap();
         fs::create_dir_all(base.join(".rngo/invariants")).unwrap();
 
         write_yaml(
@@ -739,19 +711,20 @@ mod tests {
             }),
         );
 
+        // No effect sets `system: tail`, so this system is a pure signal source: its subprocess
+        // still runs for the duration of the simulation and its output becomes signals.
         write_yaml(
-            base.join(".rngo/signals/tail.yml"),
+            base.join(".rngo/systems/tail.yml"),
             &json!({
-                "system": "api",
-                "export": { "type": "stream", "command": "printf 'one\\ntwo\\n'" }
+                "import": { "type": "stream", "command": "printf 'one\\ntwo\\n'" }
             }),
         );
 
         write_yaml(
-            base.join(".rngo/invariants/tail-signals-are-keyed.yml"),
+            base.join(".rngo/invariants/tail-signals.yml"),
             &json!({
                 "type": "sql",
-                "query": "SELECT COUNT(*) FROM signals WHERE key = 'tail' AND effect_id IS NULL AND system = 'api'",
+                "query": "SELECT COUNT(*) FROM signals WHERE effect_id IS NULL AND system = 'tail'",
                 "expect": "result == 2"
             }),
         );
@@ -763,8 +736,8 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(&content).unwrap();
 
         assert_eq!(
-            value["tail-signals-are-keyed"]["passed"], true,
-            "expected 2 keyed signals from the non-interactive signal source, got {value}"
+            value["tail-signals"]["passed"], true,
+            "expected 2 signals from the effect-less system, got {value}"
         );
     }
 }

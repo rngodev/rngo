@@ -35,8 +35,6 @@ pub struct Simulation {
     pub schemas: IndexMap<String, SchemaType>,
     #[serde(default)]
     pub invariants: IndexMap<String, Invariant>,
-    #[serde(default)]
-    pub signals: IndexMap<String, Signal>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -87,6 +85,9 @@ pub struct SchemaType {
     pub schema: Schema,
 }
 
+/// A `stream` system with no effects writing to it (no `format`, no `system: <key>` reference
+/// from any effect) is a non-interactive signal source: its subprocess runs for the duration of
+/// the simulation and its stdout/stderr lines become signals with no associated effect.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct System {
     pub format: Option<Format>,
@@ -106,19 +107,4 @@ pub enum SystemImport {
 #[serde(tag = "type")]
 pub enum Invariant {
     Sql { query: String, expect: String },
-}
-
-/// A non-interactive signal source: a subprocess run for the duration of the simulation whose
-/// output lines become signals associated with `system`, but with no effect.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Signal {
-    pub system: String,
-    pub export: SignalExport,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-#[serde(tag = "type")]
-pub enum SignalExport {
-    Stream { command: String },
 }
