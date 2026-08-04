@@ -8,6 +8,7 @@ pub mod schema;
 pub mod signal;
 mod simulation;
 pub mod spec;
+mod system;
 mod util;
 
 pub use build::{BuildError, EffectKey, SchemaEdge, SimulationKey};
@@ -19,4 +20,5 @@ pub use parse::Dialect;
 pub use signal::{Level, Signal};
 pub use simulation::Simulation;
 pub use spec::ParseError;
+pub use system::System;
 pub use util::time::Moment;

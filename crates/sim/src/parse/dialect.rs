@@ -5,6 +5,7 @@ use crate::format::Format;
 use crate::schema::custom::CustomParser;
 use crate::simulation::{Simulation, SimulationBuilder};
 use crate::spec::{self, ParseError};
+use crate::system::System;
 use crate::util::time::Moment;
 use crate::{format, schema};
 use std::rc::Rc;
@@ -53,14 +54,14 @@ impl Dialect {
     /// Resolves a system's `format` config to a runtime [`Format`] instance. Returns `Ok(None)`
     /// when no registered parser recognizes the format's type, matching the historical behavior
     /// of silently not formatting rather than erroring on an unrecognized/absent type.
-    pub fn parse_format(
+    fn parse_format(
         &self,
         format: &spec::Format,
     ) -> Result<Option<Box<dyn Format>>, Vec<ParseError>> {
         let matching: Vec<_> = self
             .format_parsers
             .iter()
-            .filter(|p| p.should_parse(format))
+            .filter(|p| format.ftype.as_deref() == Some(p.key()))
             .collect();
 
         match matching.as_slice() {
@@ -173,6 +174,25 @@ impl Dialect {
                 }
                 Err(mut e) => errors.append(&mut e),
             }
+        }
+
+        for (key, system) in &spec.systems {
+            let format = match &system.format {
+                Some(format) => match self.parse_format(format) {
+                    Ok(format) => format,
+                    Err(mut e) => {
+                        errors.append(&mut e);
+                        None
+                    }
+                },
+                None => None,
+            };
+
+            simulation_builder.set_system(System {
+                key: key.clone(),
+                format,
+                import: system.import.clone(),
+            });
         }
 
         if !errors.is_empty() {

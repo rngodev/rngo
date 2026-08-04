@@ -73,8 +73,8 @@ impl Format for SqlFormat {
 pub struct SqlFormatParser;
 
 impl FormatParser for SqlFormatParser {
-    fn should_parse(&self, format: &spec::Format) -> bool {
-        format.ftype.as_deref() == Some("sql")
+    fn key(&self) -> &str {
+        "sql"
     }
 
     fn parse(&self, _format: &spec::Format) -> Result<Box<dyn Format>, Vec<ParseError>> {

@@ -1,6 +1,6 @@
 use chrono::Utc;
 use handlebars::Handlebars;
-use rngo_sim::{Dialect, EffectEvent, Format, Level, Signal, spec};
+use rngo_sim::{EffectEvent, Format, Level, Signal, System, spec};
 use std::collections::HashMap;
 use std::error::Error;
 use std::io::{BufRead, BufReader, Write};
@@ -33,7 +33,11 @@ pub struct SystemDispatch {
 }
 
 impl SystemDispatch {
-    pub fn new(spec: &spec::Simulation, signal_tx: Sender<Signal>) -> Result<Self, Box<dyn Error>> {
+    pub fn new(
+        spec: &spec::Simulation,
+        systems: Vec<System>,
+        signal_tx: Sender<Signal>,
+    ) -> Result<Self, Box<dyn Error>> {
         let effect_systems: HashMap<String, String> = spec
             .effects
             .iter()
@@ -41,37 +45,33 @@ impl SystemDispatch {
             .collect();
 
         for system_key in effect_systems.values() {
-            if !spec.systems.contains_key(system_key) {
+            if !systems.iter().any(|s| &s.key == system_key) {
                 return Err(format!("effect references unknown system: {system_key}").into());
             }
         }
 
-        let dialect = Dialect::primitive();
         let mut formats: HashMap<String, Box<dyn Format>> = HashMap::new();
-        for (system_key, system) in &spec.systems {
-            if let Some(format) = &system.format
-                && let Some(parsed) = dialect.parse_format(format).map_err(|errs| {
-                    errs.iter()
-                        .map(|e| e.to_string())
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                })?
-            {
-                formats.insert(system_key.clone(), parsed);
-            }
-        }
-
         let mut stdinpipes = HashMap::new();
         let mut children = HashMap::new();
         let mut reader_threads = vec![];
         let mut hbs = Handlebars::new();
 
-        for (system_key, system) in &spec.systems {
-            match &system.import {
+        for system in systems {
+            let System {
+                key: system_key,
+                format,
+                import,
+            } = system;
+
+            if let Some(format) = format {
+                formats.insert(system_key.clone(), format);
+            }
+
+            match import {
                 spec::SystemImport::Stream { command } => {
                     let mut child = Command::new("sh")
                         .arg("-c")
-                        .arg(command)
+                        .arg(&command)
                         .stdin(Stdio::piped())
                         .stdout(Stdio::piped())
                         .stderr(Stdio::piped())
@@ -123,7 +123,7 @@ impl SystemDispatch {
                     children.insert(system_key.clone(), child);
                 }
                 spec::SystemImport::Exec { command } => {
-                    hbs.register_template_string(system_key, command)?;
+                    hbs.register_template_string(&system_key, &command)?;
                 }
             }
         }

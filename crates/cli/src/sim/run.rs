@@ -42,7 +42,8 @@ pub fn run(base: &Path, stdout: bool, spec_path: Option<&Path>) -> Result<bool, 
         .map_err(join_errors)?;
 
     let mut simulation = simulation_builder.log(log).build().map_err(join_errors)?;
-    let mut system_dispatch = SystemDispatch::new(&spec, simulation.signal_tx())?;
+    let systems = simulation.take_systems();
+    let mut system_dispatch = SystemDispatch::new(&spec, systems, simulation.signal_tx())?;
 
     for effect_event in &mut simulation {
         if stdout {

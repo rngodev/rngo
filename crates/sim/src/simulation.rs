@@ -2,6 +2,7 @@ use crate::Signal;
 use crate::build::{BuildError, SimulationKey};
 use crate::effect::{Effect, EffectBuilder, EffectEvent};
 use crate::log::{Log, SimpleEventLog};
+use crate::system::System;
 use crate::util::time::Moment;
 use chrono::{TimeDelta, Utc};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -10,6 +11,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 pub struct Simulation {
     event_log: Box<dyn Log>,
     effects: Vec<Effect>,
+    systems: Vec<System>,
     signal_tx: Sender<Signal>,
     signal_rx: Receiver<Signal>,
 }
@@ -21,6 +23,12 @@ impl Simulation {
 
     pub fn signal_tx(&self) -> Sender<Signal> {
         self.signal_tx.clone()
+    }
+
+    /// Hands ownership of the simulation's systems to the caller (e.g. the CLI's system
+    /// dispatch), leaving this simulation's copy empty.
+    pub fn take_systems(&mut self) -> Vec<System> {
+        std::mem::take(&mut self.systems)
     }
 
     /// Pushes any signals currently waiting in the channel into the event log.
@@ -74,6 +82,7 @@ pub struct SimulationBuilder {
     pub end: Moment,
     event_log: Box<dyn Log>,
     effect_builders: Vec<EffectBuilder>,
+    systems: Vec<System>,
 }
 
 impl SimulationBuilder {
@@ -84,6 +93,7 @@ impl SimulationBuilder {
             end: Moment::Relative(TimeDelta::zero()),
             event_log: Box::new(SimpleEventLog::default()),
             effect_builders: vec![],
+            systems: vec![],
         }
     }
 
@@ -124,6 +134,11 @@ impl SimulationBuilder {
 
     pub fn set_effect(&mut self, effect: EffectBuilder) {
         self.effect_builders.push(effect)
+    }
+
+    pub fn set_system(&mut self, system: System) -> &mut Self {
+        self.systems.push(system);
+        self
     }
 
     pub fn with_effect(
@@ -171,6 +186,7 @@ impl SimulationBuilder {
             Ok(Simulation {
                 event_log: self.event_log,
                 effects,
+                systems: self.systems,
                 signal_tx,
                 signal_rx,
             })
