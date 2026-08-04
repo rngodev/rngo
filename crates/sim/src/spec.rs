@@ -58,7 +58,7 @@ pub struct Effect {
     pub start: Option<String>,
     pub end: Option<String>,
     pub trigger: Option<TriggerUnion>,
-    pub format: Option<Format>,
+    pub metadata: Option<Value>,
     pub schema: Schema,
 }
 

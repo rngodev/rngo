@@ -1,13 +1,12 @@
 use serde_json::Value;
 
-use crate::ParseError;
+use crate::effect::EffectEvent;
 use crate::format::Format;
-use crate::parse::{FormatParseContext, FormatParser};
+use crate::parse::FormatParser;
+use crate::{ParseError, spec};
 
 #[derive(Debug)]
-pub struct SqlFormat {
-    table_name: String,
-}
+pub struct SqlFormat;
 
 impl SqlFormat {
     pub fn parser() -> SqlFormatParser {
@@ -16,9 +15,14 @@ impl SqlFormat {
 }
 
 impl Format for SqlFormat {
-    fn format(&self, value: &Value) -> String {
-        let table = &self.table_name;
-        match value {
+    fn format(&self, event: &EffectEvent) -> Result<String, String> {
+        let table = event
+            .metadata
+            .get("table")
+            .and_then(|v| v.as_str())
+            .unwrap_or(&event.key);
+
+        Ok(match &event.value {
             Value::Null => {
                 format!("INSERT INTO {table} VALUES (null);")
             }
@@ -62,31 +66,58 @@ impl Format for SqlFormat {
 
                 format!("INSERT INTO {table} ({columns}) VALUES ({values});")
             }
-        }
+        })
     }
 }
 
 pub struct SqlFormatParser;
 
 impl FormatParser for SqlFormatParser {
-    fn should_parse(&self, context: &FormatParseContext) -> bool {
-        context.is_format_type("sql")
+    fn should_parse(&self, format: &spec::Format) -> bool {
+        format.ftype.as_deref() == Some("sql")
     }
 
-    fn parse(&self, context: FormatParseContext) -> Result<Box<dyn Format>, Vec<ParseError>> {
-        let format = context.format();
-        let table_name: String = format
-            .as_ref()
-            .and_then(|f| f.fields.get("table"))
-            .map(|v| match v.as_str() {
-                Some(table) => Ok(table.to_string()),
-                None => Err(vec![ParseError::SchemaError {
-                    path: None,
-                    message: "table must be a string".into(),
-                }]),
-            })
-            .unwrap_or_else(|| Ok(context.effect_key().to_string()))?;
+    fn parse(&self, _format: &spec::Format) -> Result<Box<dyn Format>, Vec<ParseError>> {
+        Ok(Box::new(SqlFormat))
+    }
+}
 
-        Ok(Box::new(SqlFormat { table_name }))
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use serde_json::json;
+
+    fn event(value: Value, metadata: Value) -> EffectEvent {
+        EffectEvent {
+            id: 1,
+            key: "user".to_string(),
+            offset: 0,
+            timestamp: Utc::now().fixed_offset(),
+            value,
+            metadata,
+        }
+    }
+
+    #[test]
+    fn defaults_table_to_effect_key() {
+        let event = event(json!({ "id": 1, "name": "alice" }), Value::Null);
+        let sql = SqlFormat.format(&event).unwrap();
+        assert!(
+            sql.starts_with("INSERT INTO user ("),
+            "expected INSERT INTO user, got: {sql}"
+        );
+        assert!(sql.contains("\"id\""));
+        assert!(sql.contains("\"name\""));
+    }
+
+    #[test]
+    fn table_can_be_overridden_by_metadata() {
+        let event = event(json!({ "id": 1 }), json!({ "table": "accounts" }));
+        let sql = SqlFormat.format(&event).unwrap();
+        assert!(
+            sql.starts_with("INSERT INTO accounts ("),
+            "expected INSERT INTO accounts, got: {sql}"
+        );
     }
 }

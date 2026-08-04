@@ -1,6 +1,6 @@
 use chrono::Utc;
 use handlebars::Handlebars;
-use rngo_sim::{EffectEvent, Level, Signal, spec};
+use rngo_sim::{Dialect, EffectEvent, Format, Level, Signal, spec};
 use std::collections::HashMap;
 use std::error::Error;
 use std::io::{BufRead, BufReader, Write};
@@ -24,6 +24,7 @@ const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(5);
 /// effect - a non-interactive signal source.
 pub struct SystemDispatch {
     effect_systems: HashMap<String, String>,
+    formats: HashMap<String, Box<dyn Format>>,
     stdinpipes: HashMap<String, ChildStdin>,
     children: HashMap<String, Child>,
     reader_threads: Vec<thread::JoinHandle<()>>,
@@ -42,6 +43,21 @@ impl SystemDispatch {
         for system_key in effect_systems.values() {
             if !spec.systems.contains_key(system_key) {
                 return Err(format!("effect references unknown system: {system_key}").into());
+            }
+        }
+
+        let dialect = Dialect::primitive();
+        let mut formats: HashMap<String, Box<dyn Format>> = HashMap::new();
+        for (system_key, system) in &spec.systems {
+            if let Some(format) = &system.format
+                && let Some(parsed) = dialect.parse_format(format).map_err(|errs| {
+                    errs.iter()
+                        .map(|e| e.to_string())
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                })?
+            {
+                formats.insert(system_key.clone(), parsed);
             }
         }
 
@@ -114,6 +130,7 @@ impl SystemDispatch {
 
         Ok(Self {
             effect_systems,
+            formats,
             stdinpipes,
             children,
             reader_threads,
@@ -129,11 +146,12 @@ impl SystemDispatch {
         };
 
         if let Some(stdin) = self.stdinpipes.get_mut(&system_key) {
-            let data = effect_event
-                .format
-                .as_ref()
-                .map(|f| f.to_string())
-                .unwrap_or_else(|| serde_json::to_string(&effect_event.value).unwrap());
+            let data = match self.formats.get(&system_key) {
+                Some(format) => format
+                    .format(effect_event)
+                    .map_err(|e| format!("system '{system_key}': {e}"))?,
+                None => serde_json::to_string(&effect_event.value).unwrap(),
+            };
             writeln!(stdin, "{data}").map_err(|e| format!("system '{system_key}': {e}"))?;
         } else if self.hbs.has_template(&system_key) {
             let command = self.hbs.render(&system_key, &effect_event.value)?;

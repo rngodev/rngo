@@ -462,6 +462,63 @@ mod tests {
     }
 
     #[test]
+    fn sql_format_uses_table_from_effect_metadata() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+        let output = base.join("sql_output.txt");
+
+        fs::create_dir_all(base.join(".rngo/effects")).unwrap();
+        fs::create_dir_all(base.join(".rngo/systems")).unwrap();
+
+        write_yaml(
+            base.join(".rngo/spec.yml"),
+            &json!({
+                "seed": 1,
+                "start": "2024-01-01",
+                "end": "2024-01-02"
+            }),
+        );
+
+        write_yaml(
+            base.join(".rngo/effects/ping.yml"),
+            &json!({
+                "system": "db",
+                "metadata": { "table": "accounts" },
+                "trigger": "hz(1, hour)",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
+                    }
+                }
+            }),
+        );
+
+        let command = "cat >> ".to_string() + output.to_str().unwrap();
+        write_yaml(
+            base.join(".rngo/systems/db.yml"),
+            &json!({
+                "format": { "type": "sql" },
+                "import": { "type": "stream", "command": command }
+            }),
+        );
+
+        run(base, false, None).unwrap();
+
+        let content = fs::read_to_string(&output).unwrap();
+        assert!(
+            content.lines().count() > 0,
+            "expected at least one formatted line"
+        );
+        for line in content.lines() {
+            assert!(
+                line.starts_with("INSERT INTO accounts ("),
+                "expected sql format using metadata table, got: {line}"
+            );
+        }
+    }
+
+    #[test]
     fn spec_flag_uses_given_file_instead_of_rngo_dir() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();

@@ -2,7 +2,6 @@ mod clock;
 mod trigger;
 
 use crate::build::{BuildError, EffectKey};
-use crate::format::Format;
 use crate::log::{Log, LogIndexConfig, LogReader, SimpleEventLog};
 use crate::schema::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::util::ext::FlattenErr;
@@ -26,7 +25,7 @@ pub struct Effect {
     end_offset: u64,
     sim_start: DateTime<FixedOffset>,
     sim_end: DateTime<FixedOffset>,
-    format: Option<Box<dyn Format>>,
+    metadata: Value,
 }
 
 impl Effect {
@@ -64,8 +63,8 @@ impl Iterator for Effect {
                 key: self.key.clone(),
                 offset: trigger_event.sim_offset,
                 timestamp: self.sim_start + TimeDelta::seconds(trigger_event.sim_offset as i64),
-                format: self.format.as_ref().map(|f| f.format(&value)),
                 value,
+                metadata: self.metadata.clone(),
             })),
             SchemaResult::Err(message) => Some(Err(message)),
         }
@@ -79,7 +78,7 @@ pub struct EffectEvent {
     pub offset: u64,
     pub timestamp: DateTime<FixedOffset>,
     pub value: Value,
-    pub format: Option<String>,
+    pub metadata: Value,
 }
 
 #[derive(Debug)]
@@ -94,7 +93,7 @@ pub struct EffectBuilder {
     seed: Option<u64>,
     trigger: TriggerConfig,
     schema_builder: Option<Box<dyn SchemaBuilder>>,
-    format: Option<Box<dyn Format>>,
+    metadata: Value,
 }
 
 impl EffectBuilder {
@@ -110,7 +109,7 @@ impl EffectBuilder {
             seed: None,
             trigger: TriggerConfig::ClockExpression("hz(1, day)".into()),
             schema_builder: None,
-            format: None,
+            metadata: Value::Null,
         }
     }
 
@@ -224,13 +223,13 @@ impl EffectBuilder {
         self
     }
 
-    pub fn format(mut self, format: Box<dyn Format>) -> Self {
-        self.set_format(format);
+    pub fn metadata(mut self, metadata: Value) -> Self {
+        self.set_metadata(metadata);
         self
     }
 
-    pub fn set_format(&mut self, format: Box<dyn Format>) -> &mut Self {
-        self.format = Some(format);
+    pub fn set_metadata(&mut self, metadata: Value) -> &mut Self {
+        self.metadata = metadata;
         self
     }
 
@@ -329,7 +328,7 @@ impl EffectBuilder {
                 end_offset,
                 sim_start,
                 sim_end,
-                format: self.format,
+                metadata: self.metadata,
             }),
             Ok(_) => Err(errors),
             Err(mut e) => {
