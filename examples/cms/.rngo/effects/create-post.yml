@@ -1,7 +1,7 @@
 trigger: "hz(3, day)"
 end: now
 system: db
-format:
+metadata:
   table: posts
 schema:
   type: object

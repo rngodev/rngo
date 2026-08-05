@@ -1,10 +1,10 @@
 mod sql;
 
-use serde_json::Value;
+use crate::effect::EffectEvent;
 use std::fmt::Debug;
 
 pub use sql::SqlFormat;
 
 pub trait Format: Debug {
-    fn format(&self, value: &Value) -> String;
+    fn format(&self, event: &EffectEvent) -> Result<String, String>;
 }

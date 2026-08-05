@@ -1,9 +1,11 @@
-use super::format::{FormatParseContext, FormatParser};
+use super::format::FormatParser;
 use super::schema::{SchemaParseVisitor, SchemaParser};
 use crate::effect::Effect;
+use crate::format::Format;
 use crate::schema::custom::CustomParser;
 use crate::simulation::{Simulation, SimulationBuilder};
 use crate::spec::{self, ParseError};
+use crate::system::System;
 use crate::util::time::Moment;
 use crate::{format, schema};
 use std::rc::Rc;
@@ -47,6 +49,30 @@ impl Dialect {
     ) -> Result<SimulationBuilder, Vec<ParseError>> {
         let spec: spec::Simulation = spec::from_value(value)?;
         self.parse_simulation(spec)
+    }
+
+    /// Resolves a system's `format` config to a runtime [`Format`] instance. Returns `Ok(None)`
+    /// when no registered parser recognizes the format's type, matching the historical behavior
+    /// of silently not formatting rather than erroring on an unrecognized/absent type.
+    fn parse_format(
+        &self,
+        format: &spec::Format,
+        simulation: &spec::Simulation,
+    ) -> Result<Option<Box<dyn Format>>, Vec<ParseError>> {
+        let matching: Vec<_> = self
+            .format_parsers
+            .iter()
+            .filter(|p| format.ftype.as_deref() == Some(p.key()))
+            .collect();
+
+        match matching.as_slice() {
+            [parser] => parser.parse(format, simulation).map(Some),
+            [] => Ok(None),
+            _ => Err(vec![ParseError::SchemaError {
+                path: None,
+                message: format!("{} format parsers matched", matching.len()),
+            }]),
+        }
     }
 
     pub fn parse_simulation(
@@ -130,32 +156,6 @@ impl Dialect {
                 };
             }
 
-            match FormatParseContext::new(spec.clone(), key.clone()) {
-                Ok(ctx) => {
-                    let matching: Vec<_> = self
-                        .format_parsers
-                        .iter()
-                        .filter(|p| p.should_parse(&ctx))
-                        .collect();
-
-                    let format = match matching.as_slice() {
-                        [parser] => parser.parse(ctx).map(Some),
-                        [] => Ok(None),
-                        _ => Err(vec![ParseError::SchemaError {
-                            path: None,
-                            message: format!("{} schema parsers matched", matching.len()),
-                        }]),
-                    }?;
-
-                    if let Some(format) = format {
-                        effect_builder.set_format(format);
-                    }
-                }
-                Err(e) => {
-                    errors.push(e);
-                }
-            };
-
             let visitor = SchemaParseVisitor::new(
                 self.schema_parsers.clone(),
                 Rc::clone(&custom_schemas),
@@ -171,6 +171,25 @@ impl Dialect {
                 }
                 Err(mut e) => errors.append(&mut e),
             }
+        }
+
+        for (key, system) in &spec.systems {
+            let format = match &system.format {
+                Some(format) => match self.parse_format(format, &spec) {
+                    Ok(format) => format,
+                    Err(mut e) => {
+                        errors.append(&mut e);
+                        None
+                    }
+                },
+                None => None,
+            };
+
+            simulation_builder.set_system(System {
+                key: key.clone(),
+                format,
+                import: system.import.clone(),
+            });
         }
 
         if !errors.is_empty() {

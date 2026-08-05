@@ -29,8 +29,7 @@ impl SqliteProxyLog {
                     id INTEGER NOT NULL,
                     key TEXT NOT NULL,
                     offset INTEGER NOT NULL,
-                    value TEXT NOT NULL,
-                    format TEXT
+                    value TEXT NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS signals (
@@ -78,7 +77,7 @@ impl Log for SqliteProxyLog {
             LogEvent::Effect(e) => {
                 self.connection
                     .prepare_cached(
-                        "INSERT INTO effects (id, key, offset, value, format) VALUES (?1, ?2, ?3, ?4, ?5)",
+                        "INSERT INTO effects (id, key, offset, value) VALUES (?1, ?2, ?3, ?4)",
                     )
                     .unwrap()
                     .execute(rusqlite::params![
@@ -86,7 +85,6 @@ impl Log for SqliteProxyLog {
                         e.key,
                         e.offset as i64,
                         serde_json::to_string(&e.value).unwrap(),
-                        e.format,
                     ])
                     .unwrap();
             }
@@ -159,7 +157,6 @@ mod tests {
             offset: 42,
             timestamp: Utc::now().fixed_offset(),
             value: serde_json::json!({ "a": 1 }),
-            format: Some("json".to_string()),
         }));
         log.push(LogEvent::Signal(Signal {
             effect_id: Some(1),
@@ -206,7 +203,6 @@ mod tests {
                 offset: i as u64,
                 timestamp: Utc::now().fixed_offset(),
                 value: serde_json::json!(i),
-                format: None,
             }));
         }
         log.commit();
