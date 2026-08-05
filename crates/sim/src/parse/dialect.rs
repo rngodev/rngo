@@ -57,6 +57,7 @@ impl Dialect {
     fn parse_format(
         &self,
         format: &spec::Format,
+        simulation: &spec::Simulation,
     ) -> Result<Option<Box<dyn Format>>, Vec<ParseError>> {
         let matching: Vec<_> = self
             .format_parsers
@@ -65,7 +66,7 @@ impl Dialect {
             .collect();
 
         match matching.as_slice() {
-            [parser] => parser.parse(format).map(Some),
+            [parser] => parser.parse(format, simulation).map(Some),
             [] => Ok(None),
             _ => Err(vec![ParseError::SchemaError {
                 path: None,
@@ -155,10 +156,6 @@ impl Dialect {
                 };
             }
 
-            if let Some(metadata) = &effect.metadata {
-                effect_builder.set_metadata(metadata.clone());
-            }
-
             let visitor = SchemaParseVisitor::new(
                 self.schema_parsers.clone(),
                 Rc::clone(&custom_schemas),
@@ -178,7 +175,7 @@ impl Dialect {
 
         for (key, system) in &spec.systems {
             let format = match &system.format {
-                Some(format) => match self.parse_format(format) {
+                Some(format) => match self.parse_format(format, &spec) {
                     Ok(format) => format,
                     Err(mut e) => {
                         errors.append(&mut e);

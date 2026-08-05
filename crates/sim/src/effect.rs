@@ -25,7 +25,6 @@ pub struct Effect {
     end_offset: u64,
     sim_start: DateTime<FixedOffset>,
     sim_end: DateTime<FixedOffset>,
-    metadata: Value,
 }
 
 impl Effect {
@@ -64,7 +63,6 @@ impl Iterator for Effect {
                 offset: trigger_event.sim_offset,
                 timestamp: self.sim_start + TimeDelta::seconds(trigger_event.sim_offset as i64),
                 value,
-                metadata: self.metadata.clone(),
             })),
             SchemaResult::Err(message) => Some(Err(message)),
         }
@@ -78,7 +76,6 @@ pub struct EffectEvent {
     pub offset: u64,
     pub timestamp: DateTime<FixedOffset>,
     pub value: Value,
-    pub metadata: Value,
 }
 
 #[derive(Debug)]
@@ -93,7 +90,6 @@ pub struct EffectBuilder {
     seed: Option<u64>,
     trigger: TriggerConfig,
     schema_builder: Option<Box<dyn SchemaBuilder>>,
-    metadata: Value,
 }
 
 impl EffectBuilder {
@@ -109,7 +105,6 @@ impl EffectBuilder {
             seed: None,
             trigger: TriggerConfig::ClockExpression("hz(1, day)".into()),
             schema_builder: None,
-            metadata: Value::Null,
         }
     }
 
@@ -223,16 +218,6 @@ impl EffectBuilder {
         self
     }
 
-    pub fn metadata(mut self, metadata: Value) -> Self {
-        self.set_metadata(metadata);
-        self
-    }
-
-    pub fn set_metadata(&mut self, metadata: Value) -> &mut Self {
-        self.metadata = metadata;
-        self
-    }
-
     pub fn build(self) -> Result<Effect, Vec<BuildError>> {
         let Some(now) = self.now else {
             return Err(vec![BuildError::Effect {
@@ -328,7 +313,6 @@ impl EffectBuilder {
                 end_offset,
                 sim_start,
                 sim_end,
-                metadata: self.metadata,
             }),
             Ok(_) => Err(errors),
             Err(mut e) => {

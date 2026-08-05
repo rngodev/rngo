@@ -3,5 +3,9 @@ use crate::spec::{self, ParseError};
 
 pub trait FormatParser {
     fn key(&self) -> &str;
-    fn parse(&self, format: &spec::Format) -> Result<Box<dyn Format>, Vec<ParseError>>;
+    fn parse(
+        &self,
+        format: &spec::Format,
+        simulation: &spec::Simulation,
+    ) -> Result<Box<dyn Format>, Vec<ParseError>>;
 }

@@ -128,8 +128,8 @@ for event in simulation {
 Which outputs JSON lines like:
 
 ```json
-{"type":"effect","id":1,"key":"user","offset":0,"value":{"id":1,"name":"Gvtlzqnbhf","age":42,"created_at":0},"metadata":null}
-{"type":"effect","id":2,"key":"post","offset":36,"value":{"id":1,"user_id":1,"title":"Post: Abcdefghijklmno","tags":["a","b","a"],"created_at":36},"metadata":null}
-{"type":"effect","id":3,"key":"user","offset":371,"value":{"id":2,"name":"Rqmzwlxpjt","age":null,"created_at":371},"metadata":null}
+{"type":"effect","id":1,"key":"user","offset":0,"value":{"id":1,"name":"Gvtlzqnbhf","age":42,"created_at":0}}
+{"type":"effect","id":2,"key":"post","offset":36,"value":{"id":1,"user_id":1,"title":"Post: Abcdefghijklmno","tags":["a","b","a"],"created_at":36}}
+{"type":"effect","id":3,"key":"user","offset":371,"value":{"id":2,"name":"Rqmzwlxpjt","age":null,"created_at":371}}
 ...
 ```

@@ -1,4 +1,5 @@
 use serde_json::Value;
+use std::collections::HashMap;
 
 use crate::effect::EffectEvent;
 use crate::format::Format;
@@ -6,7 +7,9 @@ use crate::parse::FormatParser;
 use crate::{ParseError, spec};
 
 #[derive(Debug)]
-pub struct SqlFormat;
+pub struct SqlFormat {
+    effect_tables: HashMap<String, String>,
+}
 
 impl SqlFormat {
     pub fn parser() -> SqlFormatParser {
@@ -16,10 +19,10 @@ impl SqlFormat {
 
 impl Format for SqlFormat {
     fn format(&self, event: &EffectEvent) -> Result<String, String> {
-        let table = event
-            .metadata
-            .get("table")
-            .and_then(|v| v.as_str())
+        let table = self
+            .effect_tables
+            .get(&event.key)
+            .map(String::as_str)
             .unwrap_or(&event.key);
 
         Ok(match &event.value {
@@ -77,8 +80,21 @@ impl FormatParser for SqlFormatParser {
         "sql"
     }
 
-    fn parse(&self, _format: &spec::Format) -> Result<Box<dyn Format>, Vec<ParseError>> {
-        Ok(Box::new(SqlFormat))
+    fn parse(
+        &self,
+        _format: &spec::Format,
+        simulation: &spec::Simulation,
+    ) -> Result<Box<dyn Format>, Vec<ParseError>> {
+        let effect_tables = simulation
+            .effects
+            .iter()
+            .filter_map(|(key, effect)| {
+                let table = effect.metadata.as_ref()?.get("table")?.as_str()?;
+                Some((key.clone(), table.to_string()))
+            })
+            .collect();
+
+        Ok(Box::new(SqlFormat { effect_tables }))
     }
 }
 
@@ -88,21 +104,23 @@ mod tests {
     use chrono::Utc;
     use serde_json::json;
 
-    fn event(value: Value, metadata: Value) -> EffectEvent {
+    fn event(value: Value) -> EffectEvent {
         EffectEvent {
             id: 1,
             key: "user".to_string(),
             offset: 0,
             timestamp: Utc::now().fixed_offset(),
             value,
-            metadata,
         }
     }
 
     #[test]
     fn defaults_table_to_effect_key() {
-        let event = event(json!({ "id": 1, "name": "alice" }), Value::Null);
-        let sql = SqlFormat.format(&event).unwrap();
+        let format = SqlFormat {
+            effect_tables: HashMap::new(),
+        };
+        let event = event(json!({ "id": 1, "name": "alice" }));
+        let sql = format.format(&event).unwrap();
         assert!(
             sql.starts_with("INSERT INTO user ("),
             "expected INSERT INTO user, got: {sql}"
@@ -113,8 +131,11 @@ mod tests {
 
     #[test]
     fn table_can_be_overridden_by_metadata() {
-        let event = event(json!({ "id": 1 }), json!({ "table": "accounts" }));
-        let sql = SqlFormat.format(&event).unwrap();
+        let format = SqlFormat {
+            effect_tables: HashMap::from([("user".to_string(), "accounts".to_string())]),
+        };
+        let event = event(json!({ "id": 1 }));
+        let sql = format.format(&event).unwrap();
         assert!(
             sql.starts_with("INSERT INTO accounts ("),
             "expected INSERT INTO accounts, got: {sql}"
