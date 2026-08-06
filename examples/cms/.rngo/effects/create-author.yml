@@ -1,5 +1,6 @@
 trigger: "hz(1, day)"
 end: now
+channel: db
 metadata:
   table: AUTHORS
 schema:

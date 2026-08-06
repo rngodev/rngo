@@ -43,8 +43,8 @@ The workspace has two crates:
 
 ### CLI run loop (`cli/src/sim/run.rs`)
 
-- Loads spec, creates a run directory at `.rngo/runs/local/<N>/`, writes `spec.json` snapshot.
-- Without `--stdout`: writes each `Event::Effect` as a JSON line to `<effect-key>.jsonl` and dispatches to any assigned channel via `ChannelDispatch`.
+- Loads spec, creates a run directory at `.rngo/runs/<UUID>/`, writes `spec.json` snapshot and initializes a `log.sqlite` SQLite database.
+- Without `--stdout`: writes each `Event::Effect` to the `effects` table in the SQLite database and dispatches to any assigned channel via `ChannelDispatch`.
 - With `--stdout`: serializes all events (including errors) to stdout.
 
 ### Channel targets (`cli/src/sim/channel.rs`)
