@@ -1,9 +1,9 @@
 use crate::format::Format;
-use crate::spec::SystemImport;
+use crate::spec::ChannelTarget;
 
 #[derive(Debug)]
-pub struct System {
+pub struct Channel {
     pub key: String,
     pub format: Option<Box<dyn Format>>,
-    pub import: SystemImport,
+    pub target: ChannelTarget,
 }

@@ -1,11 +1,11 @@
 use super::format::FormatParser;
 use super::schema::{SchemaParseVisitor, SchemaParser};
+use crate::channel::Channel;
 use crate::effect::Effect;
 use crate::format::Format;
 use crate::schema::custom::CustomParser;
 use crate::simulation::{Simulation, SimulationBuilder};
 use crate::spec::{self, ParseError};
-use crate::system::System;
 use crate::util::time::Moment;
 use crate::{format, schema};
 use std::rc::Rc;
@@ -51,7 +51,7 @@ impl Dialect {
         self.parse_simulation(spec)
     }
 
-    /// Resolves a system's `format` config to a runtime [`Format`] instance. Returns `Ok(None)`
+    /// Resolves a channel's `format` config to a runtime [`Format`] instance. Returns `Ok(None)`
     /// when no registered parser recognizes the format's type, matching the historical behavior
     /// of silently not formatting rather than erroring on an unrecognized/absent type.
     fn parse_format(
@@ -173,8 +173,8 @@ impl Dialect {
             }
         }
 
-        for (key, system) in &spec.systems {
-            let format = match &system.format {
+        for (key, channel) in &spec.channels {
+            let format = match &channel.format {
                 Some(format) => match self.parse_format(format, &spec) {
                     Ok(format) => format,
                     Err(mut e) => {
@@ -185,10 +185,10 @@ impl Dialect {
                 None => None,
             };
 
-            simulation_builder.set_system(System {
+            simulation_builder.set_channel(Channel {
                 key: key.clone(),
                 format,
-                import: system.import.clone(),
+                target: channel.target.clone(),
             });
         }
 

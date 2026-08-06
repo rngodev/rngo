@@ -1,8 +1,8 @@
 use crate::Signal;
 use crate::build::{BuildError, SimulationKey};
+use crate::channel::Channel;
 use crate::effect::{Effect, EffectBuilder, EffectEvent};
 use crate::log::{Log, SimpleEventLog};
-use crate::system::System;
 use crate::util::time::Moment;
 use chrono::{TimeDelta, Utc};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -11,7 +11,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 pub struct Simulation {
     event_log: Box<dyn Log>,
     effects: Vec<Effect>,
-    systems: Vec<System>,
+    channels: Vec<Channel>,
     signal_tx: Sender<Signal>,
     signal_rx: Receiver<Signal>,
 }
@@ -25,10 +25,10 @@ impl Simulation {
         self.signal_tx.clone()
     }
 
-    /// Hands ownership of the simulation's systems to the caller (e.g. the CLI's system
+    /// Hands ownership of the simulation's channels to the caller (e.g. the CLI's channel
     /// dispatch), leaving this simulation's copy empty.
-    pub fn take_systems(&mut self) -> Vec<System> {
-        std::mem::take(&mut self.systems)
+    pub fn take_channels(&mut self) -> Vec<Channel> {
+        std::mem::take(&mut self.channels)
     }
 
     /// Pushes any signals currently waiting in the channel into the event log.
@@ -41,7 +41,7 @@ impl Simulation {
     /// Finalizes the simulation once effect dispatch has fully shut down.
     ///
     /// Iteration already drains signals before computing each event, but signals sent after
-    /// the last event (e.g. a `stream` system's subprocess flushing its output once it
+    /// the last event (e.g. a `stream` channel's subprocess flushing its output once it
     /// receives EOF) arrive after the last `next()` call, so this drains once more. Taking
     /// `self` by value also ensures the event log is dropped - and so commits any pending
     /// writes - before this returns.
@@ -82,7 +82,7 @@ pub struct SimulationBuilder {
     pub end: Moment,
     event_log: Box<dyn Log>,
     effect_builders: Vec<EffectBuilder>,
-    systems: Vec<System>,
+    channels: Vec<Channel>,
 }
 
 impl SimulationBuilder {
@@ -93,7 +93,7 @@ impl SimulationBuilder {
             end: Moment::Relative(TimeDelta::zero()),
             event_log: Box::new(SimpleEventLog::default()),
             effect_builders: vec![],
-            systems: vec![],
+            channels: vec![],
         }
     }
 
@@ -136,8 +136,8 @@ impl SimulationBuilder {
         self.effect_builders.push(effect)
     }
 
-    pub fn set_system(&mut self, system: System) -> &mut Self {
-        self.systems.push(system);
+    pub fn set_channel(&mut self, channel: Channel) -> &mut Self {
+        self.channels.push(channel);
         self
     }
 
@@ -186,7 +186,7 @@ impl SimulationBuilder {
             Ok(Simulation {
                 event_log: self.event_log,
                 effects,
-                systems: self.systems,
+                channels: self.channels,
                 signal_tx,
                 signal_rx,
             })

@@ -26,10 +26,10 @@ enum Commands {
     },
     /// Run a simulation
     ///
-    /// Loads a spec, runs the simulation, routes events to systems,
+    /// Loads a spec, runs the simulation, routes events to channels,
     /// and records everything.
     Run {
-        /// Write  events to stdout (instead of routing to systems)
+        /// Write  events to stdout (instead of routing to channels)
         #[arg(long)]
         stdout: bool,
         /// Path to a spec file (instead of building from the `.rngo` directory)

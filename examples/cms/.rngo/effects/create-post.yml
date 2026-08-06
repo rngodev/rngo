@@ -1,6 +1,6 @@
 trigger: "hz(3, day)"
 end: now
-system: db
+channel: db
 metadata:
   table: posts
 schema:

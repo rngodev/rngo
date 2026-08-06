@@ -13,7 +13,7 @@ pub enum Level {
 pub struct Signal {
     pub effect_id: Option<u64>,
     pub timestamp: DateTime<Utc>,
-    pub system: String,
+    pub channel: String,
     pub level: Level,
     pub data: String,
 }
