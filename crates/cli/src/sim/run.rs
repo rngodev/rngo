@@ -1,5 +1,5 @@
+use crate::sim::channel::ChannelDispatch;
 use crate::sim::status::StatusLog;
-use crate::sim::system::SystemDispatch;
 use console::style;
 use rngo_sim::{Dialect, SimpleEventLog, SqliteProxyLog, spec};
 use std::collections::HashMap;
@@ -24,17 +24,17 @@ pub fn run(base: &Path, stdout: bool, spec_path: Option<&Path>) -> Result<bool, 
     )?;
     update_last_symlink(base, &run_dir)?;
 
-    let effect_systems: HashMap<String, String> = spec
+    let effect_channels: HashMap<String, String> = spec
         .effects
         .iter()
-        .filter_map(|(k, v)| v.system.as_ref().map(|s| (k.clone(), s.clone())))
+        .filter_map(|(k, v)| v.channel.as_ref().map(|s| (k.clone(), s.clone())))
         .collect();
     let log = StatusLog::new(
         Box::new(SqliteProxyLog::new(
             Box::new(SimpleEventLog::default()),
             run_dir.clone(),
         )),
-        effect_systems,
+        effect_channels,
     );
 
     let simulation_builder = Dialect::primitive()
@@ -42,22 +42,22 @@ pub fn run(base: &Path, stdout: bool, spec_path: Option<&Path>) -> Result<bool, 
         .map_err(join_errors)?;
 
     let mut simulation = simulation_builder.log(log).build().map_err(join_errors)?;
-    let systems = simulation.take_systems();
-    let mut system_dispatch = SystemDispatch::new(&spec, systems, simulation.signal_tx())?;
+    let channels = simulation.take_channels();
+    let mut channel_dispatch = ChannelDispatch::new(&spec, channels, simulation.signal_tx())?;
 
     for effect_event in &mut simulation {
         if stdout {
             println!("{}", serde_json::to_string(&effect_event)?);
         } else {
-            system_dispatch.send(&effect_event)?;
+            channel_dispatch.send(&effect_event)?;
         }
     }
 
-    // Closes stdin on every stream system (triggering exit for those that react to EOF) and
-    // kills any stragglers - including signal-source systems with no natural end - after a
+    // Closes stdin on every stream channel (triggering exit for those that react to EOF) and
+    // kills any stragglers - including signal-source channels with no natural end - after a
     // grace period; `simulation.finish()` drains the trailing signals this produces and drops
     // the simulation, committing the event log before invariants are evaluated below.
-    system_dispatch.finish()?;
+    channel_dispatch.finish()?;
     simulation.finish();
 
     let mut all_passed = true;
@@ -127,13 +127,13 @@ fn load_spec(base: &Path) -> Result<spec::Simulation, Box<dyn Error>> {
         }
     }
 
-    if !spec["systems"].is_object() {
-        spec["systems"] = serde_json::json!({});
+    if !spec["channels"].is_object() {
+        spec["channels"] = serde_json::json!({});
     }
 
-    let systems_dir = base.join(".rngo/systems");
-    if systems_dir.is_dir() {
-        let mut paths: Vec<_> = fs::read_dir(&systems_dir)?
+    let channels_dir = base.join(".rngo/channels");
+    if channels_dir.is_dir() {
+        let mut paths: Vec<_> = fs::read_dir(&channels_dir)?
             .filter_map(|e| e.ok())
             .map(|e| e.path())
             .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("yml"))
@@ -146,8 +146,8 @@ fn load_spec(base: &Path) -> Result<spec::Simulation, Box<dyn Error>> {
                 .and_then(|s| s.to_str())
                 .ok_or_else(|| format!("invalid filename: {}", path.display()))?
                 .to_string();
-            let system: serde_json::Value = serde_yaml::from_str(&fs::read_to_string(&path)?)?;
-            spec["systems"][key] = system;
+            let channel: serde_json::Value = serde_yaml::from_str(&fs::read_to_string(&path)?)?;
+            spec["channels"][key] = channel;
         }
     }
 
@@ -241,13 +241,13 @@ mod tests {
     }
 
     #[test]
-    fn exec_import_runs_command_per_event() {
+    fn exec_target_runs_command_per_event() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
         let output = base.join("exec_output.txt");
 
         fs::create_dir_all(base.join(".rngo/effects")).unwrap();
-        fs::create_dir_all(base.join(".rngo/systems")).unwrap();
+        fs::create_dir_all(base.join(".rngo/channels")).unwrap();
 
         write_yaml(
             base.join(".rngo/spec.yml"),
@@ -261,7 +261,7 @@ mod tests {
         write_yaml(
             base.join(".rngo/effects/ping.yml"),
             &json!({
-                "system": "logger",
+                "channel": "logger",
                 "trigger": "hz(1, day)",
                 "schema": {
                     "type": "object",
@@ -274,10 +274,10 @@ mod tests {
 
         let command = "echo {{id}} >> ".to_string() + output.to_str().unwrap();
         write_yaml(
-            base.join(".rngo/systems/logger.yml"),
+            base.join(".rngo/channels/logger.yml"),
             &json!({
                 "format": {},
-                "import": { "type": "exec", "command": command }
+                "target": { "type": "exec", "command": command }
             }),
         );
 
@@ -291,12 +291,12 @@ mod tests {
     }
 
     #[test]
-    fn exec_import_records_signal_when_command_fails() {
+    fn exec_target_records_signal_when_command_fails() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
         fs::create_dir_all(base.join(".rngo/effects")).unwrap();
-        fs::create_dir_all(base.join(".rngo/systems")).unwrap();
+        fs::create_dir_all(base.join(".rngo/channels")).unwrap();
         fs::create_dir_all(base.join(".rngo/invariants")).unwrap();
 
         write_yaml(
@@ -320,7 +320,7 @@ mod tests {
         write_yaml(
             base.join(".rngo/effects/ping.yml"),
             &json!({
-                "system": "logger",
+                "channel": "logger",
                 "trigger": "hz(1, day)",
                 "schema": {
                     "type": "object",
@@ -332,10 +332,10 @@ mod tests {
         );
 
         write_yaml(
-            base.join(".rngo/systems/logger.yml"),
+            base.join(".rngo/channels/logger.yml"),
             &json!({
                 "format": {},
-                "import": { "type": "exec", "command": "exit 1" }
+                "target": { "type": "exec", "command": "exit 1" }
             }),
         );
 
@@ -349,12 +349,12 @@ mod tests {
     }
 
     #[test]
-    fn stream_import_does_not_drop_trailing_signal() {
+    fn stream_target_does_not_drop_trailing_signal() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
         fs::create_dir_all(base.join(".rngo/effects")).unwrap();
-        fs::create_dir_all(base.join(".rngo/systems")).unwrap();
+        fs::create_dir_all(base.join(".rngo/channels")).unwrap();
         fs::create_dir_all(base.join(".rngo/invariants")).unwrap();
 
         write_yaml(
@@ -381,7 +381,7 @@ mod tests {
         write_yaml(
             base.join(".rngo/effects/ping.yml"),
             &json!({
-                "system": "logger",
+                "channel": "logger",
                 "trigger": "hz(1, day)",
                 "schema": {
                     "type": "object",
@@ -393,10 +393,10 @@ mod tests {
         );
 
         write_yaml(
-            base.join(".rngo/systems/logger.yml"),
+            base.join(".rngo/channels/logger.yml"),
             &json!({
                 "format": {},
-                "import": { "type": "stream", "command": "cat" }
+                "target": { "type": "stream", "command": "cat" }
             }),
         );
 
@@ -413,13 +413,13 @@ mod tests {
     }
 
     #[test]
-    fn stream_import_pipes_events_to_subprocess() {
+    fn stream_target_pipes_events_to_subprocess() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
         let output = base.join("stream_output.txt");
 
         fs::create_dir_all(base.join(".rngo/effects")).unwrap();
-        fs::create_dir_all(base.join(".rngo/systems")).unwrap();
+        fs::create_dir_all(base.join(".rngo/channels")).unwrap();
 
         write_yaml(
             base.join(".rngo/spec.yml"),
@@ -433,7 +433,7 @@ mod tests {
         write_yaml(
             base.join(".rngo/effects/ping.yml"),
             &json!({
-                "system": "logger",
+                "channel": "logger",
                 "trigger": "hz(1, day)",
                 "schema": {
                     "type": "object",
@@ -446,10 +446,10 @@ mod tests {
 
         let command = "cat >> ".to_string() + output.to_str().unwrap();
         write_yaml(
-            base.join(".rngo/systems/logger.yml"),
+            base.join(".rngo/channels/logger.yml"),
             &json!({
                 "format": {},
-                "import": { "type": "stream", "command": command }
+                "target": { "type": "stream", "command": command }
             }),
         );
 
@@ -469,7 +469,7 @@ mod tests {
         let output = base.join("sql_output.txt");
 
         fs::create_dir_all(base.join(".rngo/effects")).unwrap();
-        fs::create_dir_all(base.join(".rngo/systems")).unwrap();
+        fs::create_dir_all(base.join(".rngo/channels")).unwrap();
 
         write_yaml(
             base.join(".rngo/spec.yml"),
@@ -483,7 +483,7 @@ mod tests {
         write_yaml(
             base.join(".rngo/effects/ping.yml"),
             &json!({
-                "system": "db",
+                "channel": "db",
                 "metadata": { "table": "accounts" },
                 "trigger": "hz(1, hour)",
                 "schema": {
@@ -497,10 +497,10 @@ mod tests {
 
         let command = "cat >> ".to_string() + output.to_str().unwrap();
         write_yaml(
-            base.join(".rngo/systems/db.yml"),
+            base.join(".rngo/channels/db.yml"),
             &json!({
                 "format": { "type": "sql" },
-                "import": { "type": "stream", "command": command }
+                "target": { "type": "stream", "command": command }
             }),
         );
 
@@ -537,15 +537,15 @@ mod tests {
                 "seed": 1,
                 "start": "2024-01-01",
                 "end": "2024-01-04",
-                "systems": {
+                "channels": {
                     "logger": {
                         "format": {},
-                        "import": { "type": "stream", "command": command }
+                        "target": { "type": "stream", "command": command }
                     }
                 },
                 "effects": {
                     "ping": {
-                        "system": "logger",
+                        "channel": "logger",
                         "trigger": "hz(1, day)",
                         "schema": {
                             "type": "object",
@@ -574,7 +574,7 @@ mod tests {
         let output = base.join("schemas_output.txt");
 
         fs::create_dir_all(base.join(".rngo/effects")).unwrap();
-        fs::create_dir_all(base.join(".rngo/systems")).unwrap();
+        fs::create_dir_all(base.join(".rngo/channels")).unwrap();
         fs::create_dir_all(base.join(".rngo/schemas")).unwrap();
 
         write_yaml(
@@ -603,7 +603,7 @@ mod tests {
         write_yaml(
             base.join(".rngo/effects/ping.yml"),
             &json!({
-                "system": "logger",
+                "channel": "logger",
                 "trigger": "hz(1, hour)",
                 "schema": {
                     "type": "object",
@@ -616,10 +616,10 @@ mod tests {
 
         let command = "cat >> ".to_string() + output.to_str().unwrap();
         write_yaml(
-            base.join(".rngo/systems/logger.yml"),
+            base.join(".rngo/channels/logger.yml"),
             &json!({
                 "format": {},
-                "import": { "type": "stream", "command": command }
+                "target": { "type": "stream", "command": command }
             }),
         );
 
@@ -739,12 +739,12 @@ mod tests {
     }
 
     #[test]
-    fn system_with_no_effects_is_a_signal_source() {
+    fn channel_with_no_effects_is_a_signal_source() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
         fs::create_dir_all(base.join(".rngo/effects")).unwrap();
-        fs::create_dir_all(base.join(".rngo/systems")).unwrap();
+        fs::create_dir_all(base.join(".rngo/channels")).unwrap();
         fs::create_dir_all(base.join(".rngo/invariants")).unwrap();
 
         write_yaml(
@@ -769,12 +769,12 @@ mod tests {
             }),
         );
 
-        // No effect sets `system: tail`, so this system is a pure signal source: its subprocess
+        // No effect sets `channel: tail`, so this channel is a pure signal source: its subprocess
         // still runs for the duration of the simulation and its output becomes signals.
         write_yaml(
-            base.join(".rngo/systems/tail.yml"),
+            base.join(".rngo/channels/tail.yml"),
             &json!({
-                "import": { "type": "stream", "command": "printf 'one\\ntwo\\n'" }
+                "target": { "type": "stream", "command": "printf 'one\\ntwo\\n'" }
             }),
         );
 
@@ -782,7 +782,7 @@ mod tests {
             base.join(".rngo/invariants/tail-signals.yml"),
             &json!({
                 "type": "sql",
-                "query": "SELECT COUNT(*) FROM signals WHERE effect_id IS NULL AND system = 'tail'",
+                "query": "SELECT COUNT(*) FROM signals WHERE effect_id IS NULL AND channel = 'tail'",
                 "expect": "result == 2"
             }),
         );
@@ -795,7 +795,7 @@ mod tests {
 
         assert_eq!(
             value["tail-signals"]["passed"], true,
-            "expected 2 signals from the effect-less system, got {value}"
+            "expected 2 signals from the effect-less channel, got {value}"
         );
     }
 }

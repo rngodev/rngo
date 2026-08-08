@@ -31,7 +31,7 @@ The workspace has two crates:
 
 ### Data flow
 
-1. **Spec** (`spec.rs`): A YAML/JSON document loaded from `.rngo/spec.yml` + per-file `effects/*.yml` and `systems/*.yml`. Defines `seed`, `start`, `end`, named `effects`, and named `systems`.
+1. **Spec** (`spec.rs`): A YAML/JSON document loaded from `.rngo/spec.yml` + per-file `effects/*.yml` and `channels/*.yml`. Defines `seed`, `start`, `end`, named `effects`, and named `channels`.
 
 2. **Dialect::parse_simulation** (`spec/parse.rs`): Converts a `spec::Simulation` into a `SimulationBuilder` by dispatching each effect's schema to a matching `SchemaParser` and each effect's format to a matching `FormatParser`. `Dialect::core()` registers all built-in parsers.
 
@@ -43,17 +43,17 @@ The workspace has two crates:
 
 ### CLI run loop (`cli/src/sim/run.rs`)
 
-- Loads spec, creates a run directory at `.rngo/runs/local/<N>/`, writes `spec.json` snapshot.
-- Without `--stdout`: writes each `Event::Effect` as a JSON line to `<effect-key>.jsonl` and dispatches to any assigned system via `SystemDispatch`.
+- Loads spec, creates a run directory at `.rngo/runs/<UUID>/`, writes `spec.json` snapshot and initializes a `log.sqlite` SQLite database.
+- Without `--stdout`: writes each `Event::Effect` to the `effects` table in the SQLite database and dispatches to any assigned channel via `ChannelDispatch`.
 - With `--stdout`: serializes all events (including errors) to stdout.
 
-### System imports (`cli/src/sim/system.rs`)
+### Channel targets (`cli/src/sim/channel.rs`)
 
-`SystemDispatch` implements two integration modes for `systems`:
-- `stream`: spawns one long-lived subprocess per system, writes formatted event lines to its stdin.
+`ChannelDispatch` implements two integration modes for `channels`:
+- `stream`: spawns one long-lived subprocess per channel, writes formatted event lines to its stdin.
 - `exec`: runs a fresh `sh -c <command>` per event; the command string is a Handlebars template rendered with the event's JSON value.
 
-An effect opts into a system by setting `system: <system-key>`. The format used is resolved by merging the effect-level `format` over the system-level `format`. A `stream` system with no effects writing to it is still spawned for the run's duration, but only as a signal source (e.g. tailing a log file) - there is no separate "signal" concept.
+An effect opts into a channel by setting `channel: <channel-key>`. The format used is resolved by merging the effect-level `format` over the channel-level `format`. A `stream` channel with no effects writing to it is still spawned for the run's duration, but only as a signal source (e.g. tailing a log file) - there is no separate "signal" concept.
 
 ### Schema types (all in `sim/src/schema/`)
 

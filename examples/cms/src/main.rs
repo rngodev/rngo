@@ -9,7 +9,7 @@ use tracing::Level;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 /// Logs to stdout for interactive use and to `logs/app.log` as JSON lines, so the latter can be
-/// tailed by external tooling (e.g. an rngo system with no effects writing to it, used as a
+/// tailed by external tooling (e.g. an rngo channel with no effects writing to it, used as a
 /// signal source). The returned guard must stay alive for the process lifetime, or the
 /// non-blocking file writer stops flushing.
 fn init_tracing() -> tracing_appender::non_blocking::WorkerGuard {

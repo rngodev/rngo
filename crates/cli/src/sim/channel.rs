@@ -1,6 +1,6 @@
 use chrono::Utc;
 use handlebars::Handlebars;
-use rngo_sim::{EffectEvent, Format, Level, Signal, System, spec};
+use rngo_sim::{Channel, EffectEvent, Format, Level, Signal, spec};
 use std::collections::HashMap;
 use std::error::Error;
 use std::io::{BufRead, BufReader, Write};
@@ -9,21 +9,21 @@ use std::sync::mpsc::Sender;
 use std::thread;
 use std::time::{Duration, Instant};
 
-/// How long to give a system's subprocess to exit on its own (e.g. after its stdin is closed)
-/// before it's forcibly killed. Some systems (e.g. a `tail -F` used as a signal source) never
+/// How long to give a channel's subprocess to exit on its own (e.g. after its stdin is closed)
+/// before it's forcibly killed. Some channels (e.g. a `tail -F` used as a signal source) never
 /// exit on their own, so this bounds shutdown; a subprocess that finishes right as the
 /// simulation does can otherwise be killed before the OS has even scheduled it to run, losing
 /// its entire output.
 const SHUTDOWN_GRACE: Duration = Duration::from_millis(200);
 const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(5);
 
-/// Spawns each `stream` system's subprocess for the lifetime of the simulation and each `exec`
-/// system's Handlebars command template, then dispatches effect events to the system an effect
-/// writes to. A system with no effects writing to it (no `system: <key>` reference) is still
-/// spawned if it's a `stream` system, turning its stdout/stderr into signals with no associated
+/// Spawns each `stream` channel's subprocess for the lifetime of the simulation and each `exec`
+/// channel's Handlebars command template, then dispatches effect events to the channel an effect
+/// writes to. A channel with no effects writing to it (no `channel: <key>` reference) is still
+/// spawned if it's a `stream` channel, turning its stdout/stderr into signals with no associated
 /// effect - a non-interactive signal source.
-pub struct SystemDispatch {
-    effect_systems: HashMap<String, String>,
+pub struct ChannelDispatch {
+    effect_channels: HashMap<String, String>,
     formats: HashMap<String, Box<dyn Format>>,
     stdinpipes: HashMap<String, ChildStdin>,
     children: HashMap<String, Child>,
@@ -32,21 +32,21 @@ pub struct SystemDispatch {
     signal_tx: Sender<Signal>,
 }
 
-impl SystemDispatch {
+impl ChannelDispatch {
     pub fn new(
         spec: &spec::Simulation,
-        systems: Vec<System>,
+        channels: Vec<Channel>,
         signal_tx: Sender<Signal>,
     ) -> Result<Self, Box<dyn Error>> {
-        let effect_systems: HashMap<String, String> = spec
+        let effect_channels: HashMap<String, String> = spec
             .effects
             .iter()
-            .filter_map(|(k, v)| v.system.as_ref().map(|s| (k.clone(), s.clone())))
+            .filter_map(|(k, v)| v.channel.as_ref().map(|s| (k.clone(), s.clone())))
             .collect();
 
-        for system_key in effect_systems.values() {
-            if !systems.iter().any(|s| &s.key == system_key) {
-                return Err(format!("effect references unknown system: {system_key}").into());
+        for channel_key in effect_channels.values() {
+            if !channels.iter().any(|s| &s.key == channel_key) {
+                return Err(format!("effect references unknown channel: {channel_key}").into());
             }
         }
 
@@ -56,19 +56,19 @@ impl SystemDispatch {
         let mut reader_threads = vec![];
         let mut hbs = Handlebars::new();
 
-        for system in systems {
-            let System {
-                key: system_key,
+        for channel in channels {
+            let Channel {
+                key: channel_key,
                 format,
-                import,
-            } = system;
+                target,
+            } = channel;
 
             if let Some(format) = format {
-                formats.insert(system_key.clone(), format);
+                formats.insert(channel_key.clone(), format);
             }
 
-            match import {
-                spec::SystemImport::Stream { command } => {
+            match target {
+                spec::ChannelTarget::Stream { command } => {
                     let mut child = Command::new("sh")
                         .arg("-c")
                         .arg(&command)
@@ -78,11 +78,11 @@ impl SystemDispatch {
                         .spawn()?;
 
                     let stdin = child.stdin.take().expect("stdin was piped");
-                    stdinpipes.insert(system_key.clone(), stdin);
+                    stdinpipes.insert(channel_key.clone(), stdin);
 
                     if let Some(stdout) = child.stdout.take() {
                         let tx = signal_tx.clone();
-                        let system_key = system_key.clone();
+                        let channel_key = channel_key.clone();
                         reader_threads.push(thread::spawn(move || {
                             for line in BufReader::new(stdout).lines() {
                                 if let Ok(data) = line
@@ -90,7 +90,7 @@ impl SystemDispatch {
                                 {
                                     let _ = tx.send(Signal {
                                         effect_id: None,
-                                        system: system_key.clone(),
+                                        channel: channel_key.clone(),
                                         level: Level::Info,
                                         data,
                                         timestamp: Utc::now(),
@@ -102,7 +102,7 @@ impl SystemDispatch {
 
                     if let Some(stderr) = child.stderr.take() {
                         let tx = signal_tx.clone();
-                        let system_key = system_key.clone();
+                        let channel_key = channel_key.clone();
                         reader_threads.push(thread::spawn(move || {
                             for line in BufReader::new(stderr).lines() {
                                 if let Ok(data) = line
@@ -110,7 +110,7 @@ impl SystemDispatch {
                                 {
                                     let _ = tx.send(Signal {
                                         effect_id: None,
-                                        system: system_key.clone(),
+                                        channel: channel_key.clone(),
                                         level: Level::Error,
                                         data,
                                         timestamp: Utc::now(),
@@ -120,16 +120,16 @@ impl SystemDispatch {
                         }));
                     }
 
-                    children.insert(system_key.clone(), child);
+                    children.insert(channel_key.clone(), child);
                 }
-                spec::SystemImport::Exec { command } => {
-                    hbs.register_template_string(&system_key, &command)?;
+                spec::ChannelTarget::Exec { command } => {
+                    hbs.register_template_string(&channel_key, &command)?;
                 }
             }
         }
 
         Ok(Self {
-            effect_systems,
+            effect_channels,
             formats,
             stdinpipes,
             children,
@@ -140,21 +140,21 @@ impl SystemDispatch {
     }
 
     pub fn send(&mut self, effect_event: &EffectEvent) -> Result<(), Box<dyn Error>> {
-        let system_key = match self.effect_systems.get(&effect_event.key) {
+        let channel_key = match self.effect_channels.get(&effect_event.key) {
             Some(k) => k.clone(),
             None => return Ok(()),
         };
 
-        if let Some(stdin) = self.stdinpipes.get_mut(&system_key) {
-            let data = match self.formats.get(&system_key) {
+        if let Some(stdin) = self.stdinpipes.get_mut(&channel_key) {
+            let data = match self.formats.get(&channel_key) {
                 Some(format) => format
                     .format(effect_event)
-                    .map_err(|e| format!("system '{system_key}': {e}"))?,
+                    .map_err(|e| format!("channel '{channel_key}': {e}"))?,
                 None => serde_json::to_string(&effect_event.value).unwrap(),
             };
-            writeln!(stdin, "{data}").map_err(|e| format!("system '{system_key}': {e}"))?;
-        } else if self.hbs.has_template(&system_key) {
-            let command = self.hbs.render(&system_key, &effect_event.value)?;
+            writeln!(stdin, "{data}").map_err(|e| format!("channel '{channel_key}': {e}"))?;
+        } else if self.hbs.has_template(&channel_key) {
+            let command = self.hbs.render(&channel_key, &effect_event.value)?;
             let output = Command::new("sh")
                 .arg("-c")
                 .arg(&command)
@@ -174,7 +174,7 @@ impl SystemDispatch {
                     if !line.is_empty() {
                         let _ = self.signal_tx.send(Signal {
                             effect_id: Some(effect_event.id),
-                            system: system_key.clone(),
+                            channel: channel_key.clone(),
                             level,
                             data: line,
                             timestamp,
@@ -186,7 +186,7 @@ impl SystemDispatch {
             if !output.status.success() {
                 let _ = self.signal_tx.send(Signal {
                     effect_id: Some(effect_event.id),
-                    system: system_key.clone(),
+                    channel: channel_key.clone(),
                     level: Level::Error,
                     data: format!("command exited with {}", output.status),
                     timestamp,
@@ -197,8 +197,8 @@ impl SystemDispatch {
         Ok(())
     }
 
-    /// Closes every system's stdin, which triggers exit for subprocesses that react to EOF (e.g.
-    /// `cat`), then gives each remaining child a grace period before killing it - covering
+    /// Closes every channel's stdin, which triggers exit for subprocesses that react to EOF
+    /// (e.g. `cat`), then gives each remaining child a grace period before killing it - covering
     /// signal-source subprocesses (e.g. `tail -F`) that never exit on their own. Reader threads
     /// are joined last so trailing output has already become a `Signal` before the caller does a
     /// final drain of the signal channel.

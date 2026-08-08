@@ -30,7 +30,7 @@ pub struct Simulation {
     pub end: Option<String>,
     pub effects: IndexMap<String, Effect>,
     #[serde(default)]
-    pub systems: IndexMap<String, System>,
+    pub channels: IndexMap<String, Channel>,
     #[serde(default)]
     pub schemas: IndexMap<String, SchemaType>,
     #[serde(default)]
@@ -54,7 +54,7 @@ pub enum TriggerUnion {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Effect {
-    pub system: Option<String>,
+    pub channel: Option<String>,
     pub start: Option<String>,
     pub end: Option<String>,
     pub trigger: Option<TriggerUnion>,
@@ -85,19 +85,19 @@ pub struct SchemaType {
     pub schema: Schema,
 }
 
-/// A `stream` system with no effects writing to it (no `format`, no `system: <key>` reference
+/// A `stream` channel with no effects writing to it (no `format`, no `channel: <key>` reference
 /// from any effect) is a non-interactive signal source: its subprocess runs for the duration of
 /// the simulation and its stdout/stderr lines become signals with no associated effect.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct System {
+pub struct Channel {
     pub format: Option<Format>,
-    pub import: SystemImport,
+    pub target: ChannelTarget,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
-pub enum SystemImport {
+pub enum ChannelTarget {
     Stream { command: String },
     Exec { command: String },
 }

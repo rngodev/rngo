@@ -1,5 +1,5 @@
 format:
   type: sql
-import:
+target:
   type: stream
   command: psql -q $DATABASE_URL

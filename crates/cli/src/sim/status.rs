@@ -10,29 +10,29 @@ use std::time::{Duration, Instant};
 const RENDER_INTERVAL: Duration = Duration::from_millis(50);
 
 #[derive(Default)]
-struct SystemStats {
+struct ChannelStats {
     effects: u64,
     signals: u64,
 }
 
 /// A [`Log`] proxy that renders a live-updating status block to stderr - the current simulated
-/// time and, per system, how many effects and signals it has produced - leaving stdout free for
+/// time and, per channel, how many effects and signals it has produced - leaving stdout free for
 /// `--stdout` event output. Forwards every event to `child` unchanged.
 pub struct StatusLog {
     child: Box<dyn Log>,
-    effect_systems: HashMap<String, String>,
+    effect_channels: HashMap<String, String>,
     term: Term,
-    stats: BTreeMap<String, SystemStats>,
+    stats: BTreeMap<String, ChannelStats>,
     last_timestamp: Option<DateTime<FixedOffset>>,
     rendered_lines: usize,
     last_render: Option<Instant>,
 }
 
 impl StatusLog {
-    pub fn new(child: Box<dyn Log>, effect_systems: HashMap<String, String>) -> Self {
+    pub fn new(child: Box<dyn Log>, effect_channels: HashMap<String, String>) -> Self {
         StatusLog {
             child,
-            effect_systems,
+            effect_channels,
             term: Term::stderr(),
             stats: BTreeMap::new(),
             last_timestamp: None,
@@ -63,9 +63,9 @@ impl StatusLog {
         let mut lines = Vec::with_capacity(self.stats.len() + 2);
         lines.push(style("Simulation").bold().for_stderr().to_string());
         lines.push(format!("time: {time}"));
-        for (system, stats) in &self.stats {
+        for (channel, stats) in &self.stats {
             lines.push(format!(
-                "{system}: {} effects, {} signals",
+                "{channel}: {} effects, {} signals",
                 stats.effects, stats.signals
             ));
         }
@@ -89,12 +89,12 @@ impl Log for StatusLog {
         match &event {
             LogEvent::Effect(e) => {
                 self.last_timestamp = Some(e.timestamp);
-                if let Some(system) = self.effect_systems.get(&e.key) {
-                    self.stats.entry(system.clone()).or_default().effects += 1;
+                if let Some(channel) = self.effect_channels.get(&e.key) {
+                    self.stats.entry(channel.clone()).or_default().effects += 1;
                 }
             }
             LogEvent::Signal(s) => {
-                self.stats.entry(s.system.clone()).or_default().signals += 1;
+                self.stats.entry(s.channel.clone()).or_default().signals += 1;
             }
             LogEvent::Error(_) => {}
         }
