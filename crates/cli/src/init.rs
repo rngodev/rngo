@@ -6,19 +6,33 @@ use dialoguer::{Confirm, Input};
 
 use crate::{skills, ui};
 
-pub fn init(base: &Path) -> Result<(), Box<dyn Error>> {
-    init_project(base, prompt_key, prompt_seed)?;
-    skills::offer_install(base);
+pub fn init(base: &Path, default: bool) -> Result<(), Box<dyn Error>> {
+    init_project(
+        base,
+        default,
+        prompt_key,
+        prompt_seed,
+        confirm_create_gitignore,
+    )?;
+    if !default {
+        skills::offer_install(base);
+    }
     Ok(())
 }
 
 /// Sets up `.rngo` and `.gitignore`, without touching agent skills. Split
 /// out from `init` so tests can exercise it without triggering a network
 /// call and interactive prompt from `skills::offer_install`.
+///
+/// When `default` is set, prompting is skipped entirely: the key and seed
+/// use the same values the prompts would otherwise default to, and
+/// `.gitignore` is always created/updated without confirming.
 fn init_project(
     base: &Path,
+    default: bool,
     prompt_key: impl FnOnce(&str) -> String,
     prompt_seed: impl FnOnce() -> u64,
+    confirm_create_gitignore: impl FnOnce() -> bool,
 ) -> Result<(), Box<dyn Error>> {
     let rngo_dir = base.join(".rngo");
     fs::create_dir_all(&rngo_dir)?;
@@ -28,13 +42,18 @@ fn init_project(
         ui::outcome(".rngo is already set up.");
     } else {
         let default_key = project_name(base)?;
-        let key = prompt_key(&default_key);
-        let seed = prompt_seed();
+        let key = if default {
+            default_key
+        } else {
+            prompt_key(&default_key)
+        };
+        let seed = if default { 1 } else { prompt_seed() };
         fs::write(&spec_path, spec_yaml(&key, seed))?;
         ui::outcome("Set up .rngo.");
     }
 
-    match ensure_gitignore(base, confirm_create_gitignore)? {
+    let confirm_create = || default || confirm_create_gitignore();
+    match ensure_gitignore(base, confirm_create)? {
         GitignoreOutcome::Created => ui::outcome("Created .gitignore."),
         GitignoreOutcome::Updated => ui::outcome("Updated .gitignore."),
         GitignoreOutcome::AlreadyUpToDate => ui::outcome(".gitignore already up to date."),
@@ -76,12 +95,14 @@ fn project_name(base: &Path) -> Result<String, Box<dyn Error>> {
         .ok_or_else(|| "could not determine project directory name".into())
 }
 
+/// Asks whether to create a `.gitignore`, defaulting to yes. Errors (e.g.
+/// no TTY) fall back to the default, matching `prompt_key`/`prompt_seed`.
 fn confirm_create_gitignore() -> bool {
     Confirm::with_theme(&ui::theme())
         .with_prompt("No .gitignore found. Create one?")
         .default(true)
         .interact()
-        .unwrap_or(false)
+        .unwrap_or(true)
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -142,7 +163,7 @@ mod tests {
             .unwrap()
             .to_string();
 
-        init_project(base, |d| d.to_string(), || 1).unwrap();
+        init_project(base, false, |d| d.to_string(), || 1, || true).unwrap();
 
         let spec = fs::read_to_string(base.join(".rngo/spec.yml")).unwrap();
         assert_eq!(spec, format!("key: {name}\nseed: 1\n"));
@@ -154,7 +175,7 @@ mod tests {
         let base = tmp.path();
         fs::write(base.join(".gitignore"), "target\n").unwrap();
 
-        init_project(base, |d| d.to_string(), || 1).unwrap();
+        init_project(base, false, |d| d.to_string(), || 1, || true).unwrap();
         let gitignore = fs::read_to_string(base.join(".gitignore")).unwrap();
         assert_eq!(gitignore, "target\n.rngo/runs\n");
 
@@ -195,7 +216,7 @@ mod tests {
         fs::write(base.join(".rngo/spec.yml"), "seed: 1\n").unwrap();
         fs::write(base.join(".gitignore"), "").unwrap();
 
-        init_project(base, |d| d.to_string(), || 1).unwrap();
+        init_project(base, false, |d| d.to_string(), || 1, || true).unwrap();
 
         let spec = fs::read_to_string(base.join(".rngo/spec.yml")).unwrap();
         assert_eq!(spec, "seed: 1\n");
@@ -211,9 +232,50 @@ mod tests {
 
         init_project(
             base,
+            false,
             |_| panic!("should not prompt"),
+            || panic!("should not prompt"),
             || panic!("should not prompt"),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn default_mode_does_not_prompt_and_uses_defaults() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+        let name = base
+            .canonicalize()
+            .unwrap()
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+
+        init_project(
+            base,
+            true,
+            |_| panic!("should not prompt"),
+            || panic!("should not prompt"),
+            || panic!("should not prompt"),
+        )
+        .unwrap();
+
+        let spec = fs::read_to_string(base.join(".rngo/spec.yml")).unwrap();
+        assert_eq!(spec, format!("key: {name}\nseed: 1\n"));
+
+        let gitignore = fs::read_to_string(base.join(".gitignore")).unwrap();
+        assert_eq!(gitignore, ".rngo/runs\n");
+    }
+
+    #[test]
+    fn default_mode_does_not_offer_skill_install() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+
+        init(base, true).unwrap();
+
+        assert!(base.join(".rngo/spec.yml").exists());
     }
 }
