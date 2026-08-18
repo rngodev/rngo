@@ -9,7 +9,7 @@ Turns a rough idea sitting on a Linear ticket into a terse requirements doc, wri
 
 ## 1. Fetch and validate the ticket
 
-Fetch the ticket with `mcp__claude_ai_Linear__get_issue` using its identifier. Confirm its current status is **Spec Pending** (match by name, case-insensitively, against `mcp__claude_ai_Linear__list_issue_statuses` for the ticket's team — status names can drift from what's assumed here). If it's in a different status, stop and tell the user what state it's actually in rather than proceeding or force-moving it.
+Fetch the ticket with `mcp__claude_ai_Linear__get_issue` using its identifier. Per `.claude/skills/_shared/linear-status.md`, confirm its current status is **Spec Pending** before proceeding.
 
 The ticket's current `description` is the initial idea — that's your only input. If it references other tickets or context that seem necessary to understand the ask, pull those too rather than guessing.
 
@@ -33,8 +33,4 @@ Replace the ticket's `description` with the requirements via `mcp__claude_ai_Lin
 
 ## 3. Move the ticket
 
-In the same or a following `save_issue` call, set `state` to **Spec Proposed**. Report the ticket URL back to the user so they can review it in Linear — this skill proposes the spec, it doesn't get final sign-off itself.
-
-## Note for future Linear skills
-
-This and `plan-ticket` both need to resolve/validate a workflow state by name and gate on the ticket's current status before proceeding — that logic is short enough to inline in both today. If a third status-gated Linear skill shows up, pull the "resolve + validate state" steps into a shared `references/linear-status.md` both skills can point to.
+In the same or a following `save_issue` call, set `state` to **Spec Proposed** (see `.claude/skills/_shared/linear-status.md`). Report the ticket URL back to the user so they can review it in Linear — this skill proposes the spec, it doesn't get final sign-off itself.

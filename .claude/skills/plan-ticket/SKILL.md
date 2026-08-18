@@ -9,7 +9,7 @@ Turns a ticket's requirements into a terse, codebase-grounded implementation pla
 
 ## 1. Fetch and validate the ticket
 
-Fetch the ticket with `mcp__claude_ai_Linear__get_issue` using its identifier. Confirm its current status is **Plan Pending** (match by name, case-insensitively, against `mcp__claude_ai_Linear__list_issue_statuses` for the ticket's team). If it's in a different status, stop and tell the user what state it's actually in rather than proceeding or force-moving it.
+Fetch the ticket with `mcp__claude_ai_Linear__get_issue` using its identifier. Per `.claude/skills/_shared/linear-status.md`, confirm its current status is **Plan Pending** before proceeding.
 
 The ticket's current `description` is the spec written by `spec-ticket` — a list of terse, user-facing requirements. That's what the plan needs to satisfy.
 
@@ -33,8 +33,4 @@ Plan bullet: "Add `rngo-cli run export` subcommand that reads `log.sqlite` for t
 
 ## 4. Move the ticket
 
-In the same or a following `save_issue` call, set `state` to **Plan Proposed**. Report the ticket URL back to the user for review.
-
-## Note for future Linear skills
-
-See the same note in `spec-ticket`'s SKILL.md — the state resolve/validate logic is duplicated between these two skills intentionally for now; factor it out if a third status-gated skill needs it too.
+In the same or a following `save_issue` call, set `state` to **Plan Proposed** (see `.claude/skills/_shared/linear-status.md`). Report the ticket URL back to the user for review.

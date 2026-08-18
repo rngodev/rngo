@@ -13,7 +13,7 @@ Ask for the ticket identifier if not given (e.g. `ENG-123`). Fetch it with `mcp_
 
 If the user gives a bare number with no team prefix, ask which team it belongs to before looking it up — Linear identifiers always include the team key (e.g. `ENG-123`), and `get_issue` needs that to resolve correctly.
 
-Confirm its current status is **Todo** (match by name, case-insensitively, against `mcp__claude_ai_Linear__list_issue_statuses` for the ticket's team — status names can drift from what's assumed here). If it's in a different status, stop and tell the user what state it's actually in rather than proceeding or force-moving it.
+Per `.claude/skills/_shared/linear-status.md`, confirm its current status is **Todo** before proceeding.
 
 Read the ticket's description carefully; it's your spec. If it references other tickets, designs, or comments that seem load-bearing, pull those too (`list_comments`, `get_issue` on referenced tickets) rather than guessing at intent.
 
@@ -36,10 +36,10 @@ If the ticket is ambiguous or underspecified in a way that would force you to gu
 - Commit with a message in this repo's existing style (check `git log` for tone/format — don't impose a convention that isn't already there, e.g. don't add Conventional Commit prefixes if the repo doesn't use them).
 - Push the branch to `origin`.
 - Open the PR with `gh pr create`. Title it after the change (not just the ticket title verbatim, unless they already match). In the body, include a magic-word reference so Linear auto-closes the ticket on merge (e.g. `Fixes ENG-123`), plus a short summary of what changed and why, written for a human reviewer, not a ticket-restatement.
-- Move the ticket to **In Review** via `mcp__claude_ai_Linear__save_issue` now that there's a PR open against it.
+- Move the ticket to **In Review** (see `.claude/skills/_shared/linear-status.md`) via `mcp__claude_ai_Linear__save_issue` now that there's a PR open against it.
 
 Report back the PR URL. Don't merge it — opening it for review is the end of this skill's job.
 
 ## Notes for future Linear skills
 
-Other skills in this family (pulling/updating tickets) should keep using the ticket's identifier (e.g. `ENG-123`) as the canonical reference passed to `get_issue`/`save_issue`, and the same magic-word convention (`Fixes <identifier>`, `Closes <identifier>`) for anything that links Linear issues to GitHub PRs/commits. There's only one skill using these conventions today, so they're inlined here rather than factored into a shared reference — if a third Linear skill needs the same lookup/linking logic, that's the point to pull it into a shared `references/linear-conventions.md` alongside these skills.
+Other skills in this family (pulling/updating tickets) should keep using the ticket's identifier (e.g. `ENG-123`) as the canonical reference passed to `get_issue`/`save_issue`, and the same magic-word convention (`Fixes <identifier>`, `Closes <identifier>`) for anything that links Linear issues to GitHub PRs/commits. There's only one skill using the identifier/magic-word conventions today, so they're inlined here; status resolve/gate/transition logic is shared via `.claude/skills/_shared/linear-status.md` since three skills now need it.
