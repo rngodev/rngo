@@ -23,6 +23,12 @@ enum Commands {
         /// Directory to initialize
         #[arg(long, default_value = ".")]
         dir: std::path::PathBuf,
+        /// Don't prompt for input and don't install agent skills
+        ///
+        /// Uses the current directory name as the project key and 1 as the
+        /// seed.
+        #[arg(long)]
+        default: bool,
     },
     /// Run a simulation
     ///
@@ -63,8 +69,8 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Init { dir } => {
-            if let Err(e) = init::init(&dir) {
+        Commands::Init { dir, default } => {
+            if let Err(e) = init::init(&dir, default) {
                 eprintln!("error: {e}");
                 std::process::exit(1);
             }
