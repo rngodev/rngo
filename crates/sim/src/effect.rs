@@ -43,7 +43,7 @@ impl Effect {
 }
 
 impl Iterator for Effect {
-    type Item = Result<EffectEvent, String>;
+    type Item = EffectOutcome;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.next_offset()?;
@@ -57,16 +57,24 @@ impl Iterator for Effect {
 
         let last_id = self.event_log.last().map(|e| e.id).unwrap_or(0);
         match self.schema.next(&context) {
-            SchemaResult::Ok { value } => Some(Ok(EffectEvent {
+            SchemaResult::Ok { value } => Some(EffectOutcome::Event(EffectEvent {
                 id: last_id + 1,
                 key: self.key.clone(),
                 offset: trigger_event.sim_offset,
                 timestamp: self.sim_start + TimeDelta::seconds(trigger_event.sim_offset as i64),
                 value,
             })),
-            SchemaResult::Err(message) => Some(Err(message)),
+            SchemaResult::Err(message) => Some(EffectOutcome::Error(message)),
+            SchemaResult::Skipped { .. } => Some(EffectOutcome::Skipped),
         }
     }
+}
+
+#[derive(Debug)]
+pub enum EffectOutcome {
+    Event(EffectEvent),
+    Error(String),
+    Skipped,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

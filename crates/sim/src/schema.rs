@@ -41,6 +41,7 @@ pub struct SchemaContext<'a> {
 pub enum SchemaResult {
     Ok { value: Value },
     Err(String),
+    Skipped { message: String },
 }
 
 pub trait SchemaBuilder: std::fmt::Debug {
