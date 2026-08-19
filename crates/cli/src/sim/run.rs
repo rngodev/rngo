@@ -8,13 +8,32 @@ use std::path::{Path, PathBuf};
 use std::{fmt, fs};
 use uuid::Uuid;
 
-pub fn run(base: &Path, stdout: bool, spec_path: Option<&Path>) -> Result<bool, Box<dyn Error>> {
+pub fn run(
+    base: &Path,
+    stdout: bool,
+    spec_path: Option<&Path>,
+    dry_run: bool,
+    limit: Option<std::num::NonZeroU64>,
+) -> Result<bool, Box<dyn Error>> {
     let _ = dotenvy::from_path(base.join(".env"));
 
     let spec = match spec_path {
         Some(path) => load_spec_file(path)?,
         None => load_spec(base)?,
     };
+
+    let mut simulation_builder = Dialect::primitive()
+        .parse_simulation(spec.clone())
+        .map_err(join_errors)?;
+
+    if let Some(limit) = limit {
+        simulation_builder = simulation_builder.limit(limit.get());
+    }
+
+    if dry_run {
+        simulation_builder.build().map_err(join_errors)?;
+        return Ok(true);
+    }
 
     let run_dir = new_run_dir(base)?;
     fs::create_dir_all(&run_dir)?;
@@ -36,10 +55,6 @@ pub fn run(base: &Path, stdout: bool, spec_path: Option<&Path>) -> Result<bool, 
         )),
         effect_channels,
     );
-
-    let simulation_builder = Dialect::primitive()
-        .parse_simulation(spec.clone())
-        .map_err(join_errors)?;
 
     let mut simulation = simulation_builder.log(log).build().map_err(join_errors)?;
     let channels = simulation.take_channels();
@@ -281,7 +296,7 @@ mod tests {
             }),
         );
 
-        run(base, false, None).unwrap();
+        run(base, false, None, false, None).unwrap();
 
         let content = fs::read_to_string(&output).unwrap();
         assert!(
@@ -339,7 +354,7 @@ mod tests {
             }),
         );
 
-        run(base, false, None).unwrap();
+        run(base, false, None, false, None).unwrap();
 
         let invariants_path = base.join(".rngo/runs/last/invariants.json");
         let content = fs::read_to_string(&invariants_path).unwrap();
@@ -400,7 +415,7 @@ mod tests {
             }),
         );
 
-        run(base, false, None).unwrap();
+        run(base, false, None, false, None).unwrap();
 
         let invariants_path = base.join(".rngo/runs/last/invariants.json");
         let content = fs::read_to_string(&invariants_path).unwrap();
@@ -453,7 +468,7 @@ mod tests {
             }),
         );
 
-        run(base, false, None).unwrap();
+        run(base, false, None, false, None).unwrap();
 
         let content = fs::read_to_string(&output).unwrap();
         assert!(
@@ -504,7 +519,7 @@ mod tests {
             }),
         );
 
-        run(base, false, None).unwrap();
+        run(base, false, None, false, None).unwrap();
 
         let content = fs::read_to_string(&output).unwrap();
         assert!(
@@ -558,7 +573,7 @@ mod tests {
             }),
         );
 
-        run(base, false, Some(&spec_path)).unwrap();
+        run(base, false, Some(&spec_path), false, None).unwrap();
 
         let content = fs::read_to_string(&output).unwrap();
         assert!(
@@ -623,7 +638,7 @@ mod tests {
             }),
         );
 
-        run(base, false, None).unwrap();
+        run(base, false, None, false, None).unwrap();
 
         let content = fs::read_to_string(&output).unwrap();
         let lines: Vec<_> = content.lines().collect();
@@ -679,7 +694,7 @@ mod tests {
             }),
         );
 
-        run(base, false, None).unwrap();
+        run(base, false, None, false, None).unwrap();
 
         let invariants_path = base.join(".rngo/runs/last/invariants.json");
         let content = fs::read_to_string(&invariants_path).unwrap();
@@ -729,7 +744,7 @@ mod tests {
             }),
         );
 
-        run(base, false, None).unwrap();
+        run(base, false, None, false, None).unwrap();
 
         let invariants_path = base.join(".rngo/runs/last/invariants.json");
         let content = fs::read_to_string(&invariants_path).unwrap();
@@ -787,7 +802,7 @@ mod tests {
             }),
         );
 
-        run(base, false, None).unwrap();
+        run(base, false, None, false, None).unwrap();
 
         let invariants_path = base.join(".rngo/runs/last/invariants.json");
         let content = fs::read_to_string(&invariants_path).unwrap();
@@ -796,6 +811,159 @@ mod tests {
         assert_eq!(
             value["tail-signals"]["passed"], true,
             "expected 2 signals from the effect-less channel, got {value}"
+        );
+    }
+
+    #[test]
+    fn dry_run_does_not_persist_or_run_channels() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+        let output = base.join("dry_run_output.txt");
+
+        fs::create_dir_all(base.join(".rngo/effects")).unwrap();
+        fs::create_dir_all(base.join(".rngo/channels")).unwrap();
+
+        write_yaml(
+            base.join(".rngo/spec.yml"),
+            &json!({
+                "seed": 1,
+                "start": "2024-01-01",
+                "end": "2024-01-04"
+            }),
+        );
+
+        write_yaml(
+            base.join(".rngo/effects/ping.yml"),
+            &json!({
+                "channel": "logger",
+                "trigger": "hz(1, day)",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
+                    }
+                }
+            }),
+        );
+
+        let command = "echo {{id}} >> ".to_string() + output.to_str().unwrap();
+        write_yaml(
+            base.join(".rngo/channels/logger.yml"),
+            &json!({
+                "format": {},
+                "target": { "type": "exec", "command": command }
+            }),
+        );
+
+        let passed = run(base, false, None, true, None).unwrap();
+
+        assert!(passed, "dry run of a valid spec should succeed");
+        assert!(
+            !base.join(".rngo/runs").exists(),
+            "dry run should not create a run directory"
+        );
+        assert!(
+            !output.exists(),
+            "dry run should not invoke channel side effects"
+        );
+    }
+
+    #[test]
+    fn dry_run_returns_error_when_simulation_cannot_be_built() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+
+        fs::create_dir_all(base.join(".rngo/effects")).unwrap();
+
+        write_yaml(
+            base.join(".rngo/spec.yml"),
+            &json!({
+                "seed": 1,
+                "start": "2024-01-01",
+                "end": "2024-01-04"
+            }),
+        );
+
+        // minimum > maximum is a build-time schema error.
+        write_yaml(
+            base.join(".rngo/effects/broken.yml"),
+            &json!({
+                "trigger": "hz(1, day)",
+                "schema": {
+                    "type": "number",
+                    "minimum": 100,
+                    "maximum": 18
+                }
+            }),
+        );
+
+        let result = run(base, false, None, true, None);
+
+        assert!(
+            result.is_err(),
+            "dry run should return an error when the simulation can't be built"
+        );
+        assert!(
+            !base.join(".rngo/runs").exists(),
+            "a failed dry run should not create a run directory either"
+        );
+    }
+
+    #[test]
+    fn limit_caps_total_effects_produced() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+        let output = base.join("limit_output.txt");
+
+        fs::create_dir_all(base.join(".rngo/effects")).unwrap();
+        fs::create_dir_all(base.join(".rngo/channels")).unwrap();
+
+        write_yaml(
+            base.join(".rngo/spec.yml"),
+            &json!({
+                "seed": 1,
+                "start": "2024-01-01",
+                "end": "2024-02-01"
+            }),
+        );
+
+        write_yaml(
+            base.join(".rngo/effects/ping.yml"),
+            &json!({
+                "channel": "logger",
+                "trigger": "hz(1, hour)",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
+                    }
+                }
+            }),
+        );
+
+        let command = "echo {{id}} >> ".to_string() + output.to_str().unwrap();
+        write_yaml(
+            base.join(".rngo/channels/logger.yml"),
+            &json!({
+                "format": {},
+                "target": { "type": "exec", "command": command }
+            }),
+        );
+
+        run(
+            base,
+            false,
+            None,
+            false,
+            Some(std::num::NonZeroU64::new(3).unwrap()),
+        )
+        .unwrap();
+
+        let content = fs::read_to_string(&output).unwrap();
+        assert_eq!(
+            content.lines().count(),
+            3,
+            "limit should cap the run at exactly 3 effects"
         );
     }
 }
