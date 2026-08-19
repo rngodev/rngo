@@ -14,6 +14,8 @@ pub struct Simulation {
     channels: Vec<Channel>,
     signal_tx: Sender<Signal>,
     signal_rx: Receiver<Signal>,
+    limit: Option<u64>,
+    emitted: u64,
 }
 
 impl Simulation {
@@ -56,17 +58,26 @@ impl Iterator for Simulation {
     fn next(&mut self) -> Option<Self::Item> {
         self.drain_signals();
 
+        if self.limit.is_some_and(|limit| self.emitted >= limit) {
+            return None;
+        }
+
         loop {
             self.effects
                 .sort_unstable_by_key(|e| e.next_offset().unwrap_or(u64::MAX));
 
             match self.effects.first_mut()?.next() {
                 Some(Ok(effect_event)) => {
+                    self.emitted += 1;
                     self.event_log.push(effect_event.clone().into());
                     return Some(effect_event);
                 }
                 Some(Err(error)) => {
+                    self.emitted += 1;
                     self.event_log.push(error.into());
+                    if self.limit.is_some_and(|limit| self.emitted >= limit) {
+                        return None;
+                    }
                     continue;
                 }
                 None => return None,
@@ -83,6 +94,7 @@ pub struct SimulationBuilder {
     event_log: Box<dyn Log>,
     effect_builders: Vec<EffectBuilder>,
     channels: Vec<Channel>,
+    limit: Option<u64>,
 }
 
 impl SimulationBuilder {
@@ -94,11 +106,19 @@ impl SimulationBuilder {
             event_log: Box::new(SimpleEventLog::default()),
             effect_builders: vec![],
             channels: vec![],
+            limit: None,
         }
     }
 
     pub fn log(mut self, log: impl Log + 'static) -> Self {
         self.event_log = Box::new(log);
+        self
+    }
+
+    /// Caps the total number of events (effects and errors combined) the built [`Simulation`]
+    /// will emit before its iterator ends.
+    pub fn limit(mut self, limit: u64) -> Self {
+        self.limit = Some(limit);
         self
     }
 
@@ -189,9 +209,65 @@ impl SimulationBuilder {
                 channels: self.channels,
                 signal_tx,
                 signal_rx,
+                limit: self.limit,
+                emitted: 0,
             })
         } else {
             Err(errors)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::build::BuildError;
+    use crate::schema::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
+
+    /// A schema that deterministically alternates between succeeding and failing on
+    /// every other call, so a test can know exactly how many `Ok`s and `Err`s a fixed
+    /// number of calls produces without depending on any effect's trigger timing.
+    #[derive(Debug, Default)]
+    struct AlternatingSchema {
+        calls: u32,
+    }
+
+    impl Schema for AlternatingSchema {
+        fn next(&mut self, _context: &SchemaContext) -> SchemaResult {
+            self.calls += 1;
+            if self.calls % 2 == 1 {
+                SchemaResult::Ok {
+                    value: serde_json::Value::Null,
+                }
+            } else {
+                SchemaResult::Err("boom".into())
+            }
+        }
+    }
+
+    #[derive(Debug)]
+    struct AlternatingSchemaBuilder;
+
+    impl SchemaBuilder for AlternatingSchemaBuilder {
+        fn build(&self, _visitor: SchemaBuildVisitor) -> Result<Box<dyn Schema>, Vec<BuildError>> {
+            Ok(Box::new(AlternatingSchema::default()))
+        }
+    }
+
+    #[test]
+    fn limit_counts_effects_and_errors_together() {
+        let mut simulation_builder = super::Simulation::builder();
+
+        simulation_builder.with_effect("alternating", |e| {
+            e.trigger_hertz(1000.0).schema(AlternatingSchemaBuilder)
+        });
+
+        let events: Vec<_> = simulation_builder.limit(5).build().unwrap().collect();
+
+        // 5 emitted total (limit), alternating Ok, Err, Ok, Err, Ok - so 3 are yielded.
+        assert_eq!(
+            events.len(),
+            3,
+            "limit should count both effect and error events toward the cap"
+        );
     }
 }

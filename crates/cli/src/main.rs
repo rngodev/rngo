@@ -38,6 +38,12 @@ enum Commands {
         /// Write  events to stdout (instead of routing to channels)
         #[arg(long)]
         stdout: bool,
+        /// Check that the simulation can be built without generating or persisting anything
+        #[arg(long)]
+        dry_run: bool,
+        /// Cap the number of effect and error events a run produces
+        #[arg(long)]
+        limit: Option<std::num::NonZeroU64>,
         /// Path to a spec file (instead of building from the `.rngo` directory)
         #[arg(long)]
         spec: Option<std::path::PathBuf>,
@@ -75,7 +81,13 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        Commands::Run { stdout, dir, spec } => match sim::run(&dir, stdout, spec.as_deref()) {
+        Commands::Run {
+            stdout,
+            dry_run,
+            limit,
+            dir,
+            spec,
+        } => match sim::run(&dir, stdout, spec.as_deref(), dry_run, limit) {
             Ok(true) => {}
             Ok(false) => std::process::exit(1),
             Err(e) => {
