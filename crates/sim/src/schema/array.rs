@@ -98,6 +98,7 @@ impl Schema for Array {
             match self.items.next(context) {
                 SchemaResult::Ok { value } => arr.push(value),
                 SchemaResult::Err(e) => return SchemaResult::Err(e),
+                skipped @ SchemaResult::Skipped { .. } => return skipped,
             }
         }
 

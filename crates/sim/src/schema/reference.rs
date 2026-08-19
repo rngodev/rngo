@@ -25,7 +25,9 @@ impl Schema for Reference {
             Some(effect_event) => SchemaResult::Ok {
                 value: effect_event.value.clone(),
             },
-            None => SchemaResult::Err("no event".into()),
+            None => SchemaResult::Skipped {
+                message: "No effect events available".into(),
+            },
         }
     }
 }

@@ -32,6 +32,7 @@ impl Schema for Object {
                     map.insert(key.clone(), value);
                 }
                 SchemaResult::Err(e) => return SchemaResult::Err(e),
+                skipped @ SchemaResult::Skipped { .. } => return skipped,
             }
         }
 
