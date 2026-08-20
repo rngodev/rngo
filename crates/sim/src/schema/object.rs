@@ -1,6 +1,7 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::build::{BuildError, SchemaEdge};
 use crate::parse::{SchemaParseVisitor, SchemaParser};
+use crate::schema::Metadata;
 use crate::spec::{self, ParseError as Error};
 use indexmap::IndexMap;
 use serde_json::Map;
@@ -25,18 +26,27 @@ impl Object {
 impl Schema for Object {
     fn next(&mut self, context: &SchemaContext) -> SchemaResult {
         let mut map = Map::new();
+        let mut complete = true;
+        let mut metadata: Vec<Metadata> = Vec::new();
 
         for (key, schema) in &mut self.properties {
-            match schema.next(context) {
-                SchemaResult::Ok { value } => {
-                    map.insert(key.clone(), value);
-                }
-                SchemaResult::Err(e) => return SchemaResult::Err(e),
-                skipped @ SchemaResult::Skipped { .. } => return skipped,
+            let result = schema.next(context);
+
+            if let Some(value) = result.value {
+                map.insert(key.clone(), value);
+            } else {
+                complete = false;
+            }
+
+            for mut result_metadata in result.metadata {
+                result_metadata.prefix_attribute(key.clone().into());
+                metadata.push(result_metadata)
             }
         }
 
-        SchemaResult::Ok { value: map.into() }
+        let value = if complete { Some(map.into()) } else { None };
+
+        SchemaResult { value, metadata }
     }
 }
 

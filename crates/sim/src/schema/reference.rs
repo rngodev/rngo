@@ -2,6 +2,7 @@ use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResu
 use crate::build::BuildError;
 use crate::log::{LogIndex, LogIndexConfig};
 use crate::parse::{SchemaParseVisitor, SchemaParser};
+use crate::schema::Metadata;
 use crate::spec::ParseError as Error;
 
 #[derive(Debug)]
@@ -22,11 +23,14 @@ impl Reference {
 impl Schema for Reference {
     fn next(&mut self, _context: &SchemaContext) -> SchemaResult {
         match self.index.sample() {
-            Some(effect_event) => SchemaResult::Ok {
-                value: effect_event.value.clone(),
-            },
-            None => SchemaResult::Skipped {
-                message: "No effect events available".into(),
+            Some(effect_event) => effect_event.value.clone().into(),
+            None => SchemaResult {
+                value: None,
+                metadata: vec![Metadata {
+                    mtype: "skipped".into(),
+                    attribute: None,
+                    message: "No effect events available".into(),
+                }],
             },
         }
     }
