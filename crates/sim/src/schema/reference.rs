@@ -23,7 +23,10 @@ impl Reference {
 impl Schema for Reference {
     fn next(&mut self, _context: &SchemaContext) -> SchemaResult {
         match self.index.sample() {
-            Some(effect_event) => effect_event.value.clone().into(),
+            Some(effect_event) => SchemaResult {
+                value: Some(effect_event.value.clone()),
+                metadata: effect_event.metadata.clone(),
+            },
             None => SchemaResult {
                 value: None,
                 metadata: vec![Metadata {

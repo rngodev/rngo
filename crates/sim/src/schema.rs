@@ -26,6 +26,7 @@ use crate::log::LogReader;
 use crate::util::json_pointer::{JsonPointer, JsonPointerPart};
 use rand_pcg::Pcg32;
 use rand_seeder::Seeder;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::rc::Rc;
 
@@ -53,7 +54,7 @@ impl From<Value> for SchemaResult {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Metadata {
     pub(crate) mtype: String,
     pub(crate) attribute: Option<JsonPointer>,

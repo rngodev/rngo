@@ -3,7 +3,7 @@ mod trigger;
 
 use crate::build::{BuildError, EffectKey};
 use crate::log::{Log, LogIndexConfig, LogReader, SimpleEventLog};
-use crate::schema::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext};
+use crate::schema::{Metadata, Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext};
 use crate::util::ext::FlattenErr;
 use crate::util::time::Moment;
 use chrono::{DateTime, FixedOffset, TimeDelta};
@@ -43,7 +43,7 @@ impl Effect {
 }
 
 impl Iterator for Effect {
-    type Item = EffectOutcome;
+    type Item = Result<EffectEvent, SkippedEffectEvent>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.next_offset()?;
@@ -54,31 +54,31 @@ impl Iterator for Effect {
             simulation_start: self.sim_start,
             simulation_end: self.sim_end,
         };
+        let offset = trigger_event.sim_offset;
+        let timestamp = self.sim_start + TimeDelta::seconds(trigger_event.sim_offset as i64);
 
-        let last_id = self.event_log.last().map(|e| e.id).unwrap_or(0);
         let result = self.schema.next(&context);
 
         if let Some(value) = result.value {
-            Some(EffectOutcome::Event(EffectEvent {
+            let last_id = self.event_log.last().map(|e| e.id).unwrap_or(0);
+
+            Some(Ok(EffectEvent {
                 id: last_id + 1,
                 key: self.key.clone(),
-                offset: trigger_event.sim_offset,
-                timestamp: self.sim_start + TimeDelta::seconds(trigger_event.sim_offset as i64),
+                offset,
+                timestamp,
                 value,
+                metadata: result.metadata,
             }))
-        } else if let Some(error) = result.metadata.into_iter().find(|m| m.mtype == "error") {
-            Some(EffectOutcome::Error(error.message))
         } else {
-            Some(EffectOutcome::Skipped)
+            Some(Err(SkippedEffectEvent {
+                key: self.key.clone(),
+                offset,
+                timestamp,
+                metadata: result.metadata,
+            }))
         }
     }
-}
-
-#[derive(Debug)]
-pub enum EffectOutcome {
-    Event(EffectEvent),
-    Error(String),
-    Skipped,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,6 +88,15 @@ pub struct EffectEvent {
     pub offset: u64,
     pub timestamp: DateTime<FixedOffset>,
     pub value: Value,
+    pub metadata: Vec<Metadata>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkippedEffectEvent {
+    pub key: String,
+    pub offset: u64,
+    pub timestamp: DateTime<FixedOffset>,
+    pub metadata: Vec<Metadata>,
 }
 
 #[derive(Debug)]

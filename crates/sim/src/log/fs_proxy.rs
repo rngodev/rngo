@@ -1,5 +1,7 @@
 use crate::log::LogReader;
+use crate::schema::Metadata;
 use crate::{Log, LogEvent};
+use serde::Serialize;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -10,8 +12,8 @@ pub struct FsProxyLog {
     child: Box<dyn Log>,
     directory: PathBuf,
     effect_file: Option<std::fs::File>,
+    metadata_file: Option<std::fs::File>,
     signal_file: Option<std::fs::File>,
-    error_file: Option<std::fs::File>,
 }
 
 impl FsProxyLog {
@@ -20,8 +22,8 @@ impl FsProxyLog {
             child,
             directory,
             effect_file: None,
+            metadata_file: None,
             signal_file: None,
-            error_file: None,
         }
     }
 
@@ -39,6 +41,22 @@ impl FsProxyLog {
                 .unwrap()
         })
     }
+
+    fn write_metadata(&mut self, effect_id: Option<u64>, metadata: &[Metadata]) {
+        if metadata.is_empty() {
+            return;
+        }
+
+        let file = Self::get_file(&self.directory, &mut self.metadata_file, "metadata");
+        for metadata in metadata {
+            let line = serde_json::to_string(&MetadataLine {
+                effect_id,
+                metadata,
+            })
+            .unwrap();
+            writeln!(file, "{line}").unwrap();
+        }
+    }
 }
 
 impl Log for FsProxyLog {
@@ -48,15 +66,15 @@ impl Log for FsProxyLog {
                 let file = Self::get_file(&self.directory, &mut self.effect_file, "effects");
                 let line = serde_json::to_string(e).unwrap();
                 writeln!(file, "{line}").unwrap();
+
+                self.write_metadata(Some(e.id), &e.metadata);
+            }
+            LogEvent::Skipped(e) => {
+                self.write_metadata(None, &e.metadata);
             }
             LogEvent::Signal(s) => {
                 let file = Self::get_file(&self.directory, &mut self.signal_file, "signal");
                 let line = serde_json::to_string(s).unwrap();
-                writeln!(file, "{line}").unwrap();
-            }
-            LogEvent::Error(e) => {
-                let file = Self::get_file(&self.directory, &mut self.error_file, "error");
-                let line = serde_json::to_string(e).unwrap();
                 writeln!(file, "{line}").unwrap();
             }
         }
@@ -66,4 +84,11 @@ impl Log for FsProxyLog {
     fn reader(&self) -> Rc<dyn LogReader> {
         self.child.reader()
     }
+}
+
+#[derive(Serialize)]
+struct MetadataLine<'a> {
+    effect_id: Option<u64>,
+    #[serde(flatten)]
+    metadata: &'a Metadata,
 }

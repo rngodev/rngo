@@ -1,4 +1,5 @@
 use crate::log::LogReader;
+use crate::schema::Metadata;
 use crate::signal::Level;
 use crate::{Log, LogEvent};
 use rusqlite::Connection;
@@ -40,7 +41,10 @@ impl SqliteProxyLog {
                     data TEXT NOT NULL
                 );
 
-                CREATE TABLE IF NOT EXISTS errors (
+                CREATE TABLE IF NOT EXISTS metadata (
+                    effect_id INTEGER,
+                    type TEXT NOT NULL,
+                    attribute TEXT,
                     message TEXT NOT NULL
                 );
 
@@ -69,6 +73,23 @@ impl SqliteProxyLog {
             self.pending = 0;
         }
     }
+
+    fn insert_metadata(&mut self, effect_id: Option<i64>, metadata: &[Metadata]) {
+        for m in metadata {
+            self.connection
+                .prepare_cached(
+                    "INSERT INTO metadata (effect_id, type, attribute, message) VALUES (?1, ?2, ?3, ?4)",
+                )
+                .unwrap()
+                .execute(rusqlite::params![
+                    effect_id,
+                    m.mtype,
+                    m.attribute.as_ref().map(|a| a.to_string()),
+                    m.message,
+                ])
+                .unwrap();
+        }
+    }
 }
 
 impl Log for SqliteProxyLog {
@@ -87,6 +108,11 @@ impl Log for SqliteProxyLog {
                         serde_json::to_string(&e.value).unwrap(),
                     ])
                     .unwrap();
+
+                self.insert_metadata(Some(e.id as i64), &e.metadata);
+            }
+            LogEvent::Skipped(e) => {
+                self.insert_metadata(None, &e.metadata);
             }
             LogEvent::Signal(s) => {
                 self.connection
@@ -105,13 +131,6 @@ impl Log for SqliteProxyLog {
                         },
                         s.data,
                     ])
-                    .unwrap();
-            }
-            LogEvent::Error(message) => {
-                self.connection
-                    .prepare_cached("INSERT INTO errors (message) VALUES (?1)")
-                    .unwrap()
-                    .execute(rusqlite::params![message])
                     .unwrap();
             }
         }
@@ -133,7 +152,7 @@ impl Drop for SqliteProxyLog {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::effect::EffectEvent;
+    use crate::effect::{EffectEvent, SkippedEffectEvent};
     use crate::log::SimpleEventLog;
     use crate::signal::Signal;
     use chrono::Utc;
@@ -144,7 +163,7 @@ mod tests {
     }
 
     #[test]
-    fn writes_effect_signal_and_error_rows() {
+    fn writes_effect_signal_and_metadata_rows() {
         let tmp = TempDir::new().unwrap();
         let mut log = SqliteProxyLog::new(
             Box::new(SimpleEventLog::default()),
@@ -157,6 +176,11 @@ mod tests {
             offset: 42,
             timestamp: Utc::now().fixed_offset(),
             value: serde_json::json!({ "a": 1 }),
+            metadata: vec![Metadata {
+                mtype: "warning".into(),
+                attribute: None,
+                message: "partial value".into(),
+            }],
         }));
         log.push(LogEvent::Signal(Signal {
             effect_id: Some(1),
@@ -165,7 +189,6 @@ mod tests {
             level: Level::Info,
             data: "hello".to_string(),
         }));
-        log.push(LogEvent::Error("boom".to_string()));
 
         // Force the pending transaction closed so the rows are visible to a fresh connection.
         log.commit();
@@ -182,10 +205,52 @@ mod tests {
             .unwrap();
         assert_eq!(signal_data, "hello");
 
-        let error_message: String = conn
-            .query_row("SELECT message FROM errors", [], |row| row.get(0))
+        let (metadata_effect_id, metadata_type, metadata_message): (i64, String, String) = conn
+            .query_row("SELECT effect_id, type, message FROM metadata", [], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
             .unwrap();
-        assert_eq!(error_message, "boom");
+        assert_eq!(metadata_effect_id, 1);
+        assert_eq!(metadata_type, "warning");
+        assert_eq!(metadata_message, "partial value");
+    }
+
+    #[test]
+    fn skipped_effects_write_metadata_with_no_effect_row() {
+        let tmp = TempDir::new().unwrap();
+        let mut log = SqliteProxyLog::new(
+            Box::new(SimpleEventLog::default()),
+            tmp.path().to_path_buf(),
+        );
+
+        log.push(LogEvent::Skipped(SkippedEffectEvent {
+            key: "ping".to_string(),
+            offset: 42,
+            timestamp: Utc::now().fixed_offset(),
+            metadata: vec![Metadata {
+                mtype: "skipped".into(),
+                attribute: None,
+                message: "no effect events available".into(),
+            }],
+        }));
+
+        log.commit();
+
+        let conn = open(tmp.path());
+
+        let effect_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM effects", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(effect_count, 0);
+
+        let (metadata_effect_id, metadata_type, metadata_message): (Option<i64>, String, String) =
+            conn.query_row("SELECT effect_id, type, message FROM metadata", [], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .unwrap();
+        assert_eq!(metadata_effect_id, None);
+        assert_eq!(metadata_type, "skipped");
+        assert_eq!(metadata_message, "no effect events available");
     }
 
     #[test]
@@ -203,6 +268,7 @@ mod tests {
                 offset: i as u64,
                 timestamp: Utc::now().fixed_offset(),
                 value: serde_json::json!(i),
+                metadata: vec![],
             }));
         }
         log.commit();
