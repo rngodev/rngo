@@ -222,7 +222,9 @@ impl SimulationBuilder {
 #[cfg(test)]
 mod tests {
     use crate::build::BuildError;
-    use crate::schema::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
+    use crate::schema::{
+        Metadata, Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult,
+    };
 
     /// A schema that deterministically alternates between succeeding and failing on
     /// every other call, so a test can know exactly how many `Ok`s and `Err`s a fixed
@@ -236,11 +238,19 @@ mod tests {
         fn next(&mut self, _context: &SchemaContext) -> SchemaResult {
             self.calls += 1;
             if self.calls % 2 == 1 {
-                SchemaResult::Ok {
-                    value: serde_json::Value::Null,
+                SchemaResult {
+                    value: Some(serde_json::Value::Null),
+                    metadata: vec![],
                 }
             } else {
-                SchemaResult::Err("boom".into())
+                SchemaResult {
+                    value: None,
+                    metadata: vec![Metadata {
+                        mtype: "error".into(),
+                        attribute: None,
+                        message: "boom".into(),
+                    }],
+                }
             }
         }
     }

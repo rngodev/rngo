@@ -1,7 +1,9 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::build::{BuildError, SchemaEdge};
 use crate::parse::{SchemaParseVisitor, SchemaParser};
+use crate::schema::Metadata;
 use crate::spec::{self, ParseError as Error};
+use crate::util::json_pointer::JsonPointerPart;
 use rand::RngExt;
 use rand_pcg::Pcg32;
 
@@ -93,16 +95,27 @@ impl Schema for Array {
     fn next(&mut self, context: &SchemaContext) -> SchemaResult {
         let count = self.rng.random_range(self.min_items..=self.max_items);
         let mut arr = Vec::with_capacity(count);
+        let mut complete = true;
+        let mut metadata: Vec<Metadata> = Vec::new();
 
-        for _ in 0..count {
-            match self.items.next(context) {
-                SchemaResult::Ok { value } => arr.push(value),
-                SchemaResult::Err(e) => return SchemaResult::Err(e),
-                skipped @ SchemaResult::Skipped { .. } => return skipped,
+        for i in 0..count {
+            let result = self.items.next(context);
+
+            if let Some(value) = result.value {
+                arr.push(value);
+            } else {
+                complete = false;
+            }
+
+            for mut result_metadata in result.metadata {
+                result_metadata.prefix_attribute(JsonPointerPart::Index(i as u32));
+                metadata.push(result_metadata)
             }
         }
 
-        SchemaResult::Ok { value: arr.into() }
+        let value = if complete { Some(arr.into()) } else { None };
+
+        SchemaResult { value, metadata }
     }
 }
 

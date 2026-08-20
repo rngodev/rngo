@@ -22,9 +22,7 @@ impl Constant {
 
 impl Schema for Constant {
     fn next(&mut self, _context: &SchemaContext) -> SchemaResult {
-        SchemaResult::Ok {
-            value: self.value.clone(),
-        }
+        self.value.clone().into()
     }
 }
 

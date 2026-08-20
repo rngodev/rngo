@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::fmt;
 
 #[derive(Clone)]
 pub struct JsonPointer {
@@ -8,6 +9,21 @@ pub struct JsonPointer {
 impl JsonPointer {
     pub fn prefix(&mut self, part: JsonPointerPart) {
         self.parts.push_front(part)
+    }
+}
+
+impl fmt::Display for JsonPointer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for part in &self.parts {
+            write!(f, "/")?;
+            match part {
+                JsonPointerPart::Field(field) => {
+                    write!(f, "{}", field.replace('~', "~0").replace('/', "~1"))?
+                }
+                JsonPointerPart::Index(index) => write!(f, "{index}")?,
+            }
+        }
+        Ok(())
     }
 }
 
@@ -23,12 +39,6 @@ impl From<JsonPointerPart> for JsonPointer {
 pub enum JsonPointerPart {
     Field(String),
     Index(u32),
-}
-
-impl From<String> for JsonPointerPart {
-    fn from(value: String) -> Self {
-        JsonPointerPart::Field(value)
-    }
 }
 
 impl From<String> for JsonPointerPart {

@@ -1,6 +1,7 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::build::{BuildError, SchemaEdge};
 use crate::parse::{SchemaParseVisitor, SchemaParser};
+use crate::schema::Metadata;
 use crate::spec::{self, ParseError as Error};
 use crate::util::cel::{CelContextExt, json_to_cel};
 use cel::{Context, Program};
@@ -30,19 +31,48 @@ impl Schema for Function {
     fn next(&mut self, context: &SchemaContext) -> SchemaResult {
         let mut ctx = Context::default();
         ctx.with_strings();
+
+        let mut complete = true;
+        let mut metadata: Vec<Metadata> = Vec::new();
+
         for (key, schema) in &mut self.variables {
-            match schema.next(context) {
-                SchemaResult::Ok { value } => {
-                    ctx.add_variable(key.as_str(), json_to_cel(value));
-                }
-                err => return err,
+            let result = schema.next(context);
+
+            if let Some(value) = result.value {
+                ctx.add_variable(key.as_str(), json_to_cel(value));
+            } else {
+                complete = false;
+            }
+
+            for mut result_metadata in result.metadata {
+                result_metadata.prefix_attribute(key.clone().into());
+                metadata.push(result_metadata)
             }
         }
+
+        if !complete {
+            return SchemaResult {
+                value: None,
+                metadata,
+            };
+        }
+
         match self.program.execute(&ctx) {
-            Ok(result) => SchemaResult::Ok {
-                value: cel_to_json(result),
+            Ok(result) => SchemaResult {
+                value: Some(cel_to_json(result)),
+                metadata,
             },
-            Err(e) => SchemaResult::Err(e.to_string()),
+            Err(e) => {
+                metadata.push(Metadata {
+                    mtype: "error".into(),
+                    attribute: None,
+                    message: e.to_string(),
+                });
+                SchemaResult {
+                    value: None,
+                    metadata,
+                }
+            }
         }
     }
 }

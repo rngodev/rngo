@@ -40,8 +40,8 @@ pub struct SchemaContext<'a> {
 }
 
 pub struct SchemaResult {
-    value: Option<Value>,
-    metadata: Vec<Metadata>,
+    pub(crate) value: Option<Value>,
+    pub(crate) metadata: Vec<Metadata>,
 }
 
 impl From<Value> for SchemaResult {
@@ -55,9 +55,9 @@ impl From<Value> for SchemaResult {
 
 #[derive(Clone)]
 pub struct Metadata {
-    mtype: String,
-    attribute: Option<JsonPointer>,
-    message: String,
+    pub(crate) mtype: String,
+    pub(crate) attribute: Option<JsonPointer>,
+    pub(crate) message: String,
 }
 
 impl Metadata {

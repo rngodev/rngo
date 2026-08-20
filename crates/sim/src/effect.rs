@@ -3,7 +3,7 @@ mod trigger;
 
 use crate::build::{BuildError, EffectKey};
 use crate::log::{Log, LogIndexConfig, LogReader, SimpleEventLog};
-use crate::schema::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
+use crate::schema::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext};
 use crate::util::ext::FlattenErr;
 use crate::util::time::Moment;
 use chrono::{DateTime, FixedOffset, TimeDelta};
@@ -56,16 +56,20 @@ impl Iterator for Effect {
         };
 
         let last_id = self.event_log.last().map(|e| e.id).unwrap_or(0);
-        match self.schema.next(&context) {
-            SchemaResult::Ok { value } => Some(EffectOutcome::Event(EffectEvent {
+        let result = self.schema.next(&context);
+
+        if let Some(value) = result.value {
+            Some(EffectOutcome::Event(EffectEvent {
                 id: last_id + 1,
                 key: self.key.clone(),
                 offset: trigger_event.sim_offset,
                 timestamp: self.sim_start + TimeDelta::seconds(trigger_event.sim_offset as i64),
                 value,
-            })),
-            SchemaResult::Err(message) => Some(EffectOutcome::Error(message)),
-            SchemaResult::Skipped { .. } => Some(EffectOutcome::Skipped),
+            }))
+        } else if let Some(error) = result.metadata.into_iter().find(|m| m.mtype == "error") {
+            Some(EffectOutcome::Error(error.message))
+        } else {
+            Some(EffectOutcome::Skipped)
         }
     }
 }
