@@ -124,12 +124,12 @@ fn sql_value_to_json(value: SqlValue) -> Option<serde_json::Value> {
 mod tests {
     use super::*;
 
-    fn connection_with_signals() -> Connection {
+    fn connection_with_outputs() -> Connection {
         let connection = Connection::open_in_memory().unwrap();
         connection
             .execute_batch(
-                "CREATE TABLE signals (status INTEGER NOT NULL);
-                 INSERT INTO signals (status) VALUES (200), (200), (500);",
+                "CREATE TABLE outputs (status INTEGER NOT NULL);
+                 INSERT INTO outputs (status) VALUES (200), (200), (500);",
             )
             .unwrap();
         connection
@@ -149,9 +149,9 @@ mod tests {
 
     #[test]
     fn passing_invariant() {
-        let connection = connection_with_signals();
+        let connection = connection_with_outputs();
         let invariants = invariant(
-            "SELECT COUNT(*) FROM signals WHERE status = 200",
+            "SELECT COUNT(*) FROM outputs WHERE status = 200",
             "result == 2",
         );
 
@@ -163,9 +163,9 @@ mod tests {
 
     #[test]
     fn failing_invariant() {
-        let connection = connection_with_signals();
+        let connection = connection_with_outputs();
         let invariants = invariant(
-            "SELECT COUNT(*) FROM signals WHERE status = 500",
+            "SELECT COUNT(*) FROM outputs WHERE status = 500",
             "result == 0",
         );
 
@@ -177,8 +177,8 @@ mod tests {
 
     #[test]
     fn range_expression() {
-        let connection = connection_with_signals();
-        let invariants = invariant("SELECT COUNT(*) FROM signals", "result >= 2 && result <= 5");
+        let connection = connection_with_outputs();
+        let invariants = invariant("SELECT COUNT(*) FROM outputs", "result >= 2 && result <= 5");
 
         let outcomes = evaluate(&connection, &invariants).unwrap();
         assert!(outcomes["check"].passed);
@@ -186,7 +186,7 @@ mod tests {
 
     #[test]
     fn invalid_query_reports_error() {
-        let connection = connection_with_signals();
+        let connection = connection_with_outputs();
         let invariants = invariant("SELECT COUNT(*) FROM missing_table", "result == 0");
 
         let errors = evaluate(&connection, &invariants).unwrap_err();
@@ -195,8 +195,8 @@ mod tests {
 
     #[test]
     fn non_bool_expect_reports_error() {
-        let connection = connection_with_signals();
-        let invariants = invariant("SELECT COUNT(*) FROM signals", "result");
+        let connection = connection_with_outputs();
+        let invariants = invariant("SELECT COUNT(*) FROM outputs", "result");
 
         let errors = evaluate(&connection, &invariants).unwrap_err();
         assert!(matches!(errors[0], InvariantError::ExpectNotBool { .. }));

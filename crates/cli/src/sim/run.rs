@@ -58,7 +58,7 @@ pub fn run(
 
     let mut simulation = simulation_builder.log(log).build().map_err(join_errors)?;
     let channels = simulation.take_channels();
-    let mut channel_dispatch = ChannelDispatch::new(&spec, channels, simulation.signal_tx())?;
+    let mut channel_dispatch = ChannelDispatch::new(&spec, channels, simulation.output_tx())?;
 
     for input_event in &mut simulation {
         if stdout {
@@ -69,8 +69,8 @@ pub fn run(
     }
 
     // Closes stdin on every stream channel (triggering exit for those that react to EOF) and
-    // kills any stragglers - including signal-source channels with no natural end - after a
-    // grace period; `simulation.finish()` drains the trailing signals this produces and drops
+    // kills any stragglers - including output-source channels with no natural end - after a
+    // grace period; `simulation.finish()` drains the trailing outputs this produces and drops
     // the simulation, committing the event log before invariants are evaluated below.
     channel_dispatch.finish()?;
     simulation.finish();
@@ -306,7 +306,7 @@ mod tests {
     }
 
     #[test]
-    fn exec_target_records_signal_when_command_fails() {
+    fn exec_target_records_output_when_command_fails() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
@@ -324,10 +324,10 @@ mod tests {
         );
 
         write_yaml(
-            base.join(".rngo/invariants/has-failure-signal.yml"),
+            base.join(".rngo/invariants/has-failure-output.yml"),
             &json!({
                 "type": "sql",
-                "query": "SELECT COUNT(*) FROM signals WHERE data LIKE 'command exited with%'",
+                "query": "SELECT COUNT(*) FROM outputs WHERE data LIKE 'command exited with%'",
                 "expect": "result >= 1"
             }),
         );
@@ -360,11 +360,11 @@ mod tests {
         let content = fs::read_to_string(&invariants_path).unwrap();
         let value: serde_json::Value = serde_json::from_str(&content).unwrap();
 
-        assert_eq!(value["has-failure-signal"]["passed"], true);
+        assert_eq!(value["has-failure-output"]["passed"], true);
     }
 
     #[test]
-    fn stream_target_does_not_drop_trailing_signal() {
+    fn stream_target_does_not_drop_trailing_output() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
@@ -382,13 +382,13 @@ mod tests {
         );
 
         // Every event fed to `cat` is echoed straight back out over stdout, so the number of
-        // signals recorded should match the number of effects exactly - including the one
+        // outputs recorded should match the number of effects exactly - including the one
         // produced by the very last event, which arrives only after the subprocess is closed.
         write_yaml(
             base.join(".rngo/invariants/matches-effect-count.yml"),
             &json!({
                 "type": "sql",
-                "query": "SELECT (SELECT COUNT(*) FROM inputs) - (SELECT COUNT(*) FROM signals)",
+                "query": "SELECT (SELECT COUNT(*) FROM inputs) - (SELECT COUNT(*) FROM outputs)",
                 "expect": "result == 0"
             }),
         );
@@ -423,7 +423,7 @@ mod tests {
 
         assert_eq!(
             value["matches-effect-count"]["passed"], true,
-            "expected signal count to match effect count, got {value}"
+            "expected output count to match effect count, got {value}"
         );
     }
 
@@ -754,7 +754,7 @@ mod tests {
     }
 
     #[test]
-    fn channel_with_no_effects_is_a_signal_source() {
+    fn channel_with_no_effects_is_an_output_source() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
@@ -784,8 +784,8 @@ mod tests {
             }),
         );
 
-        // No effect sets `channel: tail`, so this channel is a pure signal source: its subprocess
-        // still runs for the duration of the simulation and its output becomes signals.
+        // No effect sets `channel: tail`, so this channel is a pure output source: its subprocess
+        // still runs for the duration of the simulation and its output becomes outputs.
         write_yaml(
             base.join(".rngo/channels/tail.yml"),
             &json!({
@@ -794,10 +794,10 @@ mod tests {
         );
 
         write_yaml(
-            base.join(".rngo/invariants/tail-signals.yml"),
+            base.join(".rngo/invariants/tail-outputs.yml"),
             &json!({
                 "type": "sql",
-                "query": "SELECT COUNT(*) FROM signals WHERE input_id IS NULL AND channel = 'tail'",
+                "query": "SELECT COUNT(*) FROM outputs WHERE input_id IS NULL AND channel = 'tail'",
                 "expect": "result == 2"
             }),
         );
@@ -809,8 +809,8 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(&content).unwrap();
 
         assert_eq!(
-            value["tail-signals"]["passed"], true,
-            "expected 2 signals from the effect-less channel, got {value}"
+            value["tail-outputs"]["passed"], true,
+            "expected 2 outputs from the effect-less channel, got {value}"
         );
     }
 

@@ -1,6 +1,6 @@
 use chrono::Utc;
 use handlebars::Handlebars;
-use rngo_sim::{Channel, Format, Input, Level, Signal, spec};
+use rngo_sim::{Channel, Format, Input, Level, Output, spec};
 use std::collections::HashMap;
 use std::error::Error;
 use std::io::{BufRead, BufReader, Write};
@@ -10,7 +10,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 /// How long to give a channel's subprocess to exit on its own (e.g. after its stdin is closed)
-/// before it's forcibly killed. Some channels (e.g. a `tail -F` used as a signal source) never
+/// before it's forcibly killed. Some channels (e.g. a `tail -F` used as an output source) never
 /// exit on their own, so this bounds shutdown; a subprocess that finishes right as the
 /// simulation does can otherwise be killed before the OS has even scheduled it to run, losing
 /// its entire output.
@@ -20,8 +20,8 @@ const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(5);
 /// Spawns each `stream` channel's subprocess for the lifetime of the simulation and each `exec`
 /// channel's Handlebars command template, then dispatches inputs to the channel an effect
 /// writes to. A channel with no effects writing to it (no `channel: <key>` reference) is still
-/// spawned if it's a `stream` channel, turning its stdout/stderr into signals with no associated
-/// effect - a non-interactive signal source.
+/// spawned if it's a `stream` channel, turning its stdout/stderr into outputs with no associated
+/// effect - a non-interactive output source.
 pub struct ChannelDispatch {
     effect_channels: HashMap<String, String>,
     formats: HashMap<String, Box<dyn Format>>,
@@ -29,14 +29,14 @@ pub struct ChannelDispatch {
     children: HashMap<String, Child>,
     reader_threads: Vec<thread::JoinHandle<()>>,
     hbs: Handlebars<'static>,
-    signal_tx: Sender<Signal>,
+    output_tx: Sender<Output>,
 }
 
 impl ChannelDispatch {
     pub fn new(
         spec: &spec::Simulation,
         channels: Vec<Channel>,
-        signal_tx: Sender<Signal>,
+        output_tx: Sender<Output>,
     ) -> Result<Self, Box<dyn Error>> {
         let effect_channels: HashMap<String, String> = spec
             .effects
@@ -81,14 +81,14 @@ impl ChannelDispatch {
                     stdinpipes.insert(channel_key.clone(), stdin);
 
                     if let Some(stdout) = child.stdout.take() {
-                        let tx = signal_tx.clone();
+                        let tx = output_tx.clone();
                         let channel_key = channel_key.clone();
                         reader_threads.push(thread::spawn(move || {
                             for line in BufReader::new(stdout).lines() {
                                 if let Ok(data) = line
                                     && !data.is_empty()
                                 {
-                                    let _ = tx.send(Signal {
+                                    let _ = tx.send(Output {
                                         input_id: None,
                                         channel: channel_key.clone(),
                                         level: Level::Info,
@@ -101,14 +101,14 @@ impl ChannelDispatch {
                     }
 
                     if let Some(stderr) = child.stderr.take() {
-                        let tx = signal_tx.clone();
+                        let tx = output_tx.clone();
                         let channel_key = channel_key.clone();
                         reader_threads.push(thread::spawn(move || {
                             for line in BufReader::new(stderr).lines() {
                                 if let Ok(data) = line
                                     && !data.is_empty()
                                 {
-                                    let _ = tx.send(Signal {
+                                    let _ = tx.send(Output {
                                         input_id: None,
                                         channel: channel_key.clone(),
                                         level: Level::Error,
@@ -135,7 +135,7 @@ impl ChannelDispatch {
             children,
             reader_threads,
             hbs,
-            signal_tx,
+            output_tx,
         })
     }
 
@@ -172,7 +172,7 @@ impl ChannelDispatch {
                     .map_while(Result::ok)
                 {
                     if !line.is_empty() {
-                        let _ = self.signal_tx.send(Signal {
+                        let _ = self.output_tx.send(Output {
                             input_id: Some(input_event.id),
                             channel: channel_key.clone(),
                             level,
@@ -184,7 +184,7 @@ impl ChannelDispatch {
             }
 
             if !output.status.success() {
-                let _ = self.signal_tx.send(Signal {
+                let _ = self.output_tx.send(Output {
                     input_id: Some(input_event.id),
                     channel: channel_key.clone(),
                     level: Level::Error,
@@ -199,9 +199,9 @@ impl ChannelDispatch {
 
     /// Closes every channel's stdin, which triggers exit for subprocesses that react to EOF
     /// (e.g. `cat`), then gives each remaining child a grace period before killing it - covering
-    /// signal-source subprocesses (e.g. `tail -F`) that never exit on their own. Reader threads
-    /// are joined last so trailing output has already become a `Signal` before the caller does a
-    /// final drain of the signal channel.
+    /// output-source subprocesses (e.g. `tail -F`) that never exit on their own. Reader threads
+    /// are joined last so trailing output has already become an `Output` before the caller does a
+    /// final drain of the output channel.
     pub fn finish(mut self) -> Result<(), Box<dyn Error>> {
         drop(self.stdinpipes);
 

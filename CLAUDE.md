@@ -51,7 +51,7 @@ The workspace has two crates:
 - `stream`: spawns one long-lived subprocess per channel, writes formatted event lines to its stdin.
 - `exec`: runs a fresh `sh -c <command>` per event; the command string is a Handlebars template rendered with the event's JSON value.
 
-An effect opts into a channel by setting `channel: <channel-key>`. The format used is resolved by merging the effect-level `format` over the channel-level `format`. A `stream` channel with no effects writing to it is still spawned for the run's duration, but only as a signal source (e.g. tailing a log file) - there is no separate "signal" concept.
+An effect opts into a channel by setting `channel: <channel-key>`. The format used is resolved by merging the effect-level `format` over the channel-level `format`. A `stream` channel with no effects writing to it is still spawned for the run's duration, but only as an output source (e.g. tailing a log file) - its stdout/stderr lines still become `Output` events, just with no associated effect.
 
 ### Schema types (all in `sim/src/schema/`)
 

@@ -13,7 +13,7 @@ pub struct FsProxyLog {
     directory: PathBuf,
     input_file: Option<std::fs::File>,
     metadata_file: Option<std::fs::File>,
-    signal_file: Option<std::fs::File>,
+    output_file: Option<std::fs::File>,
 }
 
 impl FsProxyLog {
@@ -23,7 +23,7 @@ impl FsProxyLog {
             directory,
             input_file: None,
             metadata_file: None,
-            signal_file: None,
+            output_file: None,
         }
     }
 
@@ -68,8 +68,8 @@ impl Log for FsProxyLog {
             LogEvent::Skipped(e) => {
                 self.write_metadata(None, &e.metadata);
             }
-            LogEvent::Signal(s) => {
-                let file = Self::get_file(&self.directory, &mut self.signal_file, "signal");
+            LogEvent::Output(s) => {
+                let file = Self::get_file(&self.directory, &mut self.output_file, "outputs");
                 let line = serde_json::to_string(s).unwrap();
                 writeln!(file, "{line}").unwrap();
             }

@@ -1,4 +1,4 @@
-use crate::Signal;
+use crate::Output;
 use crate::build::{BuildError, SimulationKey};
 use crate::channel::Channel;
 use crate::effect::{Effect, EffectBuilder, Input};
@@ -12,8 +12,8 @@ pub struct Simulation {
     event_log: Box<dyn Log>,
     effects: Vec<Effect>,
     channels: Vec<Channel>,
-    signal_tx: Sender<Signal>,
-    signal_rx: Receiver<Signal>,
+    output_tx: Sender<Output>,
+    output_rx: Receiver<Output>,
     limit: Option<u64>,
     emitted: u64,
 }
@@ -23,8 +23,8 @@ impl Simulation {
         SimulationBuilder::new()
     }
 
-    pub fn signal_tx(&self) -> Sender<Signal> {
-        self.signal_tx.clone()
+    pub fn output_tx(&self) -> Sender<Output> {
+        self.output_tx.clone()
     }
 
     /// Hands ownership of the simulation's channels to the caller (e.g. the CLI's channel
@@ -33,22 +33,22 @@ impl Simulation {
         std::mem::take(&mut self.channels)
     }
 
-    /// Pushes any signals currently waiting in the channel into the event log.
-    fn drain_signals(&mut self) {
-        for signal in self.signal_rx.try_iter() {
-            self.event_log.push(signal.into());
+    /// Pushes any outputs currently waiting in the channel into the event log.
+    fn drain_outputs(&mut self) {
+        for output in self.output_rx.try_iter() {
+            self.event_log.push(output.into());
         }
     }
 
     /// Finalizes the simulation once effect dispatch has fully shut down.
     ///
-    /// Iteration already drains signals before computing each event, but signals sent after
+    /// Iteration already drains outputs before computing each event, but outputs sent after
     /// the last event (e.g. a `stream` channel's subprocess flushing its output once it
     /// receives EOF) arrive after the last `next()` call, so this drains once more. Taking
     /// `self` by value also ensures the event log is dropped - and so commits any pending
     /// writes - before this returns.
     pub fn finish(mut self) {
-        self.drain_signals();
+        self.drain_outputs();
     }
 }
 
@@ -56,7 +56,7 @@ impl Iterator for Simulation {
     type Item = Input;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.drain_signals();
+        self.drain_outputs();
 
         if self.limit.is_some_and(|limit| self.emitted >= limit) {
             return None;
@@ -201,13 +201,13 @@ impl SimulationBuilder {
         }
 
         if errors.is_empty() {
-            let (signal_tx, signal_rx) = mpsc::channel::<Signal>();
+            let (output_tx, output_rx) = mpsc::channel::<Output>();
             Ok(Simulation {
                 event_log: self.event_log,
                 effects,
                 channels: self.channels,
-                signal_tx,
-                signal_rx,
+                output_tx,
+                output_rx,
                 limit: self.limit,
                 emitted: 0,
             })

@@ -12,11 +12,11 @@ const RENDER_INTERVAL: Duration = Duration::from_millis(50);
 #[derive(Default)]
 struct ChannelStats {
     effects: u64,
-    signals: u64,
+    outputs: u64,
 }
 
 /// A [`Log`] proxy that renders a live-updating status block to stderr - the current simulated
-/// time and, per channel, how many effects and signals it has produced - leaving stdout free for
+/// time and, per channel, how many effects and outputs it has produced - leaving stdout free for
 /// `--stdout` event output. Forwards every event to `child` unchanged.
 pub struct StatusLog {
     child: Box<dyn Log>,
@@ -65,8 +65,8 @@ impl StatusLog {
         lines.push(format!("time: {time}"));
         for (channel, stats) in &self.stats {
             lines.push(format!(
-                "{channel}: {} effects, {} signals",
-                stats.effects, stats.signals
+                "{channel}: {} effects, {} outputs",
+                stats.effects, stats.outputs
             ));
         }
 
@@ -93,8 +93,8 @@ impl Log for StatusLog {
                     self.stats.entry(channel.clone()).or_default().effects += 1;
                 }
             }
-            LogEvent::Signal(s) => {
-                self.stats.entry(s.channel.clone()).or_default().signals += 1;
+            LogEvent::Output(s) => {
+                self.stats.entry(s.channel.clone()).or_default().outputs += 1;
             }
             LogEvent::Skipped(_) => {}
         }

@@ -1,6 +1,6 @@
 use crate::log::LogReader;
+use crate::output::Level;
 use crate::schema::Metadata;
-use crate::signal::Level;
 use crate::{Log, LogEvent};
 use rusqlite::Connection;
 use std::path::PathBuf;
@@ -33,7 +33,7 @@ impl SqliteProxyLog {
                     value TEXT NOT NULL
                 );
 
-                CREATE TABLE IF NOT EXISTS signals (
+                CREATE TABLE IF NOT EXISTS outputs (
                     input_id INTEGER,
                     timestamp TEXT NOT NULL,
                     channel TEXT NOT NULL,
@@ -124,10 +124,10 @@ impl Log for SqliteProxyLog {
             LogEvent::Skipped(e) => {
                 self.insert_metadata(None, &e.key, e.offset, &e.metadata);
             }
-            LogEvent::Signal(s) => {
+            LogEvent::Output(s) => {
                 self.connection
                     .prepare_cached(
-                        "INSERT INTO signals (input_id, timestamp, channel, level, data) VALUES (?1, ?2, ?3, ?4, ?5)",
+                        "INSERT INTO outputs (input_id, timestamp, channel, level, data) VALUES (?1, ?2, ?3, ?4, ?5)",
                     )
                     .unwrap()
                     .execute(rusqlite::params![
@@ -164,7 +164,7 @@ mod tests {
     use super::*;
     use crate::effect::{Input, SkippedInput};
     use crate::log::SimpleEventLog;
-    use crate::signal::Signal;
+    use crate::output::Output;
     use chrono::Utc;
     use tempfile::TempDir;
 
@@ -173,7 +173,7 @@ mod tests {
     }
 
     #[test]
-    fn writes_input_signal_and_metadata_rows() {
+    fn writes_input_output_and_metadata_rows() {
         let tmp = TempDir::new().unwrap();
         let mut log = SqliteProxyLog::new(
             Box::new(SimpleEventLog::default()),
@@ -192,7 +192,7 @@ mod tests {
                 value: Some(serde_json::json!({ "message": "partial value" })),
             }],
         }));
-        log.push(LogEvent::Signal(Signal {
+        log.push(LogEvent::Output(Output {
             input_id: Some(1),
             timestamp: Utc::now(),
             channel: "logger".to_string(),
@@ -210,10 +210,10 @@ mod tests {
             .unwrap();
         assert_eq!(input_key, "ping");
 
-        let signal_data: String = conn
-            .query_row("SELECT data FROM signals", [], |row| row.get(0))
+        let output_data: String = conn
+            .query_row("SELECT data FROM outputs", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(signal_data, "hello");
+        assert_eq!(output_data, "hello");
 
         let (
             metadata_input_id,

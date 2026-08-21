@@ -2,7 +2,7 @@ mod fs_proxy;
 mod simple;
 mod sqlite_proxy;
 
-use crate::Signal;
+use crate::Output;
 use crate::effect::{Input, SkippedInput};
 use std::rc::Rc;
 
@@ -18,7 +18,7 @@ pub trait Log: std::fmt::Debug {
 pub enum LogEvent {
     Input(Input),
     Skipped(SkippedInput),
-    Signal(Signal),
+    Output(Output),
 }
 
 impl From<Input> for LogEvent {
@@ -33,9 +33,9 @@ impl From<SkippedInput> for LogEvent {
     }
 }
 
-impl From<Signal> for LogEvent {
-    fn from(s: Signal) -> Self {
-        LogEvent::Signal(s)
+impl From<Output> for LogEvent {
+    fn from(s: Output) -> Self {
+        LogEvent::Output(s)
     }
 }
 
