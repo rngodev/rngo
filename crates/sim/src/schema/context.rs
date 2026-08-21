@@ -1,7 +1,7 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaResult};
 use crate::build::BuildError;
 use crate::parse::{SchemaParseVisitor, SchemaParser};
-use crate::schema::SchemaContext;
+use crate::schema::{Metadata, SchemaContext};
 use crate::spec::ParseError as Error;
 use serde_json;
 
@@ -25,28 +25,46 @@ impl Schema for Context {
         match self.path {
             ContextPath::TriggerEvent => match &context.trigger.effect_event {
                 Some(effect_event) => match serde_json::to_value(effect_event.as_ref()) {
-                    Ok(value) => SchemaResult::Ok { value },
-                    Err(e) => SchemaResult::Err(e.to_string()),
+                    Ok(value) => SchemaResult {
+                        value: Some(value),
+                        metadata: vec![],
+                    },
+                    Err(e) => error_result(e.to_string()),
                 },
-                None => SchemaResult::Err("no value for trigger".into()),
+                None => error_result("no value for trigger"),
             },
-            ContextPath::SimOffset => SchemaResult::Ok {
-                value: context.trigger.sim_offset.into(),
+            ContextPath::SimOffset => SchemaResult {
+                value: Some(context.trigger.sim_offset.into()),
+                metadata: vec![],
             },
-            ContextPath::SimStart => SchemaResult::Ok {
-                value: context.simulation_start.to_rfc3339().into(),
+            ContextPath::SimStart => SchemaResult {
+                value: Some(context.simulation_start.to_rfc3339().into()),
+                metadata: vec![],
             },
-            ContextPath::SimEnd => SchemaResult::Ok {
-                value: context.simulation_end.to_rfc3339().into(),
+            ContextPath::SimEnd => SchemaResult {
+                value: Some(context.simulation_end.to_rfc3339().into()),
+                metadata: vec![],
             },
             ContextPath::ClockNow => {
                 let now = context.simulation_start
                     + chrono::Duration::seconds(context.trigger.sim_offset as i64);
-                SchemaResult::Ok {
-                    value: now.to_rfc3339().into(),
+                SchemaResult {
+                    value: Some(now.to_rfc3339().into()),
+                    metadata: vec![],
                 }
             }
         }
+    }
+}
+
+fn error_result(message: impl Into<String>) -> SchemaResult {
+    SchemaResult {
+        value: None,
+        metadata: vec![Metadata {
+            mtype: "error".into(),
+            attribute: None,
+            value: Some(serde_json::json!({ "message": message.into() })),
+        }],
     }
 }
 

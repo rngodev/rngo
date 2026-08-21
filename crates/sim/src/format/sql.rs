@@ -111,6 +111,7 @@ mod tests {
             offset: 0,
             timestamp: Utc::now().fixed_offset(),
             value,
+            metadata: vec![],
         }
     }
 

@@ -48,8 +48,9 @@ impl Schema for Number {
 
         if let Some(scale) = self.scale {
             if scale == 0 {
-                return SchemaResult::Ok {
-                    value: (value as i64).into(),
+                return SchemaResult {
+                    value: Some((value as i64).into()),
+                    metadata: vec![],
                 };
             } else {
                 let factor = 10f64.powi(scale as i32);
@@ -57,8 +58,9 @@ impl Schema for Number {
             }
         }
 
-        SchemaResult::Ok {
-            value: value.into(),
+        SchemaResult {
+            value: Some(value.into()),
+            metadata: vec![],
         }
     }
 }

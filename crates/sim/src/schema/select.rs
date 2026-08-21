@@ -1,6 +1,7 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::build::{BuildError, SchemaEdge};
 use crate::parse::{SchemaParseVisitor, SchemaParser};
+use crate::schema::Metadata;
 use crate::spec::{self, ParseError as Error};
 use rand::RngExt;
 use rand_pcg::Pcg32;
@@ -42,7 +43,14 @@ impl Schema for Select {
             chosen -= property.weight;
         }
 
-        SchemaResult::Err("no streams available".into())
+        SchemaResult {
+            value: None,
+            metadata: vec![Metadata {
+                mtype: "error".into(),
+                attribute: None,
+                value: Some(serde_json::json!({ "message": "no options available" })),
+            }],
+        }
     }
 }
 

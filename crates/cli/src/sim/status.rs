@@ -96,7 +96,7 @@ impl Log for StatusLog {
             LogEvent::Signal(s) => {
                 self.stats.entry(s.channel.clone()).or_default().signals += 1;
             }
-            LogEvent::Error(_) => {}
+            LogEvent::Skipped(_) => {}
         }
 
         self.render(false);

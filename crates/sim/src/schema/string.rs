@@ -32,7 +32,10 @@ impl Str {
 impl Schema for Str {
     fn next(&mut self, _context: &SchemaContext) -> SchemaResult {
         let s: String = self.regex.sample(&mut self.rng);
-        SchemaResult::Ok { value: s.into() }
+        SchemaResult {
+            value: Some(s.into()),
+            metadata: vec![],
+        }
     }
 }
 

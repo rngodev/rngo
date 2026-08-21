@@ -1,7 +1,7 @@
 use crate::Signal;
 use crate::build::{BuildError, SimulationKey};
 use crate::channel::Channel;
-use crate::effect::{Effect, EffectBuilder, EffectEvent, EffectOutcome};
+use crate::effect::{Effect, EffectBuilder, EffectEvent};
 use crate::log::{Log, SimpleEventLog};
 use crate::util::time::Moment;
 use chrono::{TimeDelta, Utc};
@@ -66,22 +66,20 @@ impl Iterator for Simulation {
             self.effects
                 .sort_unstable_by_key(|e| e.next_offset().unwrap_or(u64::MAX));
 
-            match self.effects.first_mut()?.next() {
-                Some(EffectOutcome::Event(effect_event)) => {
+            match self.effects.first_mut()?.next()? {
+                Ok(effect_event) => {
                     self.emitted += 1;
                     self.event_log.push(effect_event.clone().into());
                     return Some(effect_event);
                 }
-                Some(EffectOutcome::Error(error)) => {
+                Err(skipped_event) => {
                     self.emitted += 1;
-                    self.event_log.push(error.into());
+                    self.event_log.push(skipped_event.into());
                     if self.limit.is_some_and(|limit| self.emitted >= limit) {
                         return None;
                     }
                     continue;
                 }
-                Some(EffectOutcome::Skipped) => continue,
-                None => return None,
             }
         }
     }
@@ -222,7 +220,9 @@ impl SimulationBuilder {
 #[cfg(test)]
 mod tests {
     use crate::build::BuildError;
-    use crate::schema::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
+    use crate::schema::{
+        Metadata, Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult,
+    };
 
     /// A schema that deterministically alternates between succeeding and failing on
     /// every other call, so a test can know exactly how many `Ok`s and `Err`s a fixed
@@ -236,11 +236,19 @@ mod tests {
         fn next(&mut self, _context: &SchemaContext) -> SchemaResult {
             self.calls += 1;
             if self.calls % 2 == 1 {
-                SchemaResult::Ok {
-                    value: serde_json::Value::Null,
+                SchemaResult {
+                    value: Some(serde_json::Value::Null),
+                    metadata: vec![],
                 }
             } else {
-                SchemaResult::Err("boom".into())
+                SchemaResult {
+                    value: None,
+                    metadata: vec![Metadata {
+                        mtype: "error".into(),
+                        attribute: None,
+                        value: Some(serde_json::json!({ "message": "boom" })),
+                    }],
+                }
             }
         }
     }

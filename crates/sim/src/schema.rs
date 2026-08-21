@@ -23,8 +23,10 @@ pub use string::Str;
 use crate::build::{BuildError, SchemaEdge};
 use crate::effect::TriggerEvent;
 use crate::log::LogReader;
+use crate::util::json_pointer::{JsonPointer, JsonPointerPart};
 use rand_pcg::Pcg32;
 use rand_seeder::Seeder;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::rc::Rc;
 
@@ -38,10 +40,36 @@ pub struct SchemaContext<'a> {
     pub simulation_end: DateTime<FixedOffset>,
 }
 
-pub enum SchemaResult {
-    Ok { value: Value },
-    Err(String),
-    Skipped { message: String },
+pub struct SchemaResult {
+    pub(crate) value: Option<Value>,
+    pub(crate) metadata: Vec<Metadata>,
+}
+
+impl From<Value> for SchemaResult {
+    fn from(value: Value) -> Self {
+        Self {
+            value: Some(value),
+            metadata: Vec::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Metadata {
+    #[serde(rename = "type")]
+    pub mtype: String,
+    pub attribute: Option<JsonPointer>,
+    pub value: Option<Value>,
+}
+
+impl Metadata {
+    fn prefix_attribute(&mut self, part: JsonPointerPart) {
+        if let Some(attribute) = &mut self.attribute {
+            attribute.prefix(part)
+        } else {
+            self.attribute = Some(part.into())
+        }
+    }
 }
 
 pub trait SchemaBuilder: std::fmt::Debug {

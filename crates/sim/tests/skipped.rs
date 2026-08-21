@@ -17,8 +17,8 @@ fn reference_with_no_prior_events_is_skipped_not_logged() {
             .schema(reference().effect("nonexistent"))
     });
 
-    let simulation = simulation_builder.log(log).build().unwrap();
-    let events: Vec<_> = simulation.take(5).collect();
+    let simulation = simulation_builder.log(log).limit(5).build().unwrap();
+    let events: Vec<_> = simulation.collect();
 
     assert!(
         events.is_empty(),
@@ -29,17 +29,17 @@ fn reference_with_no_prior_events_is_skipped_not_logged() {
     let effect_count: i64 = conn
         .query_row("SELECT COUNT(*) FROM effects", [], |row| row.get(0))
         .unwrap();
-    let error_count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM errors", [], |row| row.get(0))
+    let metadata_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM metadata", [], |row| row.get(0))
         .unwrap();
 
     assert_eq!(
         effect_count, 0,
         "skipped occurrences must not be logged as effects"
     );
-    assert_eq!(
-        error_count, 0,
-        "skipped occurrences must not be logged as errors"
+    assert!(
+        metadata_count > 0,
+        "a skipped occurrence should still be logged as metadata"
     );
 }
 

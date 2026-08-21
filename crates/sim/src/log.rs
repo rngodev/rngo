@@ -3,7 +3,7 @@ mod simple;
 mod sqlite_proxy;
 
 use crate::Signal;
-use crate::effect::EffectEvent;
+use crate::effect::{EffectEvent, SkippedEffectEvent};
 use std::rc::Rc;
 
 pub use fs_proxy::FsProxyLog;
@@ -17,8 +17,8 @@ pub trait Log: std::fmt::Debug {
 
 pub enum LogEvent {
     Effect(EffectEvent),
+    Skipped(SkippedEffectEvent),
     Signal(Signal),
-    Error(String),
 }
 
 impl From<EffectEvent> for LogEvent {
@@ -27,21 +27,15 @@ impl From<EffectEvent> for LogEvent {
     }
 }
 
+impl From<SkippedEffectEvent> for LogEvent {
+    fn from(e: SkippedEffectEvent) -> Self {
+        LogEvent::Skipped(e)
+    }
+}
+
 impl From<Signal> for LogEvent {
     fn from(s: Signal) -> Self {
         LogEvent::Signal(s)
-    }
-}
-
-impl From<String> for LogEvent {
-    fn from(s: String) -> Self {
-        LogEvent::Error(s)
-    }
-}
-
-impl From<&str> for LogEvent {
-    fn from(s: &str) -> Self {
-        LogEvent::Error(s.to_string())
     }
 }
 
