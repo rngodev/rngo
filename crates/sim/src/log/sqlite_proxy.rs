@@ -43,9 +43,11 @@ impl SqliteProxyLog {
 
                 CREATE TABLE IF NOT EXISTS metadata (
                     effect_id INTEGER,
+                    effect_key TEXT,
+                    offset INTEGER,
                     type TEXT NOT NULL,
                     attribute TEXT,
-                    message TEXT NOT NULL
+                    value TEXT
                 );
 
                 BEGIN;
@@ -74,18 +76,26 @@ impl SqliteProxyLog {
         }
     }
 
-    fn insert_metadata(&mut self, effect_id: Option<i64>, metadata: &[Metadata]) {
+    fn insert_metadata(
+        &mut self,
+        effect_id: Option<i64>,
+        effect_key: &str,
+        offset: u64,
+        metadata: &[Metadata],
+    ) {
         for m in metadata {
             self.connection
                 .prepare_cached(
-                    "INSERT INTO metadata (effect_id, type, attribute, message) VALUES (?1, ?2, ?3, ?4)",
+                    "INSERT INTO metadata (effect_id, effect_key, offset, type, attribute, value) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 )
                 .unwrap()
                 .execute(rusqlite::params![
                     effect_id,
+                    effect_key,
+                    offset as i64,
                     m.mtype,
                     m.attribute.as_ref().map(|a| a.to_string()),
-                    m.message,
+                    m.value.as_ref().map(|v| v.to_string()),
                 ])
                 .unwrap();
         }
@@ -109,10 +119,10 @@ impl Log for SqliteProxyLog {
                     ])
                     .unwrap();
 
-                self.insert_metadata(Some(e.id as i64), &e.metadata);
+                self.insert_metadata(Some(e.id as i64), &e.key, e.offset, &e.metadata);
             }
             LogEvent::Skipped(e) => {
-                self.insert_metadata(None, &e.metadata);
+                self.insert_metadata(None, &e.key, e.offset, &e.metadata);
             }
             LogEvent::Signal(s) => {
                 self.connection
@@ -177,9 +187,9 @@ mod tests {
             timestamp: Utc::now().fixed_offset(),
             value: serde_json::json!({ "a": 1 }),
             metadata: vec![Metadata {
-                mtype: "warning".into(),
+                mtype: "error".into(),
                 attribute: None,
-                message: "partial value".into(),
+                value: Some(serde_json::json!({ "message": "partial value" })),
             }],
         }));
         log.push(LogEvent::Signal(Signal {
@@ -205,14 +215,35 @@ mod tests {
             .unwrap();
         assert_eq!(signal_data, "hello");
 
-        let (metadata_effect_id, metadata_type, metadata_message): (i64, String, String) = conn
-            .query_row("SELECT effect_id, type, message FROM metadata", [], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-            })
+        let (
+            metadata_effect_id,
+            metadata_effect_key,
+            metadata_offset,
+            metadata_type,
+            metadata_value,
+        ): (i64, String, i64, String, String) = conn
+            .query_row(
+                "SELECT effect_id, effect_key, offset, type, value FROM metadata",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
             .unwrap();
         assert_eq!(metadata_effect_id, 1);
-        assert_eq!(metadata_type, "warning");
-        assert_eq!(metadata_message, "partial value");
+        assert_eq!(metadata_effect_key, "ping");
+        assert_eq!(metadata_offset, 42);
+        assert_eq!(metadata_type, "error");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&metadata_value).unwrap(),
+            serde_json::json!({ "message": "partial value" })
+        );
     }
 
     #[test]
@@ -230,7 +261,7 @@ mod tests {
             metadata: vec![Metadata {
                 mtype: "skipped".into(),
                 attribute: None,
-                message: "no effect events available".into(),
+                value: None,
             }],
         }));
 
@@ -243,14 +274,32 @@ mod tests {
             .unwrap();
         assert_eq!(effect_count, 0);
 
-        let (metadata_effect_id, metadata_type, metadata_message): (Option<i64>, String, String) =
-            conn.query_row("SELECT effect_id, type, message FROM metadata", [], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-            })
+        let (
+            metadata_effect_id,
+            metadata_effect_key,
+            metadata_offset,
+            metadata_type,
+            metadata_value,
+        ): (Option<i64>, String, i64, String, Option<String>) = conn
+            .query_row(
+                "SELECT effect_id, effect_key, offset, type, value FROM metadata",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
             .unwrap();
         assert_eq!(metadata_effect_id, None);
+        assert_eq!(metadata_effect_key, "ping");
+        assert_eq!(metadata_offset, 42);
         assert_eq!(metadata_type, "skipped");
-        assert_eq!(metadata_message, "no effect events available");
+        assert_eq!(metadata_value, None);
     }
 
     #[test]

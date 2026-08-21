@@ -63,7 +63,7 @@ fn error_result(message: impl Into<String>) -> SchemaResult {
         metadata: vec![Metadata {
             mtype: "error".into(),
             attribute: None,
-            message: message.into(),
+            value: Some(serde_json::json!({ "message": message.into() })),
         }],
     }
 }

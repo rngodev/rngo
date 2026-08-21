@@ -17,8 +17,8 @@ fn reference_with_no_prior_events_is_skipped_not_logged() {
             .schema(reference().effect("nonexistent"))
     });
 
-    let simulation = simulation_builder.log(log).build().unwrap();
-    let events: Vec<_> = simulation.take(5).collect();
+    let simulation = simulation_builder.log(log).limit(5).build().unwrap();
+    let events: Vec<_> = simulation.collect();
 
     assert!(
         events.is_empty(),

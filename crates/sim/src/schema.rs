@@ -56,9 +56,10 @@ impl From<Value> for SchemaResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Metadata {
-    pub(crate) mtype: String,
-    pub(crate) attribute: Option<JsonPointer>,
-    pub(crate) message: String,
+    #[serde(rename = "type")]
+    pub mtype: String,
+    pub attribute: Option<JsonPointer>,
+    pub value: Option<Value>,
 }
 
 impl Metadata {

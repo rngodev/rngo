@@ -246,7 +246,7 @@ mod tests {
                     metadata: vec![Metadata {
                         mtype: "error".into(),
                         attribute: None,
-                        message: "boom".into(),
+                        value: Some(serde_json::json!({ "message": "boom" })),
                     }],
                 }
             }

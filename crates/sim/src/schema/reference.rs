@@ -32,7 +32,7 @@ impl Schema for Reference {
                 metadata: vec![Metadata {
                     mtype: "skipped".into(),
                     attribute: None,
-                    message: "No effect events available".into(),
+                    value: None,
                 }],
             },
         }
