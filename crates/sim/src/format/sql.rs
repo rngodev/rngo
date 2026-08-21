@@ -1,7 +1,7 @@
 use serde_json::Value;
 use std::collections::HashMap;
 
-use crate::effect::EffectEvent;
+use crate::effect::Input;
 use crate::format::Format;
 use crate::parse::FormatParser;
 use crate::{ParseError, spec};
@@ -18,7 +18,7 @@ impl SqlFormat {
 }
 
 impl Format for SqlFormat {
-    fn format(&self, event: &EffectEvent) -> Result<String, String> {
+    fn format(&self, event: &Input) -> Result<String, String> {
         let table = self
             .effect_tables
             .get(&event.key)
@@ -104,8 +104,8 @@ mod tests {
     use chrono::Utc;
     use serde_json::json;
 
-    fn event(value: Value) -> EffectEvent {
-        EffectEvent {
+    fn event(value: Value) -> Input {
+        Input {
             id: 1,
             key: "user".to_string(),
             offset: 0,

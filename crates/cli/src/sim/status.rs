@@ -87,7 +87,7 @@ impl std::fmt::Debug for StatusLog {
 impl Log for StatusLog {
     fn push(&mut self, event: LogEvent) {
         match &event {
-            LogEvent::Effect(e) => {
+            LogEvent::Input(e) => {
                 self.last_timestamp = Some(e.timestamp);
                 if let Some(channel) = self.effect_channels.get(&e.key) {
                     self.stats.entry(channel.clone()).or_default().effects += 1;

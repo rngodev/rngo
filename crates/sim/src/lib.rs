@@ -13,7 +13,7 @@ mod util;
 
 pub use build::{BuildError, EffectKey, SchemaEdge, SimulationKey};
 pub use channel::Channel;
-pub use effect::{Effect, EffectEvent};
+pub use effect::{Effect, Input};
 pub use format::Format;
 pub use invariant::{InvariantError, InvariantOutcome};
 pub use log::{FsProxyLog, Log, LogEvent, LogReader, SimpleEventLog, SqliteProxyLog};

@@ -60,11 +60,11 @@ pub fn run(
     let channels = simulation.take_channels();
     let mut channel_dispatch = ChannelDispatch::new(&spec, channels, simulation.signal_tx())?;
 
-    for effect_event in &mut simulation {
+    for input_event in &mut simulation {
         if stdout {
-            println!("{}", serde_json::to_string(&effect_event)?);
+            println!("{}", serde_json::to_string(&input_event)?);
         } else {
-            channel_dispatch.send(&effect_event)?;
+            channel_dispatch.send(&input_event)?;
         }
     }
 
@@ -388,7 +388,7 @@ mod tests {
             base.join(".rngo/invariants/matches-effect-count.yml"),
             &json!({
                 "type": "sql",
-                "query": "SELECT (SELECT COUNT(*) FROM effects) - (SELECT COUNT(*) FROM signals)",
+                "query": "SELECT (SELECT COUNT(*) FROM inputs) - (SELECT COUNT(*) FROM signals)",
                 "expect": "result == 0"
             }),
         );
@@ -669,12 +669,12 @@ mod tests {
                 "invariants": {
                     "hasEvents": {
                         "type": "sql",
-                        "query": "SELECT COUNT(*) FROM effects",
+                        "query": "SELECT COUNT(*) FROM inputs",
                         "expect": "result >= 1"
                     },
                     "tooMany": {
                         "type": "sql",
-                        "query": "SELECT COUNT(*) FROM effects",
+                        "query": "SELECT COUNT(*) FROM inputs",
                         "expect": "result > 1000"
                     }
                 }
@@ -726,7 +726,7 @@ mod tests {
             base.join(".rngo/invariants/has-events.yml"),
             &json!({
                 "type": "sql",
-                "query": "SELECT COUNT(*) FROM effects",
+                "query": "SELECT COUNT(*) FROM inputs",
                 "expect": "result >= 1"
             }),
         );
@@ -797,7 +797,7 @@ mod tests {
             base.join(".rngo/invariants/tail-signals.yml"),
             &json!({
                 "type": "sql",
-                "query": "SELECT COUNT(*) FROM signals WHERE effect_id IS NULL AND channel = 'tail'",
+                "query": "SELECT COUNT(*) FROM signals WHERE input_id IS NULL AND channel = 'tail'",
                 "expect": "result == 2"
             }),
         );

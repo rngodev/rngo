@@ -1,6 +1,6 @@
 use chrono::Utc;
 use handlebars::Handlebars;
-use rngo_sim::{Channel, EffectEvent, Format, Level, Signal, spec};
+use rngo_sim::{Channel, Format, Input, Level, Signal, spec};
 use std::collections::HashMap;
 use std::error::Error;
 use std::io::{BufRead, BufReader, Write};
@@ -18,7 +18,7 @@ const SHUTDOWN_GRACE: Duration = Duration::from_millis(200);
 const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(5);
 
 /// Spawns each `stream` channel's subprocess for the lifetime of the simulation and each `exec`
-/// channel's Handlebars command template, then dispatches effect events to the channel an effect
+/// channel's Handlebars command template, then dispatches inputs to the channel an effect
 /// writes to. A channel with no effects writing to it (no `channel: <key>` reference) is still
 /// spawned if it's a `stream` channel, turning its stdout/stderr into signals with no associated
 /// effect - a non-interactive signal source.
@@ -89,7 +89,7 @@ impl ChannelDispatch {
                                     && !data.is_empty()
                                 {
                                     let _ = tx.send(Signal {
-                                        effect_id: None,
+                                        input_id: None,
                                         channel: channel_key.clone(),
                                         level: Level::Info,
                                         data,
@@ -109,7 +109,7 @@ impl ChannelDispatch {
                                     && !data.is_empty()
                                 {
                                     let _ = tx.send(Signal {
-                                        effect_id: None,
+                                        input_id: None,
                                         channel: channel_key.clone(),
                                         level: Level::Error,
                                         data,
@@ -139,8 +139,8 @@ impl ChannelDispatch {
         })
     }
 
-    pub fn send(&mut self, effect_event: &EffectEvent) -> Result<(), Box<dyn Error>> {
-        let channel_key = match self.effect_channels.get(&effect_event.key) {
+    pub fn send(&mut self, input_event: &Input) -> Result<(), Box<dyn Error>> {
+        let channel_key = match self.effect_channels.get(&input_event.key) {
             Some(k) => k.clone(),
             None => return Ok(()),
         };
@@ -148,13 +148,13 @@ impl ChannelDispatch {
         if let Some(stdin) = self.stdinpipes.get_mut(&channel_key) {
             let data = match self.formats.get(&channel_key) {
                 Some(format) => format
-                    .format(effect_event)
+                    .format(input_event)
                     .map_err(|e| format!("channel '{channel_key}': {e}"))?,
-                None => serde_json::to_string(&effect_event.value).unwrap(),
+                None => serde_json::to_string(&input_event.value).unwrap(),
             };
             writeln!(stdin, "{data}").map_err(|e| format!("channel '{channel_key}': {e}"))?;
         } else if self.hbs.has_template(&channel_key) {
-            let command = self.hbs.render(&channel_key, &effect_event.value)?;
+            let command = self.hbs.render(&channel_key, &input_event.value)?;
             let output = Command::new("sh")
                 .arg("-c")
                 .arg(&command)
@@ -173,7 +173,7 @@ impl ChannelDispatch {
                 {
                     if !line.is_empty() {
                         let _ = self.signal_tx.send(Signal {
-                            effect_id: Some(effect_event.id),
+                            input_id: Some(input_event.id),
                             channel: channel_key.clone(),
                             level,
                             data: line,
@@ -185,7 +185,7 @@ impl ChannelDispatch {
 
             if !output.status.success() {
                 let _ = self.signal_tx.send(Signal {
-                    effect_id: Some(effect_event.id),
+                    input_id: Some(input_event.id),
                     channel: channel_key.clone(),
                     level: Level::Error,
                     data: format!("command exited with {}", output.status),

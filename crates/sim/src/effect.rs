@@ -43,7 +43,7 @@ impl Effect {
 }
 
 impl Iterator for Effect {
-    type Item = Result<EffectEvent, SkippedEffectEvent>;
+    type Item = Result<Input, SkippedInput>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.next_offset()?;
@@ -62,7 +62,7 @@ impl Iterator for Effect {
         if let Some(value) = result.value {
             let last_id = self.event_log.last().map(|e| e.id).unwrap_or(0);
 
-            Some(Ok(EffectEvent {
+            Some(Ok(Input {
                 id: last_id + 1,
                 key: self.key.clone(),
                 offset,
@@ -71,7 +71,7 @@ impl Iterator for Effect {
                 metadata: result.metadata,
             }))
         } else {
-            Some(Err(SkippedEffectEvent {
+            Some(Err(SkippedInput {
                 key: self.key.clone(),
                 offset,
                 timestamp,
@@ -82,7 +82,7 @@ impl Iterator for Effect {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EffectEvent {
+pub struct Input {
     pub id: u64,
     pub key: String,
     pub offset: u64,
@@ -92,7 +92,7 @@ pub struct EffectEvent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SkippedEffectEvent {
+pub struct SkippedInput {
     pub key: String,
     pub offset: u64,
     pub timestamp: DateTime<FixedOffset>,

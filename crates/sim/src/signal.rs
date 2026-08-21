@@ -11,7 +11,7 @@ pub enum Level {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Signal {
-    pub effect_id: Option<u64>,
+    pub input_id: Option<u64>,
     pub timestamp: DateTime<Utc>,
     pub channel: String,
     pub level: Level,

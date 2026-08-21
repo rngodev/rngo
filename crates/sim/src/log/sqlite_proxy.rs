@@ -26,7 +26,7 @@ impl SqliteProxyLog {
                 PRAGMA journal_mode = WAL;
                 PRAGMA synchronous = NORMAL;
 
-                CREATE TABLE IF NOT EXISTS effects (
+                CREATE TABLE IF NOT EXISTS inputs (
                     id INTEGER NOT NULL,
                     key TEXT NOT NULL,
                     offset INTEGER NOT NULL,
@@ -34,7 +34,7 @@ impl SqliteProxyLog {
                 );
 
                 CREATE TABLE IF NOT EXISTS signals (
-                    effect_id INTEGER,
+                    input_id INTEGER,
                     timestamp TEXT NOT NULL,
                     channel TEXT NOT NULL,
                     level TEXT NOT NULL,
@@ -42,8 +42,8 @@ impl SqliteProxyLog {
                 );
 
                 CREATE TABLE IF NOT EXISTS metadata (
-                    effect_id INTEGER,
-                    effect_key TEXT,
+                    input_id INTEGER,
+                    input_key TEXT,
                     offset INTEGER,
                     type TEXT NOT NULL,
                     attribute TEXT,
@@ -78,20 +78,20 @@ impl SqliteProxyLog {
 
     fn insert_metadata(
         &mut self,
-        effect_id: Option<i64>,
-        effect_key: &str,
+        input_id: Option<i64>,
+        input_key: &str,
         offset: u64,
         metadata: &[Metadata],
     ) {
         for m in metadata {
             self.connection
                 .prepare_cached(
-                    "INSERT INTO metadata (effect_id, effect_key, offset, type, attribute, value) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    "INSERT INTO metadata (input_id, input_key, offset, type, attribute, value) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 )
                 .unwrap()
                 .execute(rusqlite::params![
-                    effect_id,
-                    effect_key,
+                    input_id,
+                    input_key,
                     offset as i64,
                     m.mtype,
                     m.attribute.as_ref().map(|a| a.to_string()),
@@ -105,10 +105,10 @@ impl SqliteProxyLog {
 impl Log for SqliteProxyLog {
     fn push(&mut self, event: LogEvent) {
         match &event {
-            LogEvent::Effect(e) => {
+            LogEvent::Input(e) => {
                 self.connection
                     .prepare_cached(
-                        "INSERT INTO effects (id, key, offset, value) VALUES (?1, ?2, ?3, ?4)",
+                        "INSERT INTO inputs (id, key, offset, value) VALUES (?1, ?2, ?3, ?4)",
                     )
                     .unwrap()
                     .execute(rusqlite::params![
@@ -127,11 +127,11 @@ impl Log for SqliteProxyLog {
             LogEvent::Signal(s) => {
                 self.connection
                     .prepare_cached(
-                        "INSERT INTO signals (effect_id, timestamp, channel, level, data) VALUES (?1, ?2, ?3, ?4, ?5)",
+                        "INSERT INTO signals (input_id, timestamp, channel, level, data) VALUES (?1, ?2, ?3, ?4, ?5)",
                     )
                     .unwrap()
                     .execute(rusqlite::params![
-                        s.effect_id.map(|id| id as i64),
+                        s.input_id.map(|id| id as i64),
                         s.timestamp.to_rfc3339(),
                         s.channel,
                         match s.level {
@@ -162,7 +162,7 @@ impl Drop for SqliteProxyLog {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::effect::{EffectEvent, SkippedEffectEvent};
+    use crate::effect::{Input, SkippedInput};
     use crate::log::SimpleEventLog;
     use crate::signal::Signal;
     use chrono::Utc;
@@ -173,14 +173,14 @@ mod tests {
     }
 
     #[test]
-    fn writes_effect_signal_and_metadata_rows() {
+    fn writes_input_signal_and_metadata_rows() {
         let tmp = TempDir::new().unwrap();
         let mut log = SqliteProxyLog::new(
             Box::new(SimpleEventLog::default()),
             tmp.path().to_path_buf(),
         );
 
-        log.push(LogEvent::Effect(EffectEvent {
+        log.push(LogEvent::Input(Input {
             id: 1,
             key: "ping".to_string(),
             offset: 42,
@@ -193,7 +193,7 @@ mod tests {
             }],
         }));
         log.push(LogEvent::Signal(Signal {
-            effect_id: Some(1),
+            input_id: Some(1),
             timestamp: Utc::now(),
             channel: "logger".to_string(),
             level: Level::Info,
@@ -205,10 +205,10 @@ mod tests {
 
         let conn = open(tmp.path());
 
-        let effect_key: String = conn
-            .query_row("SELECT key FROM effects", [], |row| row.get(0))
+        let input_key: String = conn
+            .query_row("SELECT key FROM inputs", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(effect_key, "ping");
+        assert_eq!(input_key, "ping");
 
         let signal_data: String = conn
             .query_row("SELECT data FROM signals", [], |row| row.get(0))
@@ -216,14 +216,14 @@ mod tests {
         assert_eq!(signal_data, "hello");
 
         let (
-            metadata_effect_id,
-            metadata_effect_key,
+            metadata_input_id,
+            metadata_input_key,
             metadata_offset,
             metadata_type,
             metadata_value,
         ): (i64, String, i64, String, String) = conn
             .query_row(
-                "SELECT effect_id, effect_key, offset, type, value FROM metadata",
+                "SELECT input_id, input_key, offset, type, value FROM metadata",
                 [],
                 |row| {
                     Ok((
@@ -236,8 +236,8 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(metadata_effect_id, 1);
-        assert_eq!(metadata_effect_key, "ping");
+        assert_eq!(metadata_input_id, 1);
+        assert_eq!(metadata_input_key, "ping");
         assert_eq!(metadata_offset, 42);
         assert_eq!(metadata_type, "error");
         assert_eq!(
@@ -247,14 +247,14 @@ mod tests {
     }
 
     #[test]
-    fn skipped_effects_write_metadata_with_no_effect_row() {
+    fn skipped_inputs_write_metadata_with_no_input_row() {
         let tmp = TempDir::new().unwrap();
         let mut log = SqliteProxyLog::new(
             Box::new(SimpleEventLog::default()),
             tmp.path().to_path_buf(),
         );
 
-        log.push(LogEvent::Skipped(SkippedEffectEvent {
+        log.push(LogEvent::Skipped(SkippedInput {
             key: "ping".to_string(),
             offset: 42,
             timestamp: Utc::now().fixed_offset(),
@@ -269,20 +269,20 @@ mod tests {
 
         let conn = open(tmp.path());
 
-        let effect_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM effects", [], |row| row.get(0))
+        let input_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM inputs", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(effect_count, 0);
+        assert_eq!(input_count, 0);
 
         let (
-            metadata_effect_id,
-            metadata_effect_key,
+            metadata_input_id,
+            metadata_input_key,
             metadata_offset,
             metadata_type,
             metadata_value,
         ): (Option<i64>, String, i64, String, Option<String>) = conn
             .query_row(
-                "SELECT effect_id, effect_key, offset, type, value FROM metadata",
+                "SELECT input_id, input_key, offset, type, value FROM metadata",
                 [],
                 |row| {
                     Ok((
@@ -295,8 +295,8 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(metadata_effect_id, None);
-        assert_eq!(metadata_effect_key, "ping");
+        assert_eq!(metadata_input_id, None);
+        assert_eq!(metadata_input_key, "ping");
         assert_eq!(metadata_offset, 42);
         assert_eq!(metadata_type, "skipped");
         assert_eq!(metadata_value, None);
@@ -311,7 +311,7 @@ mod tests {
         );
 
         for i in 0..(BATCH_SIZE * 2 + 3) {
-            log.push(LogEvent::Effect(EffectEvent {
+            log.push(LogEvent::Input(Input {
                 id: i as u64,
                 key: "ping".to_string(),
                 offset: i as u64,
@@ -324,7 +324,7 @@ mod tests {
 
         let conn = open(tmp.path());
         let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM effects", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM inputs", [], |row| row.get(0))
             .unwrap();
         assert_eq!(count, (BATCH_SIZE * 2 + 3) as i64);
     }

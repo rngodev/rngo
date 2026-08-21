@@ -1,7 +1,7 @@
 use crate::Signal;
 use crate::build::{BuildError, SimulationKey};
 use crate::channel::Channel;
-use crate::effect::{Effect, EffectBuilder, EffectEvent};
+use crate::effect::{Effect, EffectBuilder, Input};
 use crate::log::{Log, SimpleEventLog};
 use crate::util::time::Moment;
 use chrono::{TimeDelta, Utc};
@@ -53,7 +53,7 @@ impl Simulation {
 }
 
 impl Iterator for Simulation {
-    type Item = EffectEvent;
+    type Item = Input;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.drain_signals();
@@ -67,10 +67,10 @@ impl Iterator for Simulation {
                 .sort_unstable_by_key(|e| e.next_offset().unwrap_or(u64::MAX));
 
             match self.effects.first_mut()?.next()? {
-                Ok(effect_event) => {
+                Ok(input_event) => {
                     self.emitted += 1;
-                    self.event_log.push(effect_event.clone().into());
-                    return Some(effect_event);
+                    self.event_log.push(input_event.clone().into());
+                    return Some(input_event);
                 }
                 Err(skipped_event) => {
                     self.emitted += 1;

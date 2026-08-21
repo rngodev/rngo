@@ -23,9 +23,9 @@ impl Reference {
 impl Schema for Reference {
     fn next(&mut self, _context: &SchemaContext) -> SchemaResult {
         match self.index.sample() {
-            Some(effect_event) => SchemaResult {
-                value: Some(effect_event.value.clone()),
-                metadata: effect_event.metadata.clone(),
+            Some(input_event) => SchemaResult {
+                value: Some(input_event.value.clone()),
+                metadata: input_event.metadata.clone(),
             },
             None => SchemaResult {
                 value: None,
