@@ -34,7 +34,7 @@ pub struct Simulation {
     #[serde(default)]
     pub schemas: IndexMap<String, SchemaType>,
     #[serde(default)]
-    pub invariants: IndexMap<String, Invariant>,
+    pub signals: IndexMap<String, Signal>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -105,6 +105,6 @@ pub enum ChannelTarget {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
-pub enum Invariant {
+pub enum Signal {
     Sql { query: String, expect: String },
 }

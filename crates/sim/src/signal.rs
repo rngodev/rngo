@@ -9,45 +9,45 @@ use std::path::Path;
 use thiserror::Error;
 
 #[derive(Clone, Debug, Serialize)]
-pub struct InvariantOutcome {
+pub struct SignalOutcome {
     pub value: serde_json::Value,
     pub passed: bool,
 }
 
 #[derive(Debug, Error)]
-pub enum InvariantError {
+pub enum SignalError {
     #[error("failed to open log database: {0}")]
     OpenLog(String),
-    #[error("invariant `{key}`: query failed: {message}")]
+    #[error("signal `{key}`: query failed: {message}")]
     Query { key: String, message: String },
-    #[error("invariant `{key}`: query returned a blob, which is not a supported result type")]
+    #[error("signal `{key}`: query returned a blob, which is not a supported result type")]
     UnsupportedValue { key: String },
-    #[error("invariant `{key}`: expect expression failed to compile: {message}")]
+    #[error("signal `{key}`: expect expression failed to compile: {message}")]
     ExpectCompile { key: String, message: String },
-    #[error("invariant `{key}`: expect expression failed to evaluate: {message}")]
+    #[error("signal `{key}`: expect expression failed to evaluate: {message}")]
     ExpectEval { key: String, message: String },
-    #[error("invariant `{key}`: expect expression must evaluate to a bool, got {value:?}")]
+    #[error("signal `{key}`: expect expression must evaluate to a bool, got {value:?}")]
     ExpectNotBool { key: String, value: cel::Value },
 }
 
 pub fn evaluate_from_log(
     log_path: &Path,
-    invariants: &IndexMap<String, spec::Invariant>,
-) -> Result<IndexMap<String, InvariantOutcome>, Vec<InvariantError>> {
+    signals: &IndexMap<String, spec::Signal>,
+) -> Result<IndexMap<String, SignalOutcome>, Vec<SignalError>> {
     let connection =
-        Connection::open(log_path).map_err(|e| vec![InvariantError::OpenLog(e.to_string())])?;
-    evaluate(&connection, invariants)
+        Connection::open(log_path).map_err(|e| vec![SignalError::OpenLog(e.to_string())])?;
+    evaluate(&connection, signals)
 }
 
 fn evaluate(
     connection: &Connection,
-    invariants: &IndexMap<String, spec::Invariant>,
-) -> Result<IndexMap<String, InvariantOutcome>, Vec<InvariantError>> {
+    signals: &IndexMap<String, spec::Signal>,
+) -> Result<IndexMap<String, SignalOutcome>, Vec<SignalError>> {
     let mut outcomes = IndexMap::new();
     let mut errors = vec![];
 
-    for (key, invariant) in invariants {
-        match evaluate_one(connection, key, invariant) {
+    for (key, signal) in signals {
+        match evaluate_one(connection, key, signal) {
             Ok(outcome) => {
                 outcomes.insert(key.clone(), outcome);
             }
@@ -65,22 +65,22 @@ fn evaluate(
 fn evaluate_one(
     connection: &Connection,
     key: &str,
-    invariant: &spec::Invariant,
-) -> Result<InvariantOutcome, InvariantError> {
-    let spec::Invariant::Sql { query, expect } = invariant;
+    signal: &spec::Signal,
+) -> Result<SignalOutcome, SignalError> {
+    let spec::Signal::Sql { query, expect } = signal;
 
     let sql_value = connection
         .query_row(query, [], |row| row.get::<_, SqlValue>(0))
-        .map_err(|e| InvariantError::Query {
+        .map_err(|e| SignalError::Query {
             key: key.to_string(),
             message: e.to_string(),
         })?;
 
-    let value = sql_value_to_json(sql_value).ok_or_else(|| InvariantError::UnsupportedValue {
+    let value = sql_value_to_json(sql_value).ok_or_else(|| SignalError::UnsupportedValue {
         key: key.to_string(),
     })?;
 
-    let program = Program::compile(expect).map_err(|e| InvariantError::ExpectCompile {
+    let program = Program::compile(expect).map_err(|e| SignalError::ExpectCompile {
         key: key.to_string(),
         message: e.to_string(),
     })?;
@@ -88,24 +88,22 @@ fn evaluate_one(
     let mut ctx = Context::default();
     ctx.add_variable_from_value("result", json_to_cel(value.clone()));
 
-    let result = program
-        .execute(&ctx)
-        .map_err(|e| InvariantError::ExpectEval {
-            key: key.to_string(),
-            message: e.to_string(),
-        })?;
+    let result = program.execute(&ctx).map_err(|e| SignalError::ExpectEval {
+        key: key.to_string(),
+        message: e.to_string(),
+    })?;
 
     let passed = match result {
         cel::Value::Bool(b) => b,
         other => {
-            return Err(InvariantError::ExpectNotBool {
+            return Err(SignalError::ExpectNotBool {
                 key: key.to_string(),
                 value: other,
             });
         }
     };
 
-    Ok(InvariantOutcome { value, passed })
+    Ok(SignalOutcome { value, passed })
 }
 
 fn sql_value_to_json(value: SqlValue) -> Option<serde_json::Value> {
@@ -135,11 +133,11 @@ mod tests {
         connection
     }
 
-    fn invariant(query: &str, expect: &str) -> IndexMap<String, spec::Invariant> {
+    fn signal(query: &str, expect: &str) -> IndexMap<String, spec::Signal> {
         let mut map = IndexMap::new();
         map.insert(
             "check".to_string(),
-            spec::Invariant::Sql {
+            spec::Signal::Sql {
                 query: query.to_string(),
                 expect: expect.to_string(),
             },
@@ -148,28 +146,28 @@ mod tests {
     }
 
     #[test]
-    fn passing_invariant() {
+    fn passing_signal() {
         let connection = connection_with_outputs();
-        let invariants = invariant(
+        let signals = signal(
             "SELECT COUNT(*) FROM outputs WHERE status = 200",
             "result == 2",
         );
 
-        let outcomes = evaluate(&connection, &invariants).unwrap();
+        let outcomes = evaluate(&connection, &signals).unwrap();
         let outcome = &outcomes["check"];
         assert_eq!(outcome.value, serde_json::json!(2));
         assert!(outcome.passed);
     }
 
     #[test]
-    fn failing_invariant() {
+    fn failing_signal() {
         let connection = connection_with_outputs();
-        let invariants = invariant(
+        let signals = signal(
             "SELECT COUNT(*) FROM outputs WHERE status = 500",
             "result == 0",
         );
 
-        let outcomes = evaluate(&connection, &invariants).unwrap();
+        let outcomes = evaluate(&connection, &signals).unwrap();
         let outcome = &outcomes["check"];
         assert_eq!(outcome.value, serde_json::json!(1));
         assert!(!outcome.passed);
@@ -178,27 +176,27 @@ mod tests {
     #[test]
     fn range_expression() {
         let connection = connection_with_outputs();
-        let invariants = invariant("SELECT COUNT(*) FROM outputs", "result >= 2 && result <= 5");
+        let signals = signal("SELECT COUNT(*) FROM outputs", "result >= 2 && result <= 5");
 
-        let outcomes = evaluate(&connection, &invariants).unwrap();
+        let outcomes = evaluate(&connection, &signals).unwrap();
         assert!(outcomes["check"].passed);
     }
 
     #[test]
     fn invalid_query_reports_error() {
         let connection = connection_with_outputs();
-        let invariants = invariant("SELECT COUNT(*) FROM missing_table", "result == 0");
+        let signals = signal("SELECT COUNT(*) FROM missing_table", "result == 0");
 
-        let errors = evaluate(&connection, &invariants).unwrap_err();
-        assert!(matches!(errors[0], InvariantError::Query { .. }));
+        let errors = evaluate(&connection, &signals).unwrap_err();
+        assert!(matches!(errors[0], SignalError::Query { .. }));
     }
 
     #[test]
     fn non_bool_expect_reports_error() {
         let connection = connection_with_outputs();
-        let invariants = invariant("SELECT COUNT(*) FROM outputs", "result");
+        let signals = signal("SELECT COUNT(*) FROM outputs", "result");
 
-        let errors = evaluate(&connection, &invariants).unwrap_err();
-        assert!(matches!(errors[0], InvariantError::ExpectNotBool { .. }));
+        let errors = evaluate(&connection, &signals).unwrap_err();
+        assert!(matches!(errors[0], SignalError::ExpectNotBool { .. }));
     }
 }
