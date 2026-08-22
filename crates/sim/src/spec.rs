@@ -106,5 +106,9 @@ pub enum ChannelTarget {
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
 pub enum Signal {
-    Sql { query: String, expect: String },
+    Sql {
+        query: String,
+        #[serde(default)]
+        expect: Option<String>,
+    },
 }

@@ -80,6 +80,13 @@ fn evaluate_one(
         key: key.to_string(),
     })?;
 
+    let Some(expect) = expect else {
+        return Ok(SignalOutcome {
+            value,
+            passed: true,
+        });
+    };
+
     let program = Program::compile(expect).map_err(|e| SignalError::ExpectCompile {
         key: key.to_string(),
         message: e.to_string(),
@@ -139,7 +146,19 @@ mod tests {
             "check".to_string(),
             spec::Signal::Sql {
                 query: query.to_string(),
-                expect: expect.to_string(),
+                expect: Some(expect.to_string()),
+            },
+        );
+        map
+    }
+
+    fn signal_without_expect(query: &str) -> IndexMap<String, spec::Signal> {
+        let mut map = IndexMap::new();
+        map.insert(
+            "check".to_string(),
+            spec::Signal::Sql {
+                query: query.to_string(),
+                expect: None,
             },
         );
         map
@@ -171,6 +190,17 @@ mod tests {
         let outcome = &outcomes["check"];
         assert_eq!(outcome.value, serde_json::json!(1));
         assert!(!outcome.passed);
+    }
+
+    #[test]
+    fn missing_expect_always_passes() {
+        let connection = connection_with_outputs();
+        let signals = signal_without_expect("SELECT COUNT(*) FROM outputs WHERE status = 500");
+
+        let outcomes = evaluate(&connection, &signals).unwrap();
+        let outcome = &outcomes["check"];
+        assert_eq!(outcome.value, serde_json::json!(1));
+        assert!(outcome.passed);
     }
 
     #[test]

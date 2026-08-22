@@ -88,16 +88,30 @@ pub fn run(
 
         println!();
         println!("{}", style("Audit").bold());
-        let passed = outcomes.values().filter(|o| o.passed).count();
-        println!("{passed}/{} signals passed", outcomes.len());
+
+        let mut checked = 0;
+        let mut passed = 0;
 
         for (key, outcome) in &outcomes {
-            if outcome.passed {
-                continue;
-            }
-            all_passed = false;
             let spec::Signal::Sql { expect, .. } = &spec.signals[key];
-            println!("{key} failed - got {}, expected '{expect}'", outcome.value);
+            match expect {
+                Some(expect) => {
+                    checked += 1;
+                    if outcome.passed {
+                        passed += 1;
+                        println!("{key}: {} (passed)", outcome.value);
+                    } else {
+                        all_passed = false;
+                        println!("{key}: {} (failed - expected '{expect}')", outcome.value);
+                    }
+                }
+                None => println!("{key}: {}", outcome.value),
+            }
+        }
+
+        if checked > 0 {
+            println!("{passed} passed");
+            println!("{} failed", checked - passed);
         }
     }
 

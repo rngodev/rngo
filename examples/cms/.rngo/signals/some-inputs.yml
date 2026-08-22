@@ -1,4 +1,4 @@
 type: sql
 query: >
-  select count(*) from effects;
+  select count(*) from inputs;
 expect: result > 0
