@@ -9,14 +9,14 @@ fn assert_simulation(simulation: Simulation) {
 
     let user_events: Vec<_> = events
         .iter()
-        .filter(|e| e.key == "user")
-        .map(|e| &e.value)
+        .filter(|e| e.effect == "user")
+        .map(|e| &e.data)
         .collect();
 
     let post_events: Vec<_> = events
         .iter()
-        .filter(|e| e.key == "post")
-        .map(|e| &e.value)
+        .filter(|e| e.effect == "post")
+        .map(|e| &e.data)
         .collect();
 
     assert!(!user_events.is_empty(), "expected user events");

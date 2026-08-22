@@ -26,16 +26,16 @@ fn reference_with_no_prior_events_is_skipped_not_logged() {
     );
 
     let conn = Connection::open(tmp.path().join("log.sqlite")).unwrap();
-    let effect_count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM effects", [], |row| row.get(0))
+    let input_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM inputs", [], |row| row.get(0))
         .unwrap();
     let metadata_count: i64 = conn
         .query_row("SELECT COUNT(*) FROM metadata", [], |row| row.get(0))
         .unwrap();
 
     assert_eq!(
-        effect_count, 0,
-        "skipped occurrences must not be logged as effects"
+        input_count, 0,
+        "skipped occurrences must not be logged as inputs"
     );
     assert!(
         metadata_count > 0,

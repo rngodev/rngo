@@ -58,46 +58,60 @@ pub fn run(
 
     let mut simulation = simulation_builder.log(log).build().map_err(join_errors)?;
     let channels = simulation.take_channels();
-    let mut channel_dispatch = ChannelDispatch::new(&spec, channels, simulation.signal_tx())?;
+    let mut channel_dispatch = ChannelDispatch::new(&spec, channels, simulation.output_tx())?;
 
-    for effect_event in &mut simulation {
+    for input_event in &mut simulation {
         if stdout {
-            println!("{}", serde_json::to_string(&effect_event)?);
+            println!("{}", serde_json::to_string(&input_event)?);
         } else {
-            channel_dispatch.send(&effect_event)?;
+            channel_dispatch.send(&input_event)?;
         }
     }
 
     // Closes stdin on every stream channel (triggering exit for those that react to EOF) and
-    // kills any stragglers - including signal-source channels with no natural end - after a
-    // grace period; `simulation.finish()` drains the trailing signals this produces and drops
-    // the simulation, committing the event log before invariants are evaluated below.
+    // kills any stragglers - including output-source channels with no natural end - after a
+    // grace period; `simulation.finish()` drains the trailing outputs this produces and drops
+    // the simulation, committing the event log before signals are evaluated below.
     channel_dispatch.finish()?;
     simulation.finish();
 
     let mut all_passed = true;
 
-    if !spec.invariants.is_empty() {
+    if !spec.signals.is_empty() {
         let outcomes =
-            rngo_sim::invariant::evaluate_from_log(&run_dir.join("log.sqlite"), &spec.invariants)
+            rngo_sim::signal::evaluate_from_log(&run_dir.join("log.sqlite"), &spec.signals)
                 .map_err(join_errors)?;
         fs::write(
-            run_dir.join("invariants.json"),
+            run_dir.join("signals.json"),
             serde_json::to_string_pretty(&outcomes)?,
         )?;
 
         println!();
         println!("{}", style("Audit").bold());
-        let passed = outcomes.values().filter(|o| o.passed).count();
-        println!("{passed}/{} invariants passed", outcomes.len());
+
+        let mut checked = 0;
+        let mut passed = 0;
 
         for (key, outcome) in &outcomes {
-            if outcome.passed {
-                continue;
+            let spec::Signal::Sql { expect, .. } = &spec.signals[key];
+            match expect {
+                Some(expect) => {
+                    checked += 1;
+                    if outcome.passed {
+                        passed += 1;
+                        println!("{key}: {} (passed)", outcome.value);
+                    } else {
+                        all_passed = false;
+                        println!("{key}: {} (failed - expected '{expect}')", outcome.value);
+                    }
+                }
+                None => println!("{key}: {}", outcome.value),
             }
-            all_passed = false;
-            let spec::Invariant::Sql { expect, .. } = &spec.invariants[key];
-            println!("{key} failed - got {}, expected '{expect}'", outcome.value);
+        }
+
+        if checked > 0 {
+            println!("{passed} passed");
+            println!("{} failed", checked - passed);
         }
     }
 
@@ -190,13 +204,13 @@ fn load_spec(base: &Path) -> Result<spec::Simulation, Box<dyn Error>> {
         }
     }
 
-    if !spec["invariants"].is_object() {
-        spec["invariants"] = serde_json::json!({});
+    if !spec["signals"].is_object() {
+        spec["signals"] = serde_json::json!({});
     }
 
-    let invariants_dir = base.join(".rngo/invariants");
-    if invariants_dir.is_dir() {
-        let mut paths: Vec<_> = fs::read_dir(&invariants_dir)?
+    let signals_dir = base.join(".rngo/signals");
+    if signals_dir.is_dir() {
+        let mut paths: Vec<_> = fs::read_dir(&signals_dir)?
             .filter_map(|e| e.ok())
             .map(|e| e.path())
             .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("yml"))
@@ -209,8 +223,8 @@ fn load_spec(base: &Path) -> Result<spec::Simulation, Box<dyn Error>> {
                 .and_then(|s| s.to_str())
                 .ok_or_else(|| format!("invalid filename: {}", path.display()))?
                 .to_string();
-            let invariant: serde_json::Value = serde_yaml::from_str(&fs::read_to_string(&path)?)?;
-            spec["invariants"][key] = invariant;
+            let signal: serde_json::Value = serde_yaml::from_str(&fs::read_to_string(&path)?)?;
+            spec["signals"][key] = signal;
         }
     }
 
@@ -306,13 +320,13 @@ mod tests {
     }
 
     #[test]
-    fn exec_target_records_signal_when_command_fails() {
+    fn exec_target_records_output_when_command_fails() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
         fs::create_dir_all(base.join(".rngo/effects")).unwrap();
         fs::create_dir_all(base.join(".rngo/channels")).unwrap();
-        fs::create_dir_all(base.join(".rngo/invariants")).unwrap();
+        fs::create_dir_all(base.join(".rngo/signals")).unwrap();
 
         write_yaml(
             base.join(".rngo/spec.yml"),
@@ -324,10 +338,10 @@ mod tests {
         );
 
         write_yaml(
-            base.join(".rngo/invariants/has-failure-signal.yml"),
+            base.join(".rngo/signals/has-failure-output.yml"),
             &json!({
                 "type": "sql",
-                "query": "SELECT COUNT(*) FROM signals WHERE data LIKE 'command exited with%'",
+                "query": "SELECT COUNT(*) FROM outputs WHERE data LIKE 'command exited with%'",
                 "expect": "result >= 1"
             }),
         );
@@ -356,21 +370,21 @@ mod tests {
 
         run(base, false, None, false, None).unwrap();
 
-        let invariants_path = base.join(".rngo/runs/last/invariants.json");
-        let content = fs::read_to_string(&invariants_path).unwrap();
+        let signals_path = base.join(".rngo/runs/last/signals.json");
+        let content = fs::read_to_string(&signals_path).unwrap();
         let value: serde_json::Value = serde_json::from_str(&content).unwrap();
 
-        assert_eq!(value["has-failure-signal"]["passed"], true);
+        assert_eq!(value["has-failure-output"]["passed"], true);
     }
 
     #[test]
-    fn stream_target_does_not_drop_trailing_signal() {
+    fn stream_target_does_not_drop_trailing_output() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
         fs::create_dir_all(base.join(".rngo/effects")).unwrap();
         fs::create_dir_all(base.join(".rngo/channels")).unwrap();
-        fs::create_dir_all(base.join(".rngo/invariants")).unwrap();
+        fs::create_dir_all(base.join(".rngo/signals")).unwrap();
 
         write_yaml(
             base.join(".rngo/spec.yml"),
@@ -382,13 +396,13 @@ mod tests {
         );
 
         // Every event fed to `cat` is echoed straight back out over stdout, so the number of
-        // signals recorded should match the number of effects exactly - including the one
+        // outputs recorded should match the number of effects exactly - including the one
         // produced by the very last event, which arrives only after the subprocess is closed.
         write_yaml(
-            base.join(".rngo/invariants/matches-effect-count.yml"),
+            base.join(".rngo/signals/matches-effect-count.yml"),
             &json!({
                 "type": "sql",
-                "query": "SELECT (SELECT COUNT(*) FROM effects) - (SELECT COUNT(*) FROM signals)",
+                "query": "SELECT (SELECT COUNT(*) FROM inputs) - (SELECT COUNT(*) FROM outputs)",
                 "expect": "result == 0"
             }),
         );
@@ -417,13 +431,13 @@ mod tests {
 
         run(base, false, None, false, None).unwrap();
 
-        let invariants_path = base.join(".rngo/runs/last/invariants.json");
-        let content = fs::read_to_string(&invariants_path).unwrap();
+        let signals_path = base.join(".rngo/runs/last/signals.json");
+        let content = fs::read_to_string(&signals_path).unwrap();
         let value: serde_json::Value = serde_json::from_str(&content).unwrap();
 
         assert_eq!(
             value["matches-effect-count"]["passed"], true,
-            "expected signal count to match effect count, got {value}"
+            "expected output count to match effect count, got {value}"
         );
     }
 
@@ -654,7 +668,7 @@ mod tests {
     }
 
     #[test]
-    fn invariants_are_evaluated_and_written_to_run_dir() {
+    fn signals_are_evaluated_and_written_to_run_dir() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
@@ -666,15 +680,15 @@ mod tests {
                 "seed": 1,
                 "start": "2024-01-01",
                 "end": "2024-01-04",
-                "invariants": {
+                "signals": {
                     "hasEvents": {
                         "type": "sql",
-                        "query": "SELECT COUNT(*) FROM effects",
+                        "query": "SELECT COUNT(*) FROM inputs",
                         "expect": "result >= 1"
                     },
                     "tooMany": {
                         "type": "sql",
-                        "query": "SELECT COUNT(*) FROM effects",
+                        "query": "SELECT COUNT(*) FROM inputs",
                         "expect": "result > 1000"
                     }
                 }
@@ -696,8 +710,8 @@ mod tests {
 
         run(base, false, None, false, None).unwrap();
 
-        let invariants_path = base.join(".rngo/runs/last/invariants.json");
-        let content = fs::read_to_string(&invariants_path).unwrap();
+        let signals_path = base.join(".rngo/runs/last/signals.json");
+        let content = fs::read_to_string(&signals_path).unwrap();
         let value: serde_json::Value = serde_json::from_str(&content).unwrap();
 
         assert_eq!(value["hasEvents"]["passed"], true);
@@ -706,12 +720,12 @@ mod tests {
     }
 
     #[test]
-    fn invariants_dir_yml_files_are_merged_into_spec() {
+    fn signals_dir_yml_files_are_merged_into_spec() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
         fs::create_dir_all(base.join(".rngo/effects")).unwrap();
-        fs::create_dir_all(base.join(".rngo/invariants")).unwrap();
+        fs::create_dir_all(base.join(".rngo/signals")).unwrap();
 
         write_yaml(
             base.join(".rngo/spec.yml"),
@@ -723,10 +737,10 @@ mod tests {
         );
 
         write_yaml(
-            base.join(".rngo/invariants/has-events.yml"),
+            base.join(".rngo/signals/has-events.yml"),
             &json!({
                 "type": "sql",
-                "query": "SELECT COUNT(*) FROM effects",
+                "query": "SELECT COUNT(*) FROM inputs",
                 "expect": "result >= 1"
             }),
         );
@@ -746,21 +760,21 @@ mod tests {
 
         run(base, false, None, false, None).unwrap();
 
-        let invariants_path = base.join(".rngo/runs/last/invariants.json");
-        let content = fs::read_to_string(&invariants_path).unwrap();
+        let signals_path = base.join(".rngo/runs/last/signals.json");
+        let content = fs::read_to_string(&signals_path).unwrap();
         let value: serde_json::Value = serde_json::from_str(&content).unwrap();
 
         assert_eq!(value["has-events"]["passed"], true);
     }
 
     #[test]
-    fn channel_with_no_effects_is_a_signal_source() {
+    fn channel_with_no_effects_is_an_output_source() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
         fs::create_dir_all(base.join(".rngo/effects")).unwrap();
         fs::create_dir_all(base.join(".rngo/channels")).unwrap();
-        fs::create_dir_all(base.join(".rngo/invariants")).unwrap();
+        fs::create_dir_all(base.join(".rngo/signals")).unwrap();
 
         write_yaml(
             base.join(".rngo/spec.yml"),
@@ -784,8 +798,8 @@ mod tests {
             }),
         );
 
-        // No effect sets `channel: tail`, so this channel is a pure signal source: its subprocess
-        // still runs for the duration of the simulation and its output becomes signals.
+        // No effect sets `channel: tail`, so this channel is a pure output source: its subprocess
+        // still runs for the duration of the simulation and its output becomes outputs.
         write_yaml(
             base.join(".rngo/channels/tail.yml"),
             &json!({
@@ -794,23 +808,23 @@ mod tests {
         );
 
         write_yaml(
-            base.join(".rngo/invariants/tail-signals.yml"),
+            base.join(".rngo/signals/tail-outputs.yml"),
             &json!({
                 "type": "sql",
-                "query": "SELECT COUNT(*) FROM signals WHERE effect_id IS NULL AND channel = 'tail'",
+                "query": "SELECT COUNT(*) FROM outputs WHERE input_id IS NULL AND channel = 'tail'",
                 "expect": "result == 2"
             }),
         );
 
         run(base, false, None, false, None).unwrap();
 
-        let invariants_path = base.join(".rngo/runs/last/invariants.json");
-        let content = fs::read_to_string(&invariants_path).unwrap();
+        let signals_path = base.join(".rngo/runs/last/signals.json");
+        let content = fs::read_to_string(&signals_path).unwrap();
         let value: serde_json::Value = serde_json::from_str(&content).unwrap();
 
         assert_eq!(
-            value["tail-signals"]["passed"], true,
-            "expected 2 signals from the effect-less channel, got {value}"
+            value["tail-outputs"]["passed"], true,
+            "expected 2 outputs from the effect-less channel, got {value}"
         );
     }
 

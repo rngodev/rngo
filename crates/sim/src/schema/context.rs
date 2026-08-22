@@ -23,8 +23,8 @@ impl Context {
 impl Schema for Context {
     fn next(&mut self, context: &SchemaContext) -> SchemaResult {
         match self.path {
-            ContextPath::TriggerEvent => match &context.trigger.effect_event {
-                Some(effect_event) => match serde_json::to_value(effect_event.as_ref()) {
+            ContextPath::TriggerEvent => match &context.trigger.input_event {
+                Some(input_event) => match serde_json::to_value(input_event.as_ref()) {
                     Ok(value) => SchemaResult {
                         value: Some(value),
                         metadata: vec![],
@@ -63,7 +63,7 @@ fn error_result(message: impl Into<String>) -> SchemaResult {
         metadata: vec![Metadata {
             mtype: "error".into(),
             attribute: None,
-            value: Some(serde_json::json!({ "message": message.into() })),
+            data: Some(serde_json::json!({ "message": message.into() })),
         }],
     }
 }

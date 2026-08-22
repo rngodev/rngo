@@ -35,17 +35,15 @@ The workspace has two crates:
 
 2. **Dialect::parse_simulation** (`spec/parse.rs`): Converts a `spec::Simulation` into a `SimulationBuilder` by dispatching each effect's schema to a matching `SchemaParser` and each effect's format to a matching `FormatParser`. `Dialect::core()` registers all built-in parsers.
 
-3. **Simulation** (`simulation.rs`): An `Iterator<Item = Event>`. Each call to `next()` sorts all `Effect`s by their next timestamp offset and advances the earliest one.
+3. **Simulation** (`simulation.rs`): An `Iterator<Item = Input>`. Each call to `next()` sorts all `Effect`s by their next timestamp offset and advances the earliest one.
 
-4. **Effect** (`effect.rs`): Also an `Iterator<Item = Event>`. Driven by a `Trigger` (either a `Clock` for time-based firing or another `Effect` for dependency-based firing) and a `Schema` for generating values.
-
-5. **Event** (`event.rs`): Either `Event::Effect { id, key, offset, value, format }` or `Event::Error { id, message }`.
+4. **Effect** (`effect.rs`): Also an iterator, yielding `Result<Input, SkippedInput>`. Driven by a `Trigger` (either a `Clock` for time-based firing or another `Effect` for dependency-based firing) and a `Schema` for generating values. `Input` (`{ id, effect, offset, timestamp, data, metadata }`) is the event an effect produces each time it fires.
 
 ### CLI run loop (`cli/src/sim/run.rs`)
 
 - Loads spec, creates a run directory at `.rngo/runs/<UUID>/`, writes `spec.json` snapshot and initializes a `log.sqlite` SQLite database.
-- Without `--stdout`: writes each `Event::Effect` to the `effects` table in the SQLite database and dispatches to any assigned channel via `ChannelDispatch`.
-- With `--stdout`: serializes all events (including errors) to stdout.
+- Without `--stdout`: writes each `Input` to the `inputs` table in the SQLite database and dispatches to any assigned channel via `ChannelDispatch`.
+- With `--stdout`: serializes all input events to stdout.
 
 ### Channel targets (`cli/src/sim/channel.rs`)
 
@@ -53,12 +51,12 @@ The workspace has two crates:
 - `stream`: spawns one long-lived subprocess per channel, writes formatted event lines to its stdin.
 - `exec`: runs a fresh `sh -c <command>` per event; the command string is a Handlebars template rendered with the event's JSON value.
 
-An effect opts into a channel by setting `channel: <channel-key>`. The format used is resolved by merging the effect-level `format` over the channel-level `format`. A `stream` channel with no effects writing to it is still spawned for the run's duration, but only as a signal source (e.g. tailing a log file) - there is no separate "signal" concept.
+An effect opts into a channel by setting `channel: <channel-key>`. The format used is resolved by merging the effect-level `format` over the channel-level `format`. A `stream` channel with no effects writing to it is still spawned for the run's duration, but only as an output source (e.g. tailing a log file) - its stdout/stderr lines still become `Output` events, just with no associated effect.
 
 ### Schema types (all in `sim/src/schema/`)
 
 `Array`, `Constant`, `Context`, `Function`, `Number`, `Object`, `Reference`, `Select`, `Str`. Each implements `SchemaBuilder` (parse-time) and `Schema` (run-time). Builder factory functions are re-exported from `sim/src/build.rs`.
 
-### EventLog (`sim/src/event/log.rs`)
+### Log (`sim/src/log.rs`)
 
-A shared `Rc<dyn EventLog>` is threaded through all effects so that `Reference` and trigger-by-effect can look up previously emitted events. `SimpleEventLog` is the only implementation.
+A shared `Rc<dyn LogReader>` is threaded through all effects so that `Reference` and trigger-by-effect can look up previously emitted input events (`LogEvent::Input`). `SimpleEventLog` is the in-memory implementation used for this; `FsProxyLog` and `SqliteProxyLog` wrap a child `Log` to additionally persist events to disk.

@@ -1,5 +1,5 @@
 use super::clock::Clock;
-use crate::effect::EffectEvent;
+use crate::effect::Input;
 use crate::log::LogIndex;
 use std::rc::Rc;
 
@@ -12,7 +12,7 @@ pub enum TriggerConfig {
 
 pub struct TriggerEvent {
     pub sim_offset: u64,
-    pub effect_event: Option<Rc<EffectEvent>>,
+    pub input_event: Option<Rc<Input>>,
 }
 
 #[derive(Debug)]
@@ -34,9 +34,9 @@ impl Trigger {
             Trigger::Effect {
                 index, last_offset, ..
             } => {
-                if let Some(effect_event) = index.sample() {
-                    if &effect_event.offset > last_offset {
-                        Some(effect_event.offset)
+                if let Some(input_event) = index.sample() {
+                    if &input_event.offset > last_offset {
+                        Some(input_event.offset)
                     } else {
                         None
                     }
@@ -52,11 +52,11 @@ impl Trigger {
             Trigger::Effect {
                 index, last_offset, ..
             } => {
-                if let Some(effect_event) = index.sample() {
-                    *last_offset = effect_event.offset;
+                if let Some(input_event) = index.sample() {
+                    *last_offset = input_event.offset;
                     Some(TriggerEvent {
-                        sim_offset: effect_event.offset,
-                        effect_event: Some(effect_event.clone()),
+                        sim_offset: input_event.offset,
+                        input_event: Some(input_event.clone()),
                     })
                 } else {
                     None
@@ -66,7 +66,7 @@ impl Trigger {
                 if let Some(offset) = next_offset {
                     let event = TriggerEvent {
                         sim_offset: *offset,
-                        effect_event: None,
+                        input_event: None,
                     };
 
                     *next_offset = clock.next();

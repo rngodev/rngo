@@ -66,7 +66,7 @@ impl Schema for Function {
                 metadata.push(Metadata {
                     mtype: "error".into(),
                     attribute: None,
-                    value: Some(serde_json::json!({ "message": e.to_string() })),
+                    data: Some(serde_json::json!({ "message": e.to_string() })),
                 });
                 SchemaResult {
                     value: None,

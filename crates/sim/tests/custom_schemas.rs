@@ -66,11 +66,11 @@ fn resolves_custom_schema_independently_per_effect() {
     let simulation = build(json).unwrap();
     let events: Vec<_> = simulation.take(20).collect();
 
-    assert!(events.iter().any(|e| e.key == "a"));
-    assert!(events.iter().any(|e| e.key == "b"));
+    assert!(events.iter().any(|e| e.effect == "a"));
+    assert!(events.iter().any(|e| e.effect == "b"));
 
     for event in &events {
-        let title = event.value["title"].as_str().unwrap();
+        let title = event.data["title"].as_str().unwrap();
         assert!(
             ["Mr.", "Mrs.", "Dr."].contains(&title),
             "unexpected title {title:?}"
@@ -98,7 +98,7 @@ fn custom_schema_can_reference_another_custom_schema() {
 
     let simulation = build(json).unwrap();
     let events: Vec<_> = simulation.take(1).collect();
-    assert_eq!(events[0].value, serde_json::json!("x"));
+    assert_eq!(events[0].data, serde_json::json!("x"));
 }
 
 #[test]

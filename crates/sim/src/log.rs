@@ -2,8 +2,8 @@ mod fs_proxy;
 mod simple;
 mod sqlite_proxy;
 
-use crate::Signal;
-use crate::effect::{EffectEvent, SkippedEffectEvent};
+use crate::Output;
+use crate::effect::{Input, SkippedInput};
 use std::rc::Rc;
 
 pub use fs_proxy::FsProxyLog;
@@ -16,36 +16,36 @@ pub trait Log: std::fmt::Debug {
 }
 
 pub enum LogEvent {
-    Effect(EffectEvent),
-    Skipped(SkippedEffectEvent),
-    Signal(Signal),
+    Input(Input),
+    Skipped(SkippedInput),
+    Output(Output),
 }
 
-impl From<EffectEvent> for LogEvent {
-    fn from(e: EffectEvent) -> Self {
-        LogEvent::Effect(e)
+impl From<Input> for LogEvent {
+    fn from(e: Input) -> Self {
+        LogEvent::Input(e)
     }
 }
 
-impl From<SkippedEffectEvent> for LogEvent {
-    fn from(e: SkippedEffectEvent) -> Self {
+impl From<SkippedInput> for LogEvent {
+    fn from(e: SkippedInput) -> Self {
         LogEvent::Skipped(e)
     }
 }
 
-impl From<Signal> for LogEvent {
-    fn from(s: Signal) -> Self {
-        LogEvent::Signal(s)
+impl From<Output> for LogEvent {
+    fn from(s: Output) -> Self {
+        LogEvent::Output(s)
     }
 }
 
 pub trait LogReader: std::fmt::Debug {
-    fn last(&self) -> Option<Rc<EffectEvent>>;
+    fn last(&self) -> Option<Rc<Input>>;
     fn index(&self, config: LogIndexConfig) -> Box<dyn LogIndex>;
 }
 
 pub trait LogIndex: std::fmt::Debug {
-    fn sample(&self) -> Option<Rc<EffectEvent>>;
+    fn sample(&self) -> Option<Rc<Input>>;
 }
 
 #[derive(Clone, Debug)]

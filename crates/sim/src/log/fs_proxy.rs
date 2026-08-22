@@ -11,9 +11,9 @@ use std::rc::Rc;
 pub struct FsProxyLog {
     child: Box<dyn Log>,
     directory: PathBuf,
-    effect_file: Option<std::fs::File>,
+    input_file: Option<std::fs::File>,
     metadata_file: Option<std::fs::File>,
-    signal_file: Option<std::fs::File>,
+    output_file: Option<std::fs::File>,
 }
 
 impl FsProxyLog {
@@ -21,9 +21,9 @@ impl FsProxyLog {
         FsProxyLog {
             child,
             directory,
-            effect_file: None,
+            input_file: None,
             metadata_file: None,
-            signal_file: None,
+            output_file: None,
         }
     }
 
@@ -42,18 +42,14 @@ impl FsProxyLog {
         })
     }
 
-    fn write_metadata(&mut self, effect_id: Option<u64>, metadata: &[Metadata]) {
+    fn write_metadata(&mut self, input_id: Option<u64>, metadata: &[Metadata]) {
         if metadata.is_empty() {
             return;
         }
 
         let file = Self::get_file(&self.directory, &mut self.metadata_file, "metadata");
         for metadata in metadata {
-            let line = serde_json::to_string(&MetadataLine {
-                effect_id,
-                metadata,
-            })
-            .unwrap();
+            let line = serde_json::to_string(&MetadataLine { input_id, metadata }).unwrap();
             writeln!(file, "{line}").unwrap();
         }
     }
@@ -62,8 +58,8 @@ impl FsProxyLog {
 impl Log for FsProxyLog {
     fn push(&mut self, event: LogEvent) {
         match &event {
-            LogEvent::Effect(e) => {
-                let file = Self::get_file(&self.directory, &mut self.effect_file, "effects");
+            LogEvent::Input(e) => {
+                let file = Self::get_file(&self.directory, &mut self.input_file, "inputs");
                 let line = serde_json::to_string(e).unwrap();
                 writeln!(file, "{line}").unwrap();
 
@@ -72,8 +68,8 @@ impl Log for FsProxyLog {
             LogEvent::Skipped(e) => {
                 self.write_metadata(None, &e.metadata);
             }
-            LogEvent::Signal(s) => {
-                let file = Self::get_file(&self.directory, &mut self.signal_file, "signal");
+            LogEvent::Output(s) => {
+                let file = Self::get_file(&self.directory, &mut self.output_file, "outputs");
                 let line = serde_json::to_string(s).unwrap();
                 writeln!(file, "{line}").unwrap();
             }
@@ -88,7 +84,7 @@ impl Log for FsProxyLog {
 
 #[derive(Serialize)]
 struct MetadataLine<'a> {
-    effect_id: Option<u64>,
+    input_id: Option<u64>,
     #[serde(flatten)]
     metadata: &'a Metadata,
 }

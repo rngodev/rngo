@@ -1,21 +1,21 @@
 use crate::log::{LogIndex, LogIndexConfig, LogReader};
-use crate::{EffectEvent, Log, LogEvent};
+use crate::{Input, Log, LogEvent};
 use std::cell::RefCell;
 use std::rc::Rc;
 
 #[derive(Clone, Debug)]
 pub struct SimpleEventLogReader {
-    effect_events: Rc<RefCell<Vec<Rc<EffectEvent>>>>,
+    input_events: Rc<RefCell<Vec<Rc<Input>>>>,
 }
 
 impl LogReader for SimpleEventLogReader {
-    fn last(&self) -> Option<Rc<EffectEvent>> {
-        self.effect_events.borrow().last().cloned()
+    fn last(&self) -> Option<Rc<Input>> {
+        self.input_events.borrow().last().cloned()
     }
 
     fn index(&self, config: LogIndexConfig) -> Box<dyn LogIndex> {
         Box::new(SimpleEventLogIndex {
-            effect_events: Rc::clone(&self.effect_events),
+            input_events: Rc::clone(&self.input_events),
             config,
         })
     }
@@ -23,37 +23,37 @@ impl LogReader for SimpleEventLogReader {
 
 #[derive(Default, Debug)]
 pub struct SimpleEventLog {
-    effect_events: Rc<RefCell<Vec<Rc<EffectEvent>>>>,
+    input_events: Rc<RefCell<Vec<Rc<Input>>>>,
 }
 
 impl Log for SimpleEventLog {
     fn push(&mut self, event: LogEvent) {
-        if let LogEvent::Effect(effect_event) = event {
-            self.effect_events.borrow_mut().push(Rc::new(effect_event));
+        if let LogEvent::Input(input_event) = event {
+            self.input_events.borrow_mut().push(Rc::new(input_event));
         }
     }
 
     fn reader(&self) -> Rc<dyn LogReader> {
         Rc::new(SimpleEventLogReader {
-            effect_events: Rc::clone(&self.effect_events),
+            input_events: Rc::clone(&self.input_events),
         })
     }
 }
 
 #[derive(Debug)]
 pub struct SimpleEventLogIndex {
-    effect_events: Rc<RefCell<Vec<Rc<EffectEvent>>>>,
+    input_events: Rc<RefCell<Vec<Rc<Input>>>>,
     config: LogIndexConfig,
 }
 
 impl LogIndex for SimpleEventLogIndex {
-    fn sample(&self) -> Option<Rc<EffectEvent>> {
-        let effect_events = self.effect_events.borrow();
+    fn sample(&self) -> Option<Rc<Input>> {
+        let input_events = self.input_events.borrow();
 
-        let mut filtered_events = effect_events.iter().filter(|e| match &self.config {
+        let mut filtered_events = input_events.iter().filter(|e| match &self.config {
             LogIndexConfig::ByEffect {
                 key: config_key, ..
-            } => &e.key == config_key,
+            } => &e.effect == config_key,
         });
 
         match &self.config {
