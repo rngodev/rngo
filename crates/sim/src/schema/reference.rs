@@ -24,7 +24,7 @@ impl Schema for Reference {
     fn next(&mut self, _context: &SchemaContext) -> SchemaResult {
         match self.index.sample() {
             Some(input_event) => SchemaResult {
-                value: Some(input_event.value.clone()),
+                value: Some(input_event.data.clone()),
                 metadata: input_event.metadata.clone(),
             },
             None => SchemaResult {
@@ -32,7 +32,7 @@ impl Schema for Reference {
                 metadata: vec![Metadata {
                     mtype: "skipped".into(),
                     attribute: None,
-                    value: None,
+                    data: None,
                 }],
             },
         }

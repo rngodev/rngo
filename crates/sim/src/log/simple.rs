@@ -53,7 +53,7 @@ impl LogIndex for SimpleEventLogIndex {
         let mut filtered_events = input_events.iter().filter(|e| match &self.config {
             LogIndexConfig::ByEffect {
                 key: config_key, ..
-            } => &e.key == config_key,
+            } => &e.effect == config_key,
         });
 
         match &self.config {

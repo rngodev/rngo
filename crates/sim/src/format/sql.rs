@@ -21,11 +21,11 @@ impl Format for SqlFormat {
     fn format(&self, event: &Input) -> Result<String, String> {
         let table = self
             .effect_tables
-            .get(&event.key)
+            .get(&event.effect)
             .map(String::as_str)
-            .unwrap_or(&event.key);
+            .unwrap_or(&event.effect);
 
-        Ok(match &event.value {
+        Ok(match &event.data {
             Value::Null => {
                 format!("INSERT INTO {table} VALUES (null);")
             }
@@ -104,13 +104,13 @@ mod tests {
     use chrono::Utc;
     use serde_json::json;
 
-    fn event(value: Value) -> Input {
+    fn event(data: Value) -> Input {
         Input {
             id: 1,
-            key: "user".to_string(),
+            effect: "user".to_string(),
             offset: 0,
             timestamp: Utc::now().fixed_offset(),
-            value,
+            data,
             metadata: vec![],
         }
     }

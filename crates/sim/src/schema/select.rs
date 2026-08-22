@@ -48,7 +48,7 @@ impl Schema for Select {
             metadata: vec![Metadata {
                 mtype: "error".into(),
                 attribute: None,
-                value: Some(serde_json::json!({ "message": "no options available" })),
+                data: Some(serde_json::json!({ "message": "no options available" })),
             }],
         }
     }

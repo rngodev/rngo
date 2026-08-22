@@ -59,20 +59,20 @@ impl Iterator for Effect {
 
         let result = self.schema.next(&context);
 
-        if let Some(value) = result.value {
+        if let Some(data) = result.value {
             let last_id = self.event_log.last().map(|e| e.id).unwrap_or(0);
 
             Some(Ok(Input {
                 id: last_id + 1,
-                key: self.key.clone(),
+                effect: self.key.clone(),
                 offset,
                 timestamp,
-                value,
+                data,
                 metadata: result.metadata,
             }))
         } else {
             Some(Err(SkippedInput {
-                key: self.key.clone(),
+                effect: self.key.clone(),
                 offset,
                 timestamp,
                 metadata: result.metadata,
@@ -84,16 +84,16 @@ impl Iterator for Effect {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Input {
     pub id: u64,
-    pub key: String,
+    pub effect: String,
     pub offset: u64,
     pub timestamp: DateTime<FixedOffset>,
-    pub value: Value,
+    pub data: Value,
     pub metadata: Vec<Metadata>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkippedInput {
-    pub key: String,
+    pub effect: String,
     pub offset: u64,
     pub timestamp: DateTime<FixedOffset>,
     pub metadata: Vec<Metadata>,

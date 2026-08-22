@@ -140,7 +140,7 @@ impl ChannelDispatch {
     }
 
     pub fn send(&mut self, input_event: &Input) -> Result<(), Box<dyn Error>> {
-        let channel_key = match self.effect_channels.get(&input_event.key) {
+        let channel_key = match self.effect_channels.get(&input_event.effect) {
             Some(k) => k.clone(),
             None => return Ok(()),
         };
@@ -150,11 +150,11 @@ impl ChannelDispatch {
                 Some(format) => format
                     .format(input_event)
                     .map_err(|e| format!("channel '{channel_key}': {e}"))?,
-                None => serde_json::to_string(&input_event.value).unwrap(),
+                None => serde_json::to_string(&input_event.data).unwrap(),
             };
             writeln!(stdin, "{data}").map_err(|e| format!("channel '{channel_key}': {e}"))?;
         } else if self.hbs.has_template(&channel_key) {
-            let command = self.hbs.render(&channel_key, &input_event.value)?;
+            let command = self.hbs.render(&channel_key, &input_event.data)?;
             let output = Command::new("sh")
                 .arg("-c")
                 .arg(&command)

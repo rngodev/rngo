@@ -28,26 +28,26 @@ impl SqliteProxyLog {
 
                 CREATE TABLE IF NOT EXISTS inputs (
                     id INTEGER NOT NULL,
-                    key TEXT NOT NULL,
+                    effect TEXT NOT NULL,
                     offset INTEGER NOT NULL,
-                    value TEXT NOT NULL
+                    data TEXT NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS outputs (
+                    channel TEXT NOT NULL,
                     input_id INTEGER,
                     timestamp TEXT NOT NULL,
-                    channel TEXT NOT NULL,
                     level TEXT NOT NULL,
                     data TEXT NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS metadata (
-                    input_id INTEGER,
-                    input_key TEXT,
-                    offset INTEGER,
                     type TEXT NOT NULL,
+                    input_id INTEGER,
+                    effect TEXT,
+                    offset INTEGER,
                     attribute TEXT,
-                    value TEXT
+                    data TEXT
                 );
 
                 BEGIN;
@@ -79,23 +79,23 @@ impl SqliteProxyLog {
     fn insert_metadata(
         &mut self,
         input_id: Option<i64>,
-        input_key: &str,
+        effect: &str,
         offset: u64,
         metadata: &[Metadata],
     ) {
         for m in metadata {
             self.connection
                 .prepare_cached(
-                    "INSERT INTO metadata (input_id, input_key, offset, type, attribute, value) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    "INSERT INTO metadata (input_id, effect, offset, type, attribute, data) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 )
                 .unwrap()
                 .execute(rusqlite::params![
                     input_id,
-                    input_key,
+                    effect,
                     offset as i64,
                     m.mtype,
                     m.attribute.as_ref().map(|a| a.to_string()),
-                    m.value.as_ref().map(|v| v.to_string()),
+                    m.data.as_ref().map(|v| v.to_string()),
                 ])
                 .unwrap();
         }
@@ -108,21 +108,21 @@ impl Log for SqliteProxyLog {
             LogEvent::Input(e) => {
                 self.connection
                     .prepare_cached(
-                        "INSERT INTO inputs (id, key, offset, value) VALUES (?1, ?2, ?3, ?4)",
+                        "INSERT INTO inputs (id, effect, offset, data) VALUES (?1, ?2, ?3, ?4)",
                     )
                     .unwrap()
                     .execute(rusqlite::params![
                         e.id as i64,
-                        e.key,
+                        e.effect,
                         e.offset as i64,
-                        serde_json::to_string(&e.value).unwrap(),
+                        serde_json::to_string(&e.data).unwrap(),
                     ])
                     .unwrap();
 
-                self.insert_metadata(Some(e.id as i64), &e.key, e.offset, &e.metadata);
+                self.insert_metadata(Some(e.id as i64), &e.effect, e.offset, &e.metadata);
             }
             LogEvent::Skipped(e) => {
-                self.insert_metadata(None, &e.key, e.offset, &e.metadata);
+                self.insert_metadata(None, &e.effect, e.offset, &e.metadata);
             }
             LogEvent::Output(s) => {
                 self.connection
@@ -182,14 +182,14 @@ mod tests {
 
         log.push(LogEvent::Input(Input {
             id: 1,
-            key: "ping".to_string(),
+            effect: "ping".to_string(),
             offset: 42,
             timestamp: Utc::now().fixed_offset(),
-            value: serde_json::json!({ "a": 1 }),
+            data: serde_json::json!({ "a": 1 }),
             metadata: vec![Metadata {
                 mtype: "error".into(),
                 attribute: None,
-                value: Some(serde_json::json!({ "message": "partial value" })),
+                data: Some(serde_json::json!({ "message": "partial value" })),
             }],
         }));
         log.push(LogEvent::Output(Output {
@@ -205,25 +205,25 @@ mod tests {
 
         let conn = open(tmp.path());
 
-        let input_key: String = conn
-            .query_row("SELECT key FROM inputs", [], |row| row.get(0))
+        let effect: String = conn
+            .query_row("SELECT effect FROM inputs", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(input_key, "ping");
+        assert_eq!(effect, "ping");
 
         let output_data: String = conn
             .query_row("SELECT data FROM outputs", [], |row| row.get(0))
             .unwrap();
         assert_eq!(output_data, "hello");
 
-        let (
-            metadata_input_id,
-            metadata_input_key,
-            metadata_offset,
-            metadata_type,
-            metadata_value,
-        ): (i64, String, i64, String, String) = conn
+        let (metadata_input_id, metadata_effect, metadata_offset, metadata_type, metadata_data): (
+            i64,
+            String,
+            i64,
+            String,
+            String,
+        ) = conn
             .query_row(
-                "SELECT input_id, input_key, offset, type, value FROM metadata",
+                "SELECT input_id, effect, offset, type, data FROM metadata",
                 [],
                 |row| {
                     Ok((
@@ -237,11 +237,11 @@ mod tests {
             )
             .unwrap();
         assert_eq!(metadata_input_id, 1);
-        assert_eq!(metadata_input_key, "ping");
+        assert_eq!(metadata_effect, "ping");
         assert_eq!(metadata_offset, 42);
         assert_eq!(metadata_type, "error");
         assert_eq!(
-            serde_json::from_str::<serde_json::Value>(&metadata_value).unwrap(),
+            serde_json::from_str::<serde_json::Value>(&metadata_data).unwrap(),
             serde_json::json!({ "message": "partial value" })
         );
     }
@@ -255,13 +255,13 @@ mod tests {
         );
 
         log.push(LogEvent::Skipped(SkippedInput {
-            key: "ping".to_string(),
+            effect: "ping".to_string(),
             offset: 42,
             timestamp: Utc::now().fixed_offset(),
             metadata: vec![Metadata {
                 mtype: "skipped".into(),
                 attribute: None,
-                value: None,
+                data: None,
             }],
         }));
 
@@ -274,15 +274,15 @@ mod tests {
             .unwrap();
         assert_eq!(input_count, 0);
 
-        let (
-            metadata_input_id,
-            metadata_input_key,
-            metadata_offset,
-            metadata_type,
-            metadata_value,
-        ): (Option<i64>, String, i64, String, Option<String>) = conn
+        let (metadata_input_id, metadata_effect, metadata_offset, metadata_type, metadata_data): (
+            Option<i64>,
+            String,
+            i64,
+            String,
+            Option<String>,
+        ) = conn
             .query_row(
-                "SELECT input_id, input_key, offset, type, value FROM metadata",
+                "SELECT input_id, effect, offset, type, data FROM metadata",
                 [],
                 |row| {
                     Ok((
@@ -296,10 +296,10 @@ mod tests {
             )
             .unwrap();
         assert_eq!(metadata_input_id, None);
-        assert_eq!(metadata_input_key, "ping");
+        assert_eq!(metadata_effect, "ping");
         assert_eq!(metadata_offset, 42);
         assert_eq!(metadata_type, "skipped");
-        assert_eq!(metadata_value, None);
+        assert_eq!(metadata_data, None);
     }
 
     #[test]
@@ -313,10 +313,10 @@ mod tests {
         for i in 0..(BATCH_SIZE * 2 + 3) {
             log.push(LogEvent::Input(Input {
                 id: i as u64,
-                key: "ping".to_string(),
+                effect: "ping".to_string(),
                 offset: i as u64,
                 timestamp: Utc::now().fixed_offset(),
-                value: serde_json::json!(i),
+                data: serde_json::json!(i),
                 metadata: vec![],
             }));
         }

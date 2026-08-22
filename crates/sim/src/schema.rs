@@ -59,7 +59,7 @@ pub struct Metadata {
     #[serde(rename = "type")]
     pub mtype: String,
     pub attribute: Option<JsonPointer>,
-    pub value: Option<Value>,
+    pub data: Option<Value>,
 }
 
 impl Metadata {

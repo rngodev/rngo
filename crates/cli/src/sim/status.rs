@@ -89,7 +89,7 @@ impl Log for StatusLog {
         match &event {
             LogEvent::Input(e) => {
                 self.last_timestamp = Some(e.timestamp);
-                if let Some(channel) = self.effect_channels.get(&e.key) {
+                if let Some(channel) = self.effect_channels.get(&e.effect) {
                     self.stats.entry(channel.clone()).or_default().effects += 1;
                 }
             }
