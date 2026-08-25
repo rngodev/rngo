@@ -1,9 +1,9 @@
 use crate::effect::Input;
-use crate::log::{LogIndex, LogIndexConfig, LogReader};
 use crate::output::Level;
+use crate::run_log::{RunLogIndex, RunLogIndexConfig, RunLogReader};
 use crate::schema::Metadata;
 use crate::util::json_pointer::JsonPointer;
-use crate::{Log, LogEvent};
+use crate::{RunLog, RunLogEvent};
 use chrono::{DateTime, Utc};
 use rand::RngExt;
 use rand_pcg::Pcg32;
@@ -22,16 +22,16 @@ const BATCH_SIZE: usize = 500;
 /// mid-transaction lookups - e.g. `effect.rs` computing the next input id from `last()` before
 /// the current batch commits - see the writer's pending, uncommitted rows. It also owns a single
 /// RNG seeded from the simulation's seed, shared with every reader/index it hands out, so
-/// `LogIndex::sample`'s random branch is reproducible for a given seed rather than drawing from
+/// `RunLogIndex::sample`'s random branch is reproducible for a given seed rather than drawing from
 /// an unseeded global generator.
 #[derive(Debug)]
-pub struct SqliteLog {
+pub struct SqliteRunLog {
     connection: Rc<RefCell<Connection>>,
     rng: Rc<RefCell<Pcg32>>,
     pending: usize,
 }
 
-impl SqliteLog {
+impl SqliteRunLog {
     pub fn new(directory: PathBuf, seed: u64) -> Self {
         let connection = Connection::open(directory.join("log.sqlite")).unwrap();
 
@@ -70,10 +70,10 @@ impl SqliteLog {
             )
             .unwrap();
 
-        SqliteLog {
+        SqliteRunLog {
             connection: Rc::new(RefCell::new(connection)),
             rng: Rc::new(RefCell::new(
-                Seeder::from(&format!("{seed}-log")).into_rng(),
+                Seeder::from(&format!("{seed}-run_log")).into_rng(),
             )),
             pending: 0,
         }
@@ -123,10 +123,10 @@ impl SqliteLog {
     }
 }
 
-impl Log for SqliteLog {
-    fn push(&mut self, event: LogEvent) {
+impl RunLog for SqliteRunLog {
+    fn push(&mut self, event: RunLogEvent) {
         match &event {
-            LogEvent::Input(e) => {
+            RunLogEvent::Input(e) => {
                 self.connection
                     .borrow()
                     .prepare_cached(
@@ -143,10 +143,10 @@ impl Log for SqliteLog {
 
                 self.insert_metadata(Some(e.id as i64), &e.effect, e.offset, &e.metadata);
             }
-            LogEvent::Skipped(e) => {
+            RunLogEvent::Skipped(e) => {
                 self.insert_metadata(None, &e.effect, e.offset, &e.metadata);
             }
-            LogEvent::Output(s) => {
+            RunLogEvent::Output(s) => {
                 self.connection
                     .borrow()
                     .prepare_cached(
@@ -170,23 +170,23 @@ impl Log for SqliteLog {
         self.record();
     }
 
-    fn reader(&self) -> Rc<dyn LogReader> {
-        Rc::new(SqliteLogReader {
+    fn reader(&self) -> Rc<dyn RunLogReader> {
+        Rc::new(SqliteRunLogReader {
             connection: Rc::clone(&self.connection),
             rng: Rc::clone(&self.rng),
         })
     }
 }
 
-impl Drop for SqliteLog {
+impl Drop for SqliteRunLog {
     fn drop(&mut self) {
         let _ = self.connection.borrow().execute_batch("COMMIT;");
     }
 }
 
 /// The `inputs` table has no `timestamp` column, so rows reconstructed into an [`Input`] carry a
-/// placeholder epoch timestamp. This is safe because [`LogReader::last`] only reads `.id`
-/// (`effect.rs`) and [`LogIndex::sample`] only reads `.data`/`.metadata`
+/// placeholder epoch timestamp. This is safe because [`RunLogReader::last`] only reads `.id`
+/// (`effect.rs`) and [`RunLogIndex::sample`] only reads `.data`/`.metadata`
 /// (`schema/reference.rs`) - nothing downstream reads a reconstructed `Input`'s timestamp.
 fn placeholder_timestamp() -> DateTime<chrono::FixedOffset> {
     DateTime::<Utc>::UNIX_EPOCH.fixed_offset()
@@ -212,12 +212,12 @@ fn metadata_for_input(connection: &Connection, input_id: i64) -> Vec<Metadata> {
 }
 
 #[derive(Debug)]
-struct SqliteLogReader {
+struct SqliteRunLogReader {
     connection: Rc<RefCell<Connection>>,
     rng: Rc<RefCell<Pcg32>>,
 }
 
-impl LogReader for SqliteLogReader {
+impl RunLogReader for SqliteRunLogReader {
     fn last(&self) -> Option<Rc<Input>> {
         let connection = self.connection.borrow();
         let row = connection
@@ -246,8 +246,8 @@ impl LogReader for SqliteLogReader {
         }))
     }
 
-    fn index(&self, config: LogIndexConfig) -> Box<dyn LogIndex> {
-        Box::new(SqliteLogIndex {
+    fn index(&self, config: RunLogIndexConfig) -> Box<dyn RunLogIndex> {
+        Box::new(SqliteRunLogIndex {
             connection: Rc::clone(&self.connection),
             rng: Rc::clone(&self.rng),
             config,
@@ -256,17 +256,17 @@ impl LogReader for SqliteLogReader {
 }
 
 #[derive(Debug)]
-struct SqliteLogIndex {
+struct SqliteRunLogIndex {
     connection: Rc<RefCell<Connection>>,
     rng: Rc<RefCell<Pcg32>>,
-    config: LogIndexConfig,
+    config: RunLogIndexConfig,
 }
 
-impl LogIndex for SqliteLogIndex {
+impl RunLogIndex for SqliteRunLogIndex {
     fn sample(&self) -> Option<Rc<Input>> {
         let connection = self.connection.borrow();
 
-        let LogIndexConfig::ByEffect { key, last_only } = &self.config;
+        let RunLogIndexConfig::ByEffect { key, last_only } = &self.config;
 
         let row = if *last_only {
             connection
@@ -337,9 +337,9 @@ mod tests {
     #[test]
     fn writes_input_output_and_metadata_rows() {
         let tmp = TempDir::new().unwrap();
-        let mut log = SqliteLog::new(tmp.path().to_path_buf(), 1);
+        let mut run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
 
-        log.push(LogEvent::Input(Input {
+        run_log.push(RunLogEvent::Input(Input {
             id: 1,
             effect: "ping".to_string(),
             offset: 42,
@@ -351,7 +351,7 @@ mod tests {
                 data: Some(serde_json::json!({ "message": "partial value" })),
             }],
         }));
-        log.push(LogEvent::Output(crate::output::Output {
+        run_log.push(RunLogEvent::Output(crate::output::Output {
             input_id: Some(1),
             timestamp: Utc::now(),
             channel: "logger".to_string(),
@@ -360,7 +360,7 @@ mod tests {
         }));
 
         // Force the pending transaction closed so the rows are visible to a fresh connection.
-        log.commit();
+        run_log.commit();
 
         let conn = open(tmp.path());
 
@@ -408,9 +408,9 @@ mod tests {
     #[test]
     fn skipped_inputs_write_metadata_with_no_input_row() {
         let tmp = TempDir::new().unwrap();
-        let mut log = SqliteLog::new(tmp.path().to_path_buf(), 1);
+        let mut run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
 
-        log.push(LogEvent::Skipped(SkippedInput {
+        run_log.push(RunLogEvent::Skipped(SkippedInput {
             effect: "ping".to_string(),
             offset: 42,
             timestamp: Utc::now().fixed_offset(),
@@ -421,7 +421,7 @@ mod tests {
             }],
         }));
 
-        log.commit();
+        run_log.commit();
 
         let conn = open(tmp.path());
 
@@ -461,10 +461,10 @@ mod tests {
     #[test]
     fn batches_across_commits() {
         let tmp = TempDir::new().unwrap();
-        let mut log = SqliteLog::new(tmp.path().to_path_buf(), 1);
+        let mut run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
 
         for i in 0..(BATCH_SIZE * 2 + 3) {
-            log.push(LogEvent::Input(Input {
+            run_log.push(RunLogEvent::Input(Input {
                 id: (i + 1) as u64,
                 effect: "ping".to_string(),
                 offset: i as u64,
@@ -473,7 +473,7 @@ mod tests {
                 metadata: vec![],
             }));
         }
-        log.commit();
+        run_log.commit();
 
         let conn = open(tmp.path());
         let count: i64 = conn
@@ -485,18 +485,18 @@ mod tests {
     #[test]
     fn last_returns_none_when_empty() {
         let tmp = TempDir::new().unwrap();
-        let log = SqliteLog::new(tmp.path().to_path_buf(), 1);
-        let reader = log.reader();
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
+        let reader = run_log.reader();
         assert!(reader.last().is_none());
     }
 
     #[test]
     fn last_returns_most_recently_inserted_input_including_uncommitted() {
         let tmp = TempDir::new().unwrap();
-        let mut log = SqliteLog::new(tmp.path().to_path_buf(), 1);
-        let reader = log.reader();
+        let mut run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
+        let reader = run_log.reader();
 
-        log.push(LogEvent::Input(Input {
+        run_log.push(RunLogEvent::Input(Input {
             id: 1,
             effect: "ping".to_string(),
             offset: 0,
@@ -509,7 +509,7 @@ mod tests {
         let last = reader.last().unwrap();
         assert_eq!(last.id, 1);
 
-        log.push(LogEvent::Input(Input {
+        run_log.push(RunLogEvent::Input(Input {
             id: 2,
             effect: "ping".to_string(),
             offset: 1,
@@ -525,11 +525,11 @@ mod tests {
     #[test]
     fn index_last_only_returns_most_recent_matching_effect() {
         let tmp = TempDir::new().unwrap();
-        let mut log = SqliteLog::new(tmp.path().to_path_buf(), 1);
-        let reader = log.reader();
+        let mut run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
+        let reader = run_log.reader();
 
         for (i, effect) in [(1, "a"), (2, "b"), (3, "a")] {
-            log.push(LogEvent::Input(Input {
+            run_log.push(RunLogEvent::Input(Input {
                 id: i,
                 effect: effect.to_string(),
                 offset: i,
@@ -539,7 +539,7 @@ mod tests {
             }));
         }
 
-        let index = reader.index(LogIndexConfig::ByEffect {
+        let index = reader.index(RunLogIndexConfig::ByEffect {
             key: "a".to_string(),
             last_only: true,
         });
@@ -547,15 +547,15 @@ mod tests {
         assert_eq!(sampled.id, 3);
     }
 
-    /// Builds a `SqliteLog` under the given seed, populates it with ten inputs on effect "a",
+    /// Builds a `SqliteRunLog` under the given seed, populates it with ten inputs on effect "a",
     /// then samples that effect's index `draws` times, returning the sampled ids.
     fn sampled_ids(seed: u64, draws: usize) -> Vec<u64> {
         let tmp = TempDir::new().unwrap();
-        let mut log = SqliteLog::new(tmp.path().to_path_buf(), seed);
-        let reader = log.reader();
+        let mut run_log = SqliteRunLog::new(tmp.path().to_path_buf(), seed);
+        let reader = run_log.reader();
 
         for i in 1..=10u64 {
-            log.push(LogEvent::Input(Input {
+            run_log.push(RunLogEvent::Input(Input {
                 id: i,
                 effect: "a".to_string(),
                 offset: i,
@@ -565,7 +565,7 @@ mod tests {
             }));
         }
 
-        let index = reader.index(LogIndexConfig::ByEffect {
+        let index = reader.index(RunLogIndexConfig::ByEffect {
             key: "a".to_string(),
             last_only: false,
         });
@@ -586,10 +586,10 @@ mod tests {
     #[test]
     fn index_sample_returns_none_when_no_matching_effect() {
         let tmp = TempDir::new().unwrap();
-        let log = SqliteLog::new(tmp.path().to_path_buf(), 1);
-        let reader = log.reader();
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
+        let reader = run_log.reader();
 
-        let index = reader.index(LogIndexConfig::ByEffect {
+        let index = reader.index(RunLogIndexConfig::ByEffect {
             key: "nonexistent".to_string(),
             last_only: false,
         });

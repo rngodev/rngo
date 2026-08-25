@@ -1,6 +1,6 @@
 use chrono::{DateTime, FixedOffset};
 use console::{Term, style};
-use rngo_sim::{Log, LogEvent, LogReader};
+use rngo_sim::{RunLog, RunLogEvent, RunLogReader};
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -15,11 +15,11 @@ struct ChannelStats {
     outputs: u64,
 }
 
-/// A [`Log`] proxy that renders a live-updating status block to stderr - the current simulated
+/// A [`RunLog`] proxy that renders a live-updating status block to stderr - the current simulated
 /// time and, per channel, how many effects and outputs it has produced - leaving stdout free for
 /// `--stdout` event output. Forwards every event to `child` unchanged.
-pub struct StatusLog {
-    child: Box<dyn Log>,
+pub struct StatusRunLog {
+    child: Box<dyn RunLog>,
     effect_channels: HashMap<String, String>,
     term: Term,
     stats: BTreeMap<String, ChannelStats>,
@@ -28,9 +28,9 @@ pub struct StatusLog {
     last_render: Option<Instant>,
 }
 
-impl StatusLog {
-    pub fn new(child: Box<dyn Log>, effect_channels: HashMap<String, String>) -> Self {
-        StatusLog {
+impl StatusRunLog {
+    pub fn new(child: Box<dyn RunLog>, effect_channels: HashMap<String, String>) -> Self {
+        StatusRunLog {
             child,
             effect_channels,
             term: Term::stderr(),
@@ -78,37 +78,37 @@ impl StatusLog {
     }
 }
 
-impl std::fmt::Debug for StatusLog {
+impl std::fmt::Debug for StatusRunLog {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("StatusLog").finish_non_exhaustive()
+        f.debug_struct("StatusRunLog").finish_non_exhaustive()
     }
 }
 
-impl Log for StatusLog {
-    fn push(&mut self, event: LogEvent) {
+impl RunLog for StatusRunLog {
+    fn push(&mut self, event: RunLogEvent) {
         match &event {
-            LogEvent::Input(e) => {
+            RunLogEvent::Input(e) => {
                 self.last_timestamp = Some(e.timestamp);
                 if let Some(channel) = self.effect_channels.get(&e.effect) {
                     self.stats.entry(channel.clone()).or_default().effects += 1;
                 }
             }
-            LogEvent::Output(s) => {
+            RunLogEvent::Output(s) => {
                 self.stats.entry(s.channel.clone()).or_default().outputs += 1;
             }
-            LogEvent::Skipped(_) => {}
+            RunLogEvent::Skipped(_) => {}
         }
 
         self.render(false);
         self.child.push(event);
     }
 
-    fn reader(&self) -> Rc<dyn LogReader> {
+    fn reader(&self) -> Rc<dyn RunLogReader> {
         self.child.reader()
     }
 }
 
-impl Drop for StatusLog {
+impl Drop for StatusRunLog {
     fn drop(&mut self) {
         // Guarantees the block reflects final counts even if the last update landed inside the
         // render throttle window.
