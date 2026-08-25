@@ -1,7 +1,7 @@
 use crate::sim::channel::ChannelDispatch;
 use crate::sim::status::StatusLog;
 use console::style;
-use rngo_sim::{Dialect, SimpleEventLog, SqliteProxyLog, spec};
+use rngo_sim::{Dialect, SqliteLog, spec};
 use std::collections::HashMap;
 use std::error::Error;
 use std::path::{Path, PathBuf};
@@ -48,13 +48,7 @@ pub fn run(
         .iter()
         .filter_map(|(k, v)| v.channel.as_ref().map(|s| (k.clone(), s.clone())))
         .collect();
-    let log = StatusLog::new(
-        Box::new(SqliteProxyLog::new(
-            Box::new(SimpleEventLog::default()),
-            run_dir.clone(),
-        )),
-        effect_channels,
-    );
+    let log = StatusLog::new(Box::new(SqliteLog::new(run_dir.clone())), effect_channels);
 
     let mut simulation = simulation_builder.log(log).build().map_err(join_errors)?;
     let channels = simulation.take_channels();

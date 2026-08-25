@@ -1,15 +1,12 @@
 use rngo_sim::build::*;
-use rngo_sim::{SimpleEventLog, Simulation, SqliteProxyLog};
+use rngo_sim::{Simulation, SqliteLog};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
 #[test]
 fn reference_with_no_prior_events_is_skipped_not_logged() {
     let tmp = TempDir::new().unwrap();
-    let log = SqliteProxyLog::new(
-        Box::new(SimpleEventLog::default()),
-        tmp.path().to_path_buf(),
-    );
+    let log = SqliteLog::new(tmp.path().to_path_buf());
 
     let mut simulation_builder = Simulation::builder();
     simulation_builder.with_effect("derived", |e| {
