@@ -1,4 +1,3 @@
-mod fs_proxy;
 mod simple;
 mod sqlite;
 
@@ -6,7 +5,6 @@ use crate::Output;
 use crate::effect::{Input, SkippedInput};
 use std::rc::Rc;
 
-pub use fs_proxy::FsProxyLog;
 pub use simple::SimpleEventLog;
 pub use sqlite::SqliteLog;
 
