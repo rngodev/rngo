@@ -48,7 +48,10 @@ pub fn run(
         .iter()
         .filter_map(|(k, v)| v.channel.as_ref().map(|s| (k.clone(), s.clone())))
         .collect();
-    let log = StatusLog::new(Box::new(SqliteLog::new(run_dir.clone())), effect_channels);
+    let log = StatusLog::new(
+        Box::new(SqliteLog::new(run_dir.clone(), simulation_builder.seed)),
+        effect_channels,
+    );
 
     let mut simulation = simulation_builder.log(log).build().map_err(join_errors)?;
     let channels = simulation.take_channels();

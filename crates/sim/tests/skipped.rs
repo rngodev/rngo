@@ -6,7 +6,7 @@ use tempfile::TempDir;
 #[test]
 fn reference_with_no_prior_events_is_skipped_not_logged() {
     let tmp = TempDir::new().unwrap();
-    let log = SqliteLog::new(tmp.path().to_path_buf());
+    let log = SqliteLog::new(tmp.path().to_path_buf(), 1);
 
     let mut simulation_builder = Simulation::builder();
     simulation_builder.with_effect("derived", |e| {
