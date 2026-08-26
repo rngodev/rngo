@@ -83,6 +83,10 @@ impl Dialect {
         let mut simulation_builder = Simulation::builder();
         let simulation_moment_parser = Moment::parser();
 
+        if let Some(seed) = spec.seed {
+            simulation_builder.set_seed(seed);
+        }
+
         if let Some(start) = &spec.start {
             match simulation_moment_parser.parse("start", start) {
                 Ok(timestamp) => {
@@ -197,5 +201,24 @@ impl Dialect {
         } else {
             Ok(simulation_builder)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn spec_seed_is_applied_to_the_simulation_builder() {
+        let value = serde_json::json!({ "seed": 42, "effects": {} });
+        let builder = Dialect::primitive().parse_simulation_json(value).unwrap();
+        assert_eq!(builder.seed, 42);
+    }
+
+    #[test]
+    fn missing_spec_seed_defaults_to_one() {
+        let value = serde_json::json!({ "effects": {} });
+        let builder = Dialect::primitive().parse_simulation_json(value).unwrap();
+        assert_eq!(builder.seed, 1);
     }
 }

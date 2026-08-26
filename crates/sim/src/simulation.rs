@@ -2,14 +2,14 @@ use crate::Output;
 use crate::build::{BuildError, SimulationKey};
 use crate::channel::Channel;
 use crate::effect::{Effect, EffectBuilder, Input};
-use crate::log::{Log, SimpleEventLog};
+use crate::run_log::{RunLog, SimpleEventRunLog};
 use crate::util::time::Moment;
 use chrono::{TimeDelta, Utc};
 use std::sync::mpsc::{self, Receiver, Sender};
 
 #[derive(Debug)]
 pub struct Simulation {
-    event_log: Box<dyn Log>,
+    event_run_log: Box<dyn RunLog>,
     effects: Vec<Effect>,
     channels: Vec<Channel>,
     output_tx: Sender<Output>,
@@ -33,10 +33,10 @@ impl Simulation {
         std::mem::take(&mut self.channels)
     }
 
-    /// Pushes any outputs currently waiting in the channel into the event log.
+    /// Pushes any outputs currently waiting in the channel into the run log.
     fn drain_outputs(&mut self) {
         for output in self.output_rx.try_iter() {
-            self.event_log.push(output.into());
+            self.event_run_log.push(output.into());
         }
     }
 
@@ -45,7 +45,7 @@ impl Simulation {
     /// Iteration already drains outputs before computing each event, but outputs sent after
     /// the last event (e.g. a `stream` channel's subprocess flushing its output once it
     /// receives EOF) arrive after the last `next()` call, so this drains once more. Taking
-    /// `self` by value also ensures the event log is dropped - and so commits any pending
+    /// `self` by value also ensures the run log is dropped - and so commits any pending
     /// writes - before this returns.
     pub fn finish(mut self) {
         self.drain_outputs();
@@ -69,12 +69,12 @@ impl Iterator for Simulation {
             match self.effects.first_mut()?.next()? {
                 Ok(input_event) => {
                     self.emitted += 1;
-                    self.event_log.push(input_event.clone().into());
+                    self.event_run_log.push(input_event.clone().into());
                     return Some(input_event);
                 }
                 Err(skipped_event) => {
                     self.emitted += 1;
-                    self.event_log.push(skipped_event.into());
+                    self.event_run_log.push(skipped_event.into());
                     if self.limit.is_some_and(|limit| self.emitted >= limit) {
                         return None;
                     }
@@ -90,7 +90,7 @@ pub struct SimulationBuilder {
     pub seed: u64,
     pub start: Moment,
     pub end: Moment,
-    event_log: Box<dyn Log>,
+    event_run_log: Option<Box<dyn RunLog>>,
     effect_builders: Vec<EffectBuilder>,
     channels: Vec<Channel>,
     limit: Option<u64>,
@@ -102,15 +102,15 @@ impl SimulationBuilder {
             seed: 1,
             start: Moment::Relative(TimeDelta::days(-30)),
             end: Moment::Relative(TimeDelta::zero()),
-            event_log: Box::new(SimpleEventLog::default()),
+            event_run_log: None,
             effect_builders: vec![],
             channels: vec![],
             limit: None,
         }
     }
 
-    pub fn log(mut self, log: impl Log + 'static) -> Self {
-        self.event_log = Box::new(log);
+    pub fn run_log(mut self, run_log: impl RunLog + 'static) -> Self {
+        self.event_run_log = Some(Box::new(run_log));
         self
     }
 
@@ -184,6 +184,10 @@ impl SimulationBuilder {
             });
         }
 
+        let event_run_log = self
+            .event_run_log
+            .unwrap_or_else(|| Box::new(SimpleEventRunLog::new(self.seed)));
+
         let mut effects = vec![];
 
         for mut effect_builder in self.effect_builders {
@@ -191,7 +195,7 @@ impl SimulationBuilder {
                 .set_now(now)
                 .set_sim_start(start)
                 .set_sim_end(end)
-                .set_event_log(self.event_log.reader())
+                .set_event_run_log(event_run_log.reader())
                 .set_seed(self.seed);
 
             match effect_builder.build() {
@@ -203,7 +207,7 @@ impl SimulationBuilder {
         if errors.is_empty() {
             let (output_tx, output_rx) = mpsc::channel::<Output>();
             Ok(Simulation {
-                event_log: self.event_log,
+                event_run_log,
                 effects,
                 channels: self.channels,
                 output_tx,

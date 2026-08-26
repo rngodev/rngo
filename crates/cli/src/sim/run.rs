@@ -1,7 +1,7 @@
 use crate::sim::channel::ChannelDispatch;
-use crate::sim::status::StatusLog;
+use crate::sim::status::StatusRunLog;
 use console::style;
-use rngo_sim::{Dialect, SimpleEventLog, SqliteProxyLog, spec};
+use rngo_sim::{Dialect, SqliteRunLog, spec};
 use std::collections::HashMap;
 use std::error::Error;
 use std::path::{Path, PathBuf};
@@ -48,15 +48,15 @@ pub fn run(
         .iter()
         .filter_map(|(k, v)| v.channel.as_ref().map(|s| (k.clone(), s.clone())))
         .collect();
-    let log = StatusLog::new(
-        Box::new(SqliteProxyLog::new(
-            Box::new(SimpleEventLog::default()),
-            run_dir.clone(),
-        )),
+    let run_log = StatusRunLog::new(
+        Box::new(SqliteRunLog::new(run_dir.clone(), simulation_builder.seed)),
         effect_channels,
     );
 
-    let mut simulation = simulation_builder.log(log).build().map_err(join_errors)?;
+    let mut simulation = simulation_builder
+        .run_log(run_log)
+        .build()
+        .map_err(join_errors)?;
     let channels = simulation.take_channels();
     let mut channel_dispatch = ChannelDispatch::new(&spec, channels, simulation.output_tx())?;
 
@@ -71,7 +71,7 @@ pub fn run(
     // Closes stdin on every stream channel (triggering exit for those that react to EOF) and
     // kills any stragglers - including output-source channels with no natural end - after a
     // grace period; `simulation.finish()` drains the trailing outputs this produces and drops
-    // the simulation, committing the event log before signals are evaluated below.
+    // the simulation, committing the run log before signals are evaluated below.
     channel_dispatch.finish()?;
     simulation.finish();
 

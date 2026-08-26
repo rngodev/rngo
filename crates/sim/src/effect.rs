@@ -2,7 +2,7 @@ mod clock;
 mod trigger;
 
 use crate::build::{BuildError, EffectKey};
-use crate::log::{Log, LogIndexConfig, LogReader, SimpleEventLog};
+use crate::run_log::{RunLog, RunLogIndexConfig, RunLogReader, SimpleEventRunLog};
 use crate::schema::{Metadata, Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext};
 use crate::util::ext::FlattenErr;
 use crate::util::time::Moment;
@@ -19,7 +19,7 @@ pub use trigger::TriggerEvent;
 #[derive(Debug)]
 pub struct Effect {
     pub key: String,
-    event_log: Rc<dyn LogReader>,
+    event_run_log: Rc<dyn RunLogReader>,
     trigger: Trigger,
     schema: Box<dyn Schema>,
     end_offset: u64,
@@ -60,7 +60,7 @@ impl Iterator for Effect {
         let result = self.schema.next(&context);
 
         if let Some(data) = result.value {
-            let last_id = self.event_log.last().map(|e| e.id).unwrap_or(0);
+            let last_id = self.event_run_log.last().map(|e| e.id).unwrap_or(0);
 
             Some(Ok(Input {
                 id: last_id + 1,
@@ -107,7 +107,7 @@ pub struct EffectBuilder {
     now: Option<DateTime<FixedOffset>>,
     sim_start: Option<DateTime<FixedOffset>>,
     sim_end: Option<DateTime<FixedOffset>>,
-    event_log: Option<Rc<dyn LogReader>>,
+    event_run_log: Option<Rc<dyn RunLogReader>>,
     seed: Option<u64>,
     trigger: TriggerConfig,
     schema_builder: Option<Box<dyn SchemaBuilder>>,
@@ -122,7 +122,7 @@ impl EffectBuilder {
             now: None,
             sim_start: None,
             sim_end: None,
-            event_log: None,
+            event_run_log: None,
             seed: None,
             trigger: TriggerConfig::ClockExpression("hz(1, day)".into()),
             schema_builder: None,
@@ -179,13 +179,13 @@ impl EffectBuilder {
         self
     }
 
-    pub fn event_log(mut self, event_log: Rc<dyn LogReader>) -> Self {
-        self.set_event_log(event_log);
+    pub fn event_run_log(mut self, event_run_log: Rc<dyn RunLogReader>) -> Self {
+        self.set_event_run_log(event_run_log);
         self
     }
 
-    pub fn set_event_log(&mut self, event_log: Rc<dyn LogReader>) -> &mut Self {
-        self.event_log = Some(event_log);
+    pub fn set_event_run_log(&mut self, event_run_log: Rc<dyn RunLogReader>) -> &mut Self {
+        self.event_run_log = Some(event_run_log);
         self
     }
 
@@ -247,10 +247,10 @@ impl EffectBuilder {
                 message: "now must be set via set_now()".into(),
             }]);
         };
-        let event_log: Rc<dyn LogReader> = self
-            .event_log
-            .unwrap_or_else(|| SimpleEventLog::default().reader());
         let seed = self.seed.unwrap_or(1);
+        let event_run_log: Rc<dyn RunLogReader> = self
+            .event_run_log
+            .unwrap_or_else(|| SimpleEventRunLog::new(seed).reader());
         let sim_start = self.sim_start.unwrap_or_else(|| now + TimeDelta::days(-30));
         let sim_end = self.sim_end.unwrap_or(now);
         let effect_end = self.end.map(|m| m.resolve(now)).unwrap_or(sim_end);
@@ -277,7 +277,7 @@ impl EffectBuilder {
 
         let schema_result = if let Some(schema_builder) = self.schema_builder {
             let visitor = SchemaBuildVisitor {
-                event_log: event_log.clone(),
+                event_run_log: event_run_log.clone(),
                 simulation_seed: seed,
                 effect_key: self.key.clone(),
                 path: vec![],
@@ -294,7 +294,7 @@ impl EffectBuilder {
 
         let trigger_result = match self.trigger {
             TriggerConfig::Effect { key } => {
-                let index = event_log.index(LogIndexConfig::ByEffect {
+                let index = event_run_log.index(RunLogIndexConfig::ByEffect {
                     key: key.clone(),
                     last_only: true,
                 });
@@ -328,7 +328,7 @@ impl EffectBuilder {
         match schema_result.and_try(trigger_result).flatten_err() {
             Ok((schema, trigger)) if errors.is_empty() => Ok(Effect {
                 key: self.key,
-                event_log: event_log.clone(),
+                event_run_log: event_run_log.clone(),
                 trigger,
                 schema,
                 end_offset,

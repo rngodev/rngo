@@ -22,7 +22,7 @@ pub use string::Str;
 
 use crate::build::{BuildError, SchemaEdge};
 use crate::effect::TriggerEvent;
-use crate::log::LogReader;
+use crate::run_log::RunLogReader;
 use crate::util::json_pointer::{JsonPointer, JsonPointerPart};
 use rand_pcg::Pcg32;
 use rand_seeder::Seeder;
@@ -83,7 +83,7 @@ impl SchemaBuilder for Box<dyn SchemaBuilder> {
 }
 
 pub struct SchemaBuildVisitor {
-    pub event_log: Rc<dyn LogReader>,
+    pub event_run_log: Rc<dyn RunLogReader>,
     pub simulation_seed: u64,
     pub effect_key: String,
     pub path: Vec<SchemaEdge>,
@@ -92,7 +92,7 @@ pub struct SchemaBuildVisitor {
 impl Clone for SchemaBuildVisitor {
     fn clone(&self) -> Self {
         SchemaBuildVisitor {
-            event_log: Rc::clone(&self.event_log),
+            event_run_log: Rc::clone(&self.event_run_log),
             simulation_seed: self.simulation_seed,
             effect_key: self.effect_key.clone(),
             path: self.path.clone(),

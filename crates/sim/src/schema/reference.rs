@@ -1,13 +1,13 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::build::BuildError;
-use crate::log::{LogIndex, LogIndexConfig};
 use crate::parse::{SchemaParseVisitor, SchemaParser};
+use crate::run_log::{RunLogIndex, RunLogIndexConfig};
 use crate::schema::Metadata;
 use crate::spec::ParseError as Error;
 
 #[derive(Debug)]
 pub struct Reference {
-    index: Box<dyn LogIndex>,
+    index: Box<dyn RunLogIndex>,
 }
 
 impl Reference {
@@ -41,7 +41,7 @@ impl Schema for Reference {
 
 #[derive(Debug)]
 pub struct ReferenceBuilder {
-    config: Option<LogIndexConfig>,
+    config: Option<RunLogIndexConfig>,
 }
 
 impl ReferenceBuilder {
@@ -51,7 +51,7 @@ impl ReferenceBuilder {
     }
 
     pub fn set_effect(&mut self, effect: impl Into<String>) -> &mut Self {
-        self.config = Some(LogIndexConfig::ByEffect {
+        self.config = Some(RunLogIndexConfig::ByEffect {
             key: effect.into(),
             last_only: false,
         });
@@ -63,7 +63,7 @@ impl SchemaBuilder for ReferenceBuilder {
     fn build(&self, visitor: SchemaBuildVisitor) -> Result<Box<dyn Schema>, Vec<BuildError>> {
         if let Some(config) = &self.config {
             Ok(Box::new(Reference {
-                index: visitor.event_log.index(config.clone()),
+                index: visitor.event_run_log.index(config.clone()),
             }))
         } else {
             Err(vec![visitor.error("config was not set")])
