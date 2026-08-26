@@ -90,7 +90,7 @@ pub struct SimulationBuilder {
     pub seed: u64,
     pub start: Moment,
     pub end: Moment,
-    event_run_log: Box<dyn RunLog>,
+    event_run_log: Option<Box<dyn RunLog>>,
     effect_builders: Vec<EffectBuilder>,
     channels: Vec<Channel>,
     limit: Option<u64>,
@@ -102,7 +102,7 @@ impl SimulationBuilder {
             seed: 1,
             start: Moment::Relative(TimeDelta::days(-30)),
             end: Moment::Relative(TimeDelta::zero()),
-            event_run_log: Box::new(SimpleEventRunLog::default()),
+            event_run_log: None,
             effect_builders: vec![],
             channels: vec![],
             limit: None,
@@ -110,7 +110,7 @@ impl SimulationBuilder {
     }
 
     pub fn run_log(mut self, run_log: impl RunLog + 'static) -> Self {
-        self.event_run_log = Box::new(run_log);
+        self.event_run_log = Some(Box::new(run_log));
         self
     }
 
@@ -184,6 +184,10 @@ impl SimulationBuilder {
             });
         }
 
+        let event_run_log = self
+            .event_run_log
+            .unwrap_or_else(|| Box::new(SimpleEventRunLog::new(self.seed)));
+
         let mut effects = vec![];
 
         for mut effect_builder in self.effect_builders {
@@ -191,7 +195,7 @@ impl SimulationBuilder {
                 .set_now(now)
                 .set_sim_start(start)
                 .set_sim_end(end)
-                .set_event_run_log(self.event_run_log.reader())
+                .set_event_run_log(event_run_log.reader())
                 .set_seed(self.seed);
 
             match effect_builder.build() {
@@ -203,7 +207,7 @@ impl SimulationBuilder {
         if errors.is_empty() {
             let (output_tx, output_rx) = mpsc::channel::<Output>();
             Ok(Simulation {
-                event_run_log: self.event_run_log,
+                event_run_log,
                 effects,
                 channels: self.channels,
                 output_tx,

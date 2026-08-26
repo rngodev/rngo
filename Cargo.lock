@@ -1238,7 +1238,6 @@ version = "0.34.0"
 dependencies = [
  "cel",
  "chrono",
- "fastrand",
  "indexmap",
  "multi_try",
  "pastey",

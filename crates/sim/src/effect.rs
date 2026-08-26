@@ -247,10 +247,10 @@ impl EffectBuilder {
                 message: "now must be set via set_now()".into(),
             }]);
         };
+        let seed = self.seed.unwrap_or(1);
         let event_run_log: Rc<dyn RunLogReader> = self
             .event_run_log
-            .unwrap_or_else(|| SimpleEventRunLog::default().reader());
-        let seed = self.seed.unwrap_or(1);
+            .unwrap_or_else(|| SimpleEventRunLog::new(seed).reader());
         let sim_start = self.sim_start.unwrap_or_else(|| now + TimeDelta::days(-30));
         let sim_end = self.sim_end.unwrap_or(now);
         let effect_end = self.end.map(|m| m.resolve(now)).unwrap_or(sim_end);
