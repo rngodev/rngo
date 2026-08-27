@@ -103,6 +103,9 @@ fn spec() {
                         }
                     }
                 }
+            },
+            "reference": {
+                "schema": { "type": "reference", "effect": "number", "cursor": "sequential" }
             }
         }
     }"#;
@@ -137,6 +140,17 @@ fn spec() {
         .find(|e| e.message() == "no schema parser matched")
         .unwrap();
     assert!(unknown_error.path().is_none());
+
+    let reference_error = errors.iter().find(by_effect("reference")).unwrap();
+    assert_eq!(
+        reference_error.message(),
+        "cursor must be either \"random\" or \"unique\""
+    );
+    let reference_path = reference_error.path().unwrap();
+    assert_eq!(
+        reference_path.as_slice(),
+        ["effects", "reference", "schema", "cursor"]
+    );
 
     let nested_error = errors.iter().find(by_effect("nested")).unwrap();
     assert_eq!(nested_error.message(), "minimum must be a number");

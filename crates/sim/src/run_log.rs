@@ -48,5 +48,18 @@ pub trait RunLogIndex: std::fmt::Debug {
 
 #[derive(Clone, Debug)]
 pub enum RunLogIndexConfig {
-    ByEffect { key: String, last_only: bool },
+    ByEffect { key: String, cursor: Cursor },
+}
+
+/// How a [`RunLogIndex`] picks which of an effect's prior inputs to return from
+/// [`RunLogIndex::sample`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Cursor {
+    /// Always the most recently emitted matching input (used by trigger-by-effect).
+    Last,
+    /// Any matching input, possibly repeating ones already returned (the `reference` schema's
+    /// default).
+    Random,
+    /// Any matching input not yet returned by this index; `None` once exhausted.
+    Unique,
 }

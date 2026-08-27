@@ -1,9 +1,10 @@
-use crate::run_log::{RunLogIndex, RunLogIndexConfig, RunLogReader};
+use crate::run_log::{Cursor, RunLogIndex, RunLogIndexConfig, RunLogReader};
 use crate::{Input, RunLog, RunLogEvent};
 use rand::RngExt;
 use rand_pcg::Pcg32;
 use rand_seeder::Seeder;
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::rc::Rc;
 
 #[derive(Clone, Debug)]
@@ -21,6 +22,7 @@ impl RunLogReader for SimpleEventRunLogReader {
         Box::new(SimpleEventRunLogIndex {
             input_events: Rc::clone(&self.input_events),
             rng: Rc::clone(&self.rng),
+            returned: RefCell::new(HashSet::new()),
             config,
         })
     }
@@ -65,6 +67,8 @@ impl RunLog for SimpleEventRunLog {
 pub struct SimpleEventRunLogIndex {
     input_events: Rc<RefCell<Vec<Rc<Input>>>>,
     rng: Rc<RefCell<Pcg32>>,
+    /// Ids already handed out by this index under [`Cursor::Unique`]; empty and unused otherwise.
+    returned: RefCell<HashSet<u64>>,
     config: RunLogIndexConfig,
 }
 
@@ -72,24 +76,37 @@ impl RunLogIndex for SimpleEventRunLogIndex {
     fn sample(&self) -> Option<Rc<Input>> {
         let input_events = self.input_events.borrow();
 
-        let mut filtered_events = input_events.iter().filter(|e| match &self.config {
-            RunLogIndexConfig::ByEffect {
-                key: config_key, ..
-            } => &e.effect == config_key,
-        });
+        let RunLogIndexConfig::ByEffect { key, cursor } = &self.config;
 
-        match &self.config {
-            RunLogIndexConfig::ByEffect { last_only, .. } => {
-                if *last_only {
-                    filtered_events.next_back().cloned()
+        let mut filtered_events = input_events.iter().filter(|e| &e.effect == key);
+
+        match cursor {
+            Cursor::Last => filtered_events.next_back().cloned(),
+            Cursor::Random => {
+                let filtered_events = filtered_events.collect::<Vec<_>>();
+                if filtered_events.is_empty() {
+                    None
                 } else {
-                    let filtered_events = filtered_events.collect::<Vec<_>>();
-                    if filtered_events.is_empty() {
-                        None
-                    } else {
-                        let idx = self.rng.borrow_mut().random_range(0..filtered_events.len());
-                        filtered_events.get(idx).cloned().cloned()
+                    let idx = self.rng.borrow_mut().random_range(0..filtered_events.len());
+                    filtered_events.get(idx).cloned().cloned()
+                }
+            }
+            Cursor::Unique => {
+                let returned = self.returned.borrow();
+                let candidates = filtered_events
+                    .filter(|e| !returned.contains(&e.id))
+                    .collect::<Vec<_>>();
+                drop(returned);
+
+                if candidates.is_empty() {
+                    None
+                } else {
+                    let idx = self.rng.borrow_mut().random_range(0..candidates.len());
+                    let chosen = candidates.get(idx).cloned().cloned();
+                    if let Some(chosen) = &chosen {
+                        self.returned.borrow_mut().insert(chosen.id);
                     }
+                    chosen
                 }
             }
         }
@@ -120,7 +137,7 @@ mod tests {
 
         let index = reader.index(RunLogIndexConfig::ByEffect {
             key: "a".to_string(),
-            last_only: false,
+            cursor: Cursor::Random,
         });
 
         (0..draws).map(|_| index.sample().unwrap().id).collect()
@@ -134,5 +151,80 @@ mod tests {
     #[test]
     fn index_sample_differs_across_seeds() {
         assert_ne!(sampled_ids(1, 5), sampled_ids(2, 5));
+    }
+
+    fn push_inputs(run_log: &mut SimpleEventRunLog, effect: &str, count: u64) {
+        for i in 1..=count {
+            run_log.push(RunLogEvent::Input(Input {
+                id: i,
+                effect: effect.to_string(),
+                offset: i,
+                timestamp: Utc::now().fixed_offset(),
+                data: serde_json::json!(i),
+                metadata: vec![],
+            }));
+        }
+    }
+
+    #[test]
+    fn unique_cursor_never_repeats_and_exhausts() {
+        let mut run_log = SimpleEventRunLog::new(1);
+        let reader = run_log.reader();
+        push_inputs(&mut run_log, "a", 5);
+
+        let index = reader.index(RunLogIndexConfig::ByEffect {
+            key: "a".to_string(),
+            cursor: Cursor::Unique,
+        });
+
+        let mut seen = HashSet::new();
+        for _ in 0..5 {
+            let sampled = index.sample().unwrap();
+            assert!(
+                seen.insert(sampled.id),
+                "id {} returned more than once",
+                sampled.id
+            );
+        }
+
+        assert!(index.sample().is_none());
+    }
+
+    #[test]
+    fn unique_cursor_is_deterministic_for_a_fixed_seed() {
+        fn draw_all(seed: u64) -> Vec<u64> {
+            let mut run_log = SimpleEventRunLog::new(seed);
+            let reader = run_log.reader();
+            push_inputs(&mut run_log, "a", 10);
+
+            let index = reader.index(RunLogIndexConfig::ByEffect {
+                key: "a".to_string(),
+                cursor: Cursor::Unique,
+            });
+
+            std::iter::from_fn(|| index.sample().map(|e| e.id)).collect()
+        }
+
+        assert_eq!(draw_all(42), draw_all(42));
+    }
+
+    #[test]
+    fn unique_cursor_state_is_independent_per_index() {
+        let mut run_log = SimpleEventRunLog::new(1);
+        let reader = run_log.reader();
+        push_inputs(&mut run_log, "a", 1);
+
+        let index_a = reader.index(RunLogIndexConfig::ByEffect {
+            key: "a".to_string(),
+            cursor: Cursor::Unique,
+        });
+        let index_b = reader.index(RunLogIndexConfig::ByEffect {
+            key: "a".to_string(),
+            cursor: Cursor::Unique,
+        });
+
+        assert_eq!(index_a.sample().unwrap().id, 1);
+        // A second, independent unique index over the same effect can still draw the same input.
+        assert_eq!(index_b.sample().unwrap().id, 1);
     }
 }
