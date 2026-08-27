@@ -2,7 +2,7 @@ mod clock;
 mod trigger;
 
 use crate::build::{BuildError, EffectKey};
-use crate::run_log::{RunLog, RunLogIndexConfig, RunLogReader, SimpleEventRunLog};
+use crate::run_log::{Cursor, RunLog, RunLogIndexConfig, RunLogReader, SimpleEventRunLog};
 use crate::schema::{Metadata, Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext};
 use crate::util::ext::FlattenErr;
 use crate::util::time::Moment;
@@ -296,7 +296,7 @@ impl EffectBuilder {
             TriggerConfig::Effect { key } => {
                 let index = event_run_log.index(RunLogIndexConfig::ByEffect {
                     key: key.clone(),
-                    last_only: true,
+                    cursor: Cursor::Last,
                 });
                 Ok(Trigger::Effect {
                     index,

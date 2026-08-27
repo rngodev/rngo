@@ -1,7 +1,7 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::build::BuildError;
 use crate::parse::{SchemaParseVisitor, SchemaParser};
-use crate::run_log::{RunLogIndex, RunLogIndexConfig};
+use crate::run_log::{Cursor, RunLogIndex, RunLogIndexConfig};
 use crate::schema::Metadata;
 use crate::spec::ParseError as Error;
 
@@ -12,7 +12,10 @@ pub struct Reference {
 
 impl Reference {
     pub fn builder() -> ReferenceBuilder {
-        ReferenceBuilder { config: None }
+        ReferenceBuilder {
+            effect: None,
+            cursor: Cursor::Random,
+        }
     }
 
     pub fn parser() -> ReferenceParser {
@@ -41,7 +44,8 @@ impl Schema for Reference {
 
 #[derive(Debug)]
 pub struct ReferenceBuilder {
-    config: Option<RunLogIndexConfig>,
+    effect: Option<String>,
+    cursor: Cursor,
 }
 
 impl ReferenceBuilder {
@@ -51,19 +55,29 @@ impl ReferenceBuilder {
     }
 
     pub fn set_effect(&mut self, effect: impl Into<String>) -> &mut Self {
-        self.config = Some(RunLogIndexConfig::ByEffect {
-            key: effect.into(),
-            last_only: false,
-        });
+        self.effect = Some(effect.into());
+        self
+    }
+
+    pub fn cursor(mut self, cursor: Cursor) -> Self {
+        self.set_cursor(cursor);
+        self
+    }
+
+    pub fn set_cursor(&mut self, cursor: Cursor) -> &mut Self {
+        self.cursor = cursor;
         self
     }
 }
 
 impl SchemaBuilder for ReferenceBuilder {
     fn build(&self, visitor: SchemaBuildVisitor) -> Result<Box<dyn Schema>, Vec<BuildError>> {
-        if let Some(config) = &self.config {
+        if let Some(key) = &self.effect {
             Ok(Box::new(Reference {
-                index: visitor.event_run_log.index(config.clone()),
+                index: visitor.event_run_log.index(RunLogIndexConfig::ByEffect {
+                    key: key.clone(),
+                    cursor: self.cursor,
+                }),
             }))
         } else {
             Err(vec![visitor.error("config was not set")])
@@ -80,19 +94,34 @@ impl SchemaParser for ReferenceParser {
 
     fn parse(&self, visitor: SchemaParseVisitor) -> Result<Box<dyn SchemaBuilder>, Vec<Error>> {
         let mut builder = Reference::builder();
+        let mut errors = vec![];
 
-        let effect_key = match visitor.spec().fields.get("effect") {
-            Some(k) if k.is_string() => k.as_str().unwrap().to_string(),
-            Some(_) => {
-                return Err(vec![visitor.schema_error("effect must be a string")]);
+        match visitor.spec().fields.get("effect") {
+            Some(k) if k.is_string() => {
+                builder.set_effect(k.as_str().unwrap().to_string());
             }
-            None => {
-                return Err(vec![visitor.schema_error("effect must be specified")]);
+            Some(_) => errors.push(visitor.schema_error("effect must be a string")),
+            None => errors.push(visitor.schema_error("effect must be specified")),
+        }
+
+        if let Some(v) = visitor.spec().fields.get("cursor") {
+            match v.as_str() {
+                Some("random") => {
+                    builder.set_cursor(Cursor::Random);
+                }
+                Some("unique") => {
+                    builder.set_cursor(Cursor::Unique);
+                }
+                _ => errors.push(
+                    visitor.input_error("cursor", "cursor must be either \"random\" or \"unique\""),
+                ),
             }
-        };
+        }
 
-        builder.set_effect(effect_key);
-
-        Ok(Box::new(builder))
+        if errors.is_empty() {
+            Ok(Box::new(builder))
+        } else {
+            Err(errors)
+        }
     }
 }
