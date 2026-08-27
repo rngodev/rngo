@@ -69,8 +69,8 @@ impl SqliteRunLog {
                     segment TEXT
                 );
 
-                CREATE INDEX IF NOT EXISTS idx_metadata_consumed
-                    ON metadata(segment, input_id) WHERE type = 'consumed';
+                CREATE INDEX IF NOT EXISTS idx_metadata_unique_reference
+                    ON metadata(segment, input_id) WHERE type = '_unique_reference';
 
                 BEGIN;
                 ",
@@ -204,7 +204,7 @@ fn placeholder_timestamp() -> DateTime<chrono::FixedOffset> {
 fn metadata_for_input(connection: &Connection, input_id: i64) -> Vec<Metadata> {
     connection
         .prepare_cached(
-            "SELECT type, attribute, data FROM metadata WHERE input_id = ?1 AND type != 'consumed'",
+            "SELECT type, attribute, data FROM metadata WHERE input_id = ?1 AND type != '_unique_reference'",
         )
         .unwrap()
         .query_map(rusqlite::params![input_id], |row| {
@@ -338,7 +338,7 @@ impl RunLogIndex for SqliteRunLogIndex {
                     .prepare_cached(
                         "SELECT COUNT(*) FROM inputs i WHERE i.effect = ?1 AND NOT EXISTS (
                             SELECT 1 FROM metadata m
-                            WHERE m.type = 'consumed' AND m.segment = ?2 AND m.input_id = i.id
+                            WHERE m.type = '_unique_reference' AND m.segment = ?2 AND m.input_id = i.id
                         )",
                     )
                     .unwrap()
@@ -353,7 +353,7 @@ impl RunLogIndex for SqliteRunLogIndex {
                         .prepare_cached(
                             "SELECT i.id, i.offset, i.data FROM inputs i WHERE i.effect = ?1 AND NOT EXISTS (
                                 SELECT 1 FROM metadata m
-                                WHERE m.type = 'consumed' AND m.segment = ?2 AND m.input_id = i.id
+                                WHERE m.type = '_unique_reference' AND m.segment = ?2 AND m.input_id = i.id
                             ) ORDER BY i.id ASC LIMIT 1 OFFSET ?3",
                         )
                         .unwrap()
@@ -369,7 +369,7 @@ impl RunLogIndex for SqliteRunLogIndex {
                     if let Some((id, offset, _)) = &row {
                         connection
                             .prepare_cached(
-                                "INSERT INTO metadata (type, input_id, effect, offset, segment) VALUES ('consumed', ?1, ?2, ?3, ?4)",
+                                "INSERT INTO metadata (type, input_id, effect, offset, segment) VALUES ('_unique_reference', ?1, ?2, ?3, ?4)",
                             )
                             .unwrap()
                             .execute(rusqlite::params![id, key, offset, segment])
