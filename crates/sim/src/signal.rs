@@ -8,10 +8,23 @@ use serde::Serialize;
 use std::path::Path;
 use thiserror::Error;
 
+/// `value`/`passed` are `None` together only when `error` is `Some` - a signal with no `expect`
+/// still has a `value`, just no `passed` verdict.
 #[derive(Clone, Debug, Serialize)]
 pub struct SignalOutcome {
-    pub value: serde_json::Value,
-    pub passed: bool,
+    pub value: Option<serde_json::Value>,
+    pub passed: Option<bool>,
+    pub error: Option<String>,
+}
+
+impl SignalOutcome {
+    fn error(error: SignalError) -> Self {
+        SignalOutcome {
+            value: None,
+            passed: None,
+            error: Some(error.to_string()),
+        }
+    }
 }
 
 #[derive(Debug, Error)]
@@ -33,84 +46,123 @@ pub enum SignalError {
 pub fn evaluate_from_log(
     log_path: &Path,
     signals: &IndexMap<String, spec::Signal>,
-) -> Result<IndexMap<String, SignalOutcome>, Vec<SignalError>> {
-    let connection =
-        Connection::open(log_path).map_err(|e| vec![SignalError::OpenLog(e.to_string())])?;
-    evaluate(&connection, signals)
+) -> Result<IndexMap<String, SignalOutcome>, SignalError> {
+    let connection = Connection::open(log_path).map_err(|e| SignalError::OpenLog(e.to_string()))?;
+    let outcomes = evaluate(&connection, signals);
+    write_outcomes(&connection, &outcomes);
+    Ok(outcomes)
+}
+
+fn write_outcomes(connection: &Connection, outcomes: &IndexMap<String, SignalOutcome>) {
+    connection
+        .execute_batch(
+            "CREATE TABLE IF NOT EXISTS signals (
+                key TEXT NOT NULL,
+                value TEXT,
+                result TEXT,
+                error TEXT
+            )",
+        )
+        .unwrap();
+
+    for (key, outcome) in outcomes {
+        let result = match (&outcome.error, outcome.passed) {
+            (Some(_), _) => Some("error"),
+            (None, Some(true)) => Some("passed"),
+            (None, Some(false)) => Some("failed"),
+            (None, None) => None,
+        };
+
+        connection
+            .prepare_cached(
+                "INSERT INTO signals (key, value, result, error) VALUES (?1, ?2, ?3, ?4)",
+            )
+            .unwrap()
+            .execute(rusqlite::params![
+                key,
+                outcome.value.as_ref().map(|v| v.to_string()),
+                result,
+                outcome.error,
+            ])
+            .unwrap();
+    }
 }
 
 fn evaluate(
     connection: &Connection,
     signals: &IndexMap<String, spec::Signal>,
-) -> Result<IndexMap<String, SignalOutcome>, Vec<SignalError>> {
-    let mut outcomes = IndexMap::new();
-    let mut errors = vec![];
-
-    for (key, signal) in signals {
-        match evaluate_one(connection, key, signal) {
-            Ok(outcome) => {
-                outcomes.insert(key.clone(), outcome);
-            }
-            Err(e) => errors.push(e),
-        }
-    }
-
-    if errors.is_empty() {
-        Ok(outcomes)
-    } else {
-        Err(errors)
-    }
+) -> IndexMap<String, SignalOutcome> {
+    signals
+        .iter()
+        .map(|(key, signal)| (key.clone(), evaluate_one(connection, key, signal)))
+        .collect()
 }
 
-fn evaluate_one(
-    connection: &Connection,
-    key: &str,
-    signal: &spec::Signal,
-) -> Result<SignalOutcome, SignalError> {
+fn evaluate_one(connection: &Connection, key: &str, signal: &spec::Signal) -> SignalOutcome {
     let spec::Signal::Sql { query, expect } = signal;
 
-    let sql_value = connection
-        .query_row(query, [], |row| row.get::<_, SqlValue>(0))
-        .map_err(|e| SignalError::Query {
+    let sql_value = match connection.query_row(query, [], |row| row.get::<_, SqlValue>(0)) {
+        Ok(v) => v,
+        Err(e) => {
+            return SignalOutcome::error(SignalError::Query {
+                key: key.to_string(),
+                message: e.to_string(),
+            });
+        }
+    };
+
+    let Some(value) = sql_value_to_json(sql_value) else {
+        return SignalOutcome::error(SignalError::UnsupportedValue {
             key: key.to_string(),
-            message: e.to_string(),
-        })?;
-
-    let value = sql_value_to_json(sql_value).ok_or_else(|| SignalError::UnsupportedValue {
-        key: key.to_string(),
-    })?;
-
-    let Some(expect) = expect else {
-        return Ok(SignalOutcome {
-            value,
-            passed: true,
         });
     };
 
-    let program = Program::compile(expect).map_err(|e| SignalError::ExpectCompile {
-        key: key.to_string(),
-        message: e.to_string(),
-    })?;
+    let Some(expect) = expect else {
+        return SignalOutcome {
+            value: Some(value),
+            passed: None,
+            error: None,
+        };
+    };
+
+    let program = match Program::compile(expect) {
+        Ok(p) => p,
+        Err(e) => {
+            return SignalOutcome::error(SignalError::ExpectCompile {
+                key: key.to_string(),
+                message: e.to_string(),
+            });
+        }
+    };
 
     let mut ctx = Context::default();
     ctx.add_variable_from_value("result", json_to_cel(value.clone()));
 
-    let result = program.execute(&ctx).map_err(|e| SignalError::ExpectEval {
-        key: key.to_string(),
-        message: e.to_string(),
-    })?;
+    let result = match program.execute(&ctx) {
+        Ok(r) => r,
+        Err(e) => {
+            return SignalOutcome::error(SignalError::ExpectEval {
+                key: key.to_string(),
+                message: e.to_string(),
+            });
+        }
+    };
 
     let passed = match result {
         cel::Value::Bool(b) => b,
         other => {
-            return Err(SignalError::ExpectNotBool {
+            return SignalOutcome::error(SignalError::ExpectNotBool {
                 key: key.to_string(),
                 value: other,
             });
         }
     };
 
-    Ok(SignalOutcome { value, passed })
+    SignalOutcome {
+        value: Some(value),
+        passed: Some(passed),
+        error: None,
+    }
 }
 
 fn sql_value_to_json(value: SqlValue) -> Option<serde_json::Value> {
@@ -172,10 +224,11 @@ mod tests {
             "result == 2",
         );
 
-        let outcomes = evaluate(&connection, &signals).unwrap();
+        let outcomes = evaluate(&connection, &signals);
         let outcome = &outcomes["check"];
-        assert_eq!(outcome.value, serde_json::json!(2));
-        assert!(outcome.passed);
+        assert_eq!(outcome.value, Some(serde_json::json!(2)));
+        assert_eq!(outcome.passed, Some(true));
+        assert!(outcome.error.is_none());
     }
 
     #[test]
@@ -186,21 +239,23 @@ mod tests {
             "result == 0",
         );
 
-        let outcomes = evaluate(&connection, &signals).unwrap();
+        let outcomes = evaluate(&connection, &signals);
         let outcome = &outcomes["check"];
-        assert_eq!(outcome.value, serde_json::json!(1));
-        assert!(!outcome.passed);
+        assert_eq!(outcome.value, Some(serde_json::json!(1)));
+        assert_eq!(outcome.passed, Some(false));
+        assert!(outcome.error.is_none());
     }
 
     #[test]
-    fn missing_expect_always_passes() {
+    fn missing_expect_has_a_value_but_no_result() {
         let connection = connection_with_outputs();
         let signals = signal_without_expect("SELECT COUNT(*) FROM outputs WHERE status = 500");
 
-        let outcomes = evaluate(&connection, &signals).unwrap();
+        let outcomes = evaluate(&connection, &signals);
         let outcome = &outcomes["check"];
-        assert_eq!(outcome.value, serde_json::json!(1));
-        assert!(outcome.passed);
+        assert_eq!(outcome.value, Some(serde_json::json!(1)));
+        assert_eq!(outcome.passed, None);
+        assert!(outcome.error.is_none());
     }
 
     #[test]
@@ -208,25 +263,37 @@ mod tests {
         let connection = connection_with_outputs();
         let signals = signal("SELECT COUNT(*) FROM outputs", "result >= 2 && result <= 5");
 
-        let outcomes = evaluate(&connection, &signals).unwrap();
-        assert!(outcomes["check"].passed);
+        let outcomes = evaluate(&connection, &signals);
+        assert_eq!(outcomes["check"].passed, Some(true));
     }
 
     #[test]
-    fn invalid_query_reports_error() {
+    fn invalid_query_error_is_captured_in_outcome() {
         let connection = connection_with_outputs();
         let signals = signal("SELECT COUNT(*) FROM missing_table", "result == 0");
 
-        let errors = evaluate(&connection, &signals).unwrap_err();
-        assert!(matches!(errors[0], SignalError::Query { .. }));
+        let outcomes = evaluate(&connection, &signals);
+        let outcome = &outcomes["check"];
+        assert!(outcome.value.is_none());
+        assert!(outcome.passed.is_none());
+        assert!(outcome.error.as_ref().unwrap().contains("query failed"));
     }
 
     #[test]
-    fn non_bool_expect_reports_error() {
+    fn non_bool_expect_error_is_captured_in_outcome() {
         let connection = connection_with_outputs();
         let signals = signal("SELECT COUNT(*) FROM outputs", "result");
 
-        let errors = evaluate(&connection, &signals).unwrap_err();
-        assert!(matches!(errors[0], SignalError::ExpectNotBool { .. }));
+        let outcomes = evaluate(&connection, &signals);
+        let outcome = &outcomes["check"];
+        assert!(outcome.value.is_none());
+        assert!(outcome.passed.is_none());
+        assert!(
+            outcome
+                .error
+                .as_ref()
+                .unwrap()
+                .contains("must evaluate to a bool")
+        );
     }
 }

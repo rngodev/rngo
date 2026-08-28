@@ -29,3 +29,6 @@ dirs = "6.0.0"
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 tempfile = "3"
 semver = "1.0.28"
+
+[dev-dependencies]
+rusqlite = { version = "0.40.1", features = ["bundled"] }

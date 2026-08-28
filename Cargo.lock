@@ -1223,6 +1223,7 @@ dependencies = [
  "dotenvy",
  "handlebars",
  "rngo-sim",
+ "rusqlite",
  "semver",
  "serde_json",
  "serde_yaml",
