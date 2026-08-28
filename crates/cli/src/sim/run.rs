@@ -79,8 +79,7 @@ pub fn run(
 
     if !spec.signals.is_empty() {
         let outcomes =
-            rngo_sim::signal::evaluate_from_log(&run_dir.join("log.sqlite"), &spec.signals)
-                .map_err(join_errors)?;
+            rngo_sim::signal::evaluate_from_log(&run_dir.join("log.sqlite"), &spec.signals)?;
 
         println!();
         println!("{}", style("Audit").bold());
@@ -90,18 +89,29 @@ pub fn run(
 
         for (key, outcome) in &outcomes {
             let spec::Signal::Sql { expect, .. } = &spec.signals[key];
+
+            if let Some(error) = &outcome.error {
+                all_passed = false;
+                if expect.is_some() {
+                    checked += 1;
+                }
+                println!("{key}: error - {error}");
+                continue;
+            }
+
+            let value = outcome.value.as_ref().unwrap();
             match expect {
                 Some(expect) => {
                     checked += 1;
-                    if outcome.passed {
+                    if outcome.passed.unwrap() {
                         passed += 1;
-                        println!("{key}: {} (passed)", outcome.value);
+                        println!("{key}: {value} (passed)");
                     } else {
                         all_passed = false;
-                        println!("{key}: {} (failed - expected '{expect}')", outcome.value);
+                        println!("{key}: {value} (failed - expected '{expect}')");
                     }
                 }
-                None => println!("{key}: {}", outcome.value),
+                None => println!("{key}: {value}"),
             }
         }
 
@@ -268,14 +278,17 @@ mod tests {
     fn signal_outcome(base: &Path, key: &str) -> (serde_json::Value, bool) {
         let connection =
             rusqlite::Connection::open(base.join(".rngo/runs/last/log.sqlite")).unwrap();
-        let (value, result): (String, String) = connection
+        let (value, result): (Option<String>, Option<String>) = connection
             .query_row(
                 "SELECT value, result FROM signals WHERE key = ?1",
                 rusqlite::params![key],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .unwrap();
-        (serde_json::from_str(&value).unwrap(), result == "passed")
+        (
+            serde_json::from_str(&value.unwrap()).unwrap(),
+            result.unwrap() == "passed",
+        )
     }
 
     #[test]
