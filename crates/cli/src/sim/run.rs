@@ -81,10 +81,6 @@ pub fn run(
         let outcomes =
             rngo_sim::signal::evaluate_from_log(&run_dir.join("log.sqlite"), &spec.signals)
                 .map_err(join_errors)?;
-        fs::write(
-            run_dir.join("signals.json"),
-            serde_json::to_string_pretty(&outcomes)?,
-        )?;
 
         println!();
         println!("{}", style("Audit").bold());
@@ -269,6 +265,19 @@ mod tests {
         fs::write(path, serde_yaml::to_string(value).unwrap()).unwrap();
     }
 
+    fn signal_outcome(base: &Path, key: &str) -> (serde_json::Value, bool) {
+        let connection =
+            rusqlite::Connection::open(base.join(".rngo/runs/last/log.sqlite")).unwrap();
+        let (value, result): (String, bool) = connection
+            .query_row(
+                "SELECT value, result FROM signals WHERE key = ?1",
+                rusqlite::params![key],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        (serde_json::from_str(&value).unwrap(), result)
+    }
+
     #[test]
     fn exec_target_runs_command_per_event() {
         let tmp = TempDir::new().unwrap();
@@ -370,11 +379,8 @@ mod tests {
 
         run(base, false, None, false, None).unwrap();
 
-        let signals_path = base.join(".rngo/runs/last/signals.json");
-        let content = fs::read_to_string(&signals_path).unwrap();
-        let value: serde_json::Value = serde_json::from_str(&content).unwrap();
-
-        assert_eq!(value["has-failure-output"]["passed"], true);
+        let (_, passed) = signal_outcome(base, "has-failure-output");
+        assert!(passed);
     }
 
     #[test]
@@ -431,12 +437,9 @@ mod tests {
 
         run(base, false, None, false, None).unwrap();
 
-        let signals_path = base.join(".rngo/runs/last/signals.json");
-        let content = fs::read_to_string(&signals_path).unwrap();
-        let value: serde_json::Value = serde_json::from_str(&content).unwrap();
-
-        assert_eq!(
-            value["matches-effect-count"]["passed"], true,
+        let (value, passed) = signal_outcome(base, "matches-effect-count");
+        assert!(
+            passed,
             "expected output count to match effect count, got {value}"
         );
     }
@@ -710,13 +713,12 @@ mod tests {
 
         run(base, false, None, false, None).unwrap();
 
-        let signals_path = base.join(".rngo/runs/last/signals.json");
-        let content = fs::read_to_string(&signals_path).unwrap();
-        let value: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let (has_events_value, has_events_passed) = signal_outcome(base, "hasEvents");
+        assert!(has_events_passed);
+        assert!(has_events_value.as_i64().unwrap() >= 1);
 
-        assert_eq!(value["hasEvents"]["passed"], true);
-        assert!(value["hasEvents"]["value"].as_i64().unwrap() >= 1);
-        assert_eq!(value["tooMany"]["passed"], false);
+        let (_, too_many_passed) = signal_outcome(base, "tooMany");
+        assert!(!too_many_passed);
     }
 
     #[test]
@@ -760,11 +762,8 @@ mod tests {
 
         run(base, false, None, false, None).unwrap();
 
-        let signals_path = base.join(".rngo/runs/last/signals.json");
-        let content = fs::read_to_string(&signals_path).unwrap();
-        let value: serde_json::Value = serde_json::from_str(&content).unwrap();
-
-        assert_eq!(value["has-events"]["passed"], true);
+        let (_, passed) = signal_outcome(base, "has-events");
+        assert!(passed);
     }
 
     #[test]
@@ -818,12 +817,9 @@ mod tests {
 
         run(base, false, None, false, None).unwrap();
 
-        let signals_path = base.join(".rngo/runs/last/signals.json");
-        let content = fs::read_to_string(&signals_path).unwrap();
-        let value: serde_json::Value = serde_json::from_str(&content).unwrap();
-
-        assert_eq!(
-            value["tail-outputs"]["passed"], true,
+        let (value, passed) = signal_outcome(base, "tail-outputs");
+        assert!(
+            passed,
             "expected 2 outputs from the effect-less channel, got {value}"
         );
     }

@@ -36,7 +36,33 @@ pub fn evaluate_from_log(
 ) -> Result<IndexMap<String, SignalOutcome>, Vec<SignalError>> {
     let connection =
         Connection::open(log_path).map_err(|e| vec![SignalError::OpenLog(e.to_string())])?;
-    evaluate(&connection, signals)
+    let outcomes = evaluate(&connection, signals)?;
+    write_outcomes(&connection, &outcomes);
+    Ok(outcomes)
+}
+
+fn write_outcomes(connection: &Connection, outcomes: &IndexMap<String, SignalOutcome>) {
+    connection
+        .execute_batch(
+            "CREATE TABLE IF NOT EXISTS signals (
+                key TEXT NOT NULL,
+                value TEXT NOT NULL,
+                result INTEGER NOT NULL
+            )",
+        )
+        .unwrap();
+
+    for (key, outcome) in outcomes {
+        connection
+            .prepare_cached("INSERT INTO signals (key, value, result) VALUES (?1, ?2, ?3)")
+            .unwrap()
+            .execute(rusqlite::params![
+                key,
+                outcome.value.to_string(),
+                outcome.passed,
+            ])
+            .unwrap();
+    }
 }
 
 fn evaluate(
