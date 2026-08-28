@@ -47,7 +47,7 @@ fn write_outcomes(connection: &Connection, outcomes: &IndexMap<String, SignalOut
             "CREATE TABLE IF NOT EXISTS signals (
                 key TEXT NOT NULL,
                 value TEXT NOT NULL,
-                result INTEGER NOT NULL
+                result TEXT NOT NULL
             )",
         )
         .unwrap();
@@ -59,7 +59,7 @@ fn write_outcomes(connection: &Connection, outcomes: &IndexMap<String, SignalOut
             .execute(rusqlite::params![
                 key,
                 outcome.value.to_string(),
-                outcome.passed,
+                if outcome.passed { "passed" } else { "failed" },
             ])
             .unwrap();
     }

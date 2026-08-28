@@ -268,14 +268,14 @@ mod tests {
     fn signal_outcome(base: &Path, key: &str) -> (serde_json::Value, bool) {
         let connection =
             rusqlite::Connection::open(base.join(".rngo/runs/last/log.sqlite")).unwrap();
-        let (value, result): (String, bool) = connection
+        let (value, result): (String, String) = connection
             .query_row(
                 "SELECT value, result FROM signals WHERE key = ?1",
                 rusqlite::params![key],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .unwrap();
-        (serde_json::from_str(&value).unwrap(), result)
+        (serde_json::from_str(&value).unwrap(), result == "passed")
     }
 
     #[test]
