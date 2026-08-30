@@ -1,5 +1,5 @@
-use crate::sim::channel::ChannelDispatch;
-use crate::sim::status::StatusRunLog;
+use crate::run::channel::ChannelDispatch;
+use crate::run::status::StatusRunLog;
 use console::style;
 use rngo_sim::{Dialect, SqliteRunLog, spec};
 use std::collections::HashMap;
