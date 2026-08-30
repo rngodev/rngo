@@ -5,7 +5,6 @@ use indexmap::IndexMap;
 use rusqlite::Connection;
 use rusqlite::types::Value as SqlValue;
 use serde::Serialize;
-use std::path::Path;
 use thiserror::Error;
 
 /// `value`/`passed` are `None` together only when `error` is `Some` - a signal with no `expect`
@@ -18,7 +17,7 @@ pub struct SignalOutcome {
 }
 
 impl SignalOutcome {
-    fn error(error: SignalError) -> Self {
+    pub(crate) fn error(error: SignalError) -> Self {
         SignalOutcome {
             value: None,
             passed: None,
@@ -29,8 +28,8 @@ impl SignalOutcome {
 
 #[derive(Debug, Error)]
 pub enum SignalError {
-    #[error("failed to open log database: {0}")]
-    OpenLog(String),
+    #[error("signal `{key}`: this run log does not support evaluating signals")]
+    Unsupported { key: String },
     #[error("signal `{key}`: query failed: {message}")]
     Query { key: String, message: String },
     #[error("signal `{key}`: query returned a blob, which is not a supported result type")]
@@ -43,17 +42,7 @@ pub enum SignalError {
     ExpectNotBool { key: String, value: cel::Value },
 }
 
-pub fn evaluate_from_log(
-    log_path: &Path,
-    signals: &IndexMap<String, spec::Signal>,
-) -> Result<IndexMap<String, SignalOutcome>, SignalError> {
-    let connection = Connection::open(log_path).map_err(|e| SignalError::OpenLog(e.to_string()))?;
-    let outcomes = evaluate(&connection, signals);
-    write_outcomes(&connection, &outcomes);
-    Ok(outcomes)
-}
-
-fn write_outcomes(connection: &Connection, outcomes: &IndexMap<String, SignalOutcome>) {
+pub(crate) fn write_outcomes(connection: &Connection, outcomes: &IndexMap<String, SignalOutcome>) {
     connection
         .execute_batch(
             "CREATE TABLE IF NOT EXISTS signals (
@@ -88,7 +77,7 @@ fn write_outcomes(connection: &Connection, outcomes: &IndexMap<String, SignalOut
     }
 }
 
-fn evaluate(
+pub(crate) fn evaluate(
     connection: &Connection,
     signals: &IndexMap<String, spec::Signal>,
 ) -> IndexMap<String, SignalOutcome> {

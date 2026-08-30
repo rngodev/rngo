@@ -1,10 +1,12 @@
-use crate::Output;
 use crate::build::{BuildError, SimulationKey};
 use crate::channel::Channel;
 use crate::effect::{Effect, EffectBuilder, Input};
 use crate::run_log::{RunLog, SimpleEventRunLog};
+use crate::signal::SignalOutcome;
 use crate::util::time::Moment;
+use crate::{Output, spec};
 use chrono::{TimeDelta, Utc};
+use indexmap::IndexMap;
 use std::sync::mpsc::{self, Receiver, Sender};
 
 #[derive(Debug)]
@@ -44,11 +46,21 @@ impl Simulation {
     ///
     /// Iteration already drains outputs before computing each event, but outputs sent after
     /// the last event (e.g. a `stream` channel's subprocess flushing its output once it
-    /// receives EOF) arrive after the last `next()` call, so this drains once more. Taking
-    /// `self` by value also ensures the run log is dropped - and so commits any pending
-    /// writes - before this returns.
-    pub fn finish(mut self) {
+    /// receives EOF) arrive after the last `next()` call, so this drains once more. Takes
+    /// `&mut self` rather than consuming it so [`Self::evaluate_signals`] can still see these
+    /// trailing outputs afterward; the run log commits its pending writes once this simulation
+    /// itself is dropped.
+    pub fn finish(&mut self) {
         self.drain_outputs();
+    }
+
+    /// Evaluates `signals` against everything this simulation has logged so far. Typically
+    /// called after [`Self::finish`] so trailing outputs are included.
+    pub fn evaluate_signals(
+        &self,
+        signals: &IndexMap<String, spec::Signal>,
+    ) -> IndexMap<String, SignalOutcome> {
+        self.event_run_log.evaluate_signals(signals)
     }
 }
 

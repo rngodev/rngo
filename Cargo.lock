@@ -1222,6 +1222,7 @@ dependencies = [
  "dirs",
  "dotenvy",
  "handlebars",
+ "indexmap",
  "rngo-sim",
  "rusqlite",
  "semver",

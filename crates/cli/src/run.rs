@@ -73,16 +73,16 @@ pub fn run(
 
     // Closes stdin on every stream channel (triggering exit for those that react to EOF) and
     // kills any stragglers - including output-source channels with no natural end - after a
-    // grace period; `simulation.finish()` drains the trailing outputs this produces and drops
-    // the simulation, committing the run log before signals are evaluated below.
+    // grace period; `simulation.finish()` drains the trailing outputs this produces so signals
+    // below see them too. The run log itself commits once `simulation` drops at the end of this
+    // function.
     channel_dispatch.finish()?;
     simulation.finish();
 
     let mut all_passed = true;
 
     if !spec.signals.is_empty() {
-        let outcomes =
-            rngo_sim::signal::evaluate_from_log(&run_dir.join("log.sqlite"), &spec.signals)?;
+        let outcomes = simulation.evaluate_signals(&spec.signals);
 
         println!();
         println!("{}", style("Audit").bold());
