@@ -5,7 +5,7 @@ use crate::effect::Effect;
 use crate::format::Format;
 use crate::schema::custom::CustomParser;
 use crate::simulation::{Simulation, SimulationBuilder};
-use crate::spec::{self, ParseError};
+use crate::spec::{self, ParseError, Spec};
 use crate::util::time::Moment;
 use crate::{format, schema};
 use std::rc::Rc;
@@ -47,38 +47,11 @@ impl Dialect {
         &self,
         value: serde_json::Value,
     ) -> Result<SimulationBuilder, Vec<ParseError>> {
-        let spec: spec::Simulation = spec::from_value(value)?;
-        self.parse_simulation(spec)
+        let spec: Spec = spec::from_value(value)?;
+        self.parse_spec(spec)
     }
 
-    /// Resolves a channel's `format` config to a runtime [`Format`] instance. Returns `Ok(None)`
-    /// when no registered parser recognizes the format's type, matching the historical behavior
-    /// of silently not formatting rather than erroring on an unrecognized/absent type.
-    fn parse_format(
-        &self,
-        format: &spec::Format,
-        simulation: &spec::Simulation,
-    ) -> Result<Option<Box<dyn Format>>, Vec<ParseError>> {
-        let matching: Vec<_> = self
-            .format_parsers
-            .iter()
-            .filter(|p| format.ftype.as_deref() == Some(p.key()))
-            .collect();
-
-        match matching.as_slice() {
-            [parser] => parser.parse(format, simulation).map(Some),
-            [] => Ok(None),
-            _ => Err(vec![ParseError::SchemaError {
-                path: None,
-                message: format!("{} format parsers matched", matching.len()),
-            }]),
-        }
-    }
-
-    pub fn parse_simulation(
-        &self,
-        spec: spec::Simulation,
-    ) -> Result<SimulationBuilder, Vec<ParseError>> {
+    pub fn parse_spec(&self, spec: Spec) -> Result<SimulationBuilder, Vec<ParseError>> {
         let mut errors = vec![];
         let mut simulation_builder = Simulation::builder();
         let simulation_moment_parser = Moment::parser();
@@ -200,6 +173,27 @@ impl Dialect {
             Err(errors)
         } else {
             Ok(simulation_builder)
+        }
+    }
+
+    fn parse_format(
+        &self,
+        format: &spec::Format,
+        simulation: &Spec,
+    ) -> Result<Option<Box<dyn Format>>, Vec<ParseError>> {
+        let matching: Vec<_> = self
+            .format_parsers
+            .iter()
+            .filter(|p| format.ftype.as_deref() == Some(p.key()))
+            .collect();
+
+        match matching.as_slice() {
+            [parser] => parser.parse(format, simulation).map(Some),
+            [] => Ok(None),
+            _ => Err(vec![ParseError::SchemaError {
+                path: None,
+                message: format!("{} format parsers matched", matching.len()),
+            }]),
         }
     }
 }

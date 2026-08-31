@@ -34,7 +34,7 @@ pub struct ChannelDispatch {
 
 impl ChannelDispatch {
     pub fn new(
-        spec: &spec::Simulation,
+        spec: &spec::Spec,
         channels: Vec<Channel>,
         output_tx: Sender<Output>,
     ) -> Result<Self, Box<dyn Error>> {

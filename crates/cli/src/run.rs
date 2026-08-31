@@ -26,7 +26,7 @@ pub fn run(
     };
 
     let mut simulation_builder = Dialect::primitive()
-        .parse_simulation(spec.clone())
+        .parse_spec(spec.clone())
         .map_err(join_errors)?;
 
     if let Some(limit) = limit {
@@ -127,12 +127,12 @@ pub fn run(
     Ok(all_passed)
 }
 
-fn load_spec_file(path: &Path) -> Result<spec::Simulation, Box<dyn Error>> {
+fn load_spec_file(path: &Path) -> Result<spec::Spec, Box<dyn Error>> {
     let value: serde_json::Value = serde_yaml::from_str(&fs::read_to_string(path)?)?;
     Ok(spec::from_value(value).map_err(join_errors)?)
 }
 
-fn load_spec(base: &Path) -> Result<spec::Simulation, Box<dyn Error>> {
+fn load_spec(base: &Path) -> Result<spec::Spec, Box<dyn Error>> {
     let spec_path = base.join(".rngo/spec.yml");
 
     let mut spec: serde_json::Value = if spec_path.exists() {

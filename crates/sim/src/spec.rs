@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
-pub fn from_value(value: serde_json::Value) -> Result<Simulation, Vec<ParseError>> {
+pub fn from_value(value: serde_json::Value) -> Result<Spec, Vec<ParseError>> {
     let mut track = serde_path_to_error::Track::new();
     let deserializer = serde_path_to_error::Deserializer::new(value, &mut track);
     serde_path_to_error::deserialize(deserializer).map_err(|e| {
@@ -24,7 +24,7 @@ pub enum ParseError {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct Simulation {
+pub struct Spec {
     pub seed: Option<u64>,
     pub start: Option<String>,
     pub end: Option<String>,
