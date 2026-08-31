@@ -9,6 +9,7 @@ pub mod schema;
 pub mod signal;
 mod simulation;
 pub mod spec;
+mod system;
 mod util;
 
 pub use build::{BuildError, EffectKey, SchemaEdge, SimulationKey};
@@ -21,4 +22,5 @@ pub use run_log::{RunLog, RunLogEvent, RunLogReader, SimpleEventRunLog, SqliteRu
 pub use signal::{SignalError, SignalOutcome};
 pub use simulation::Simulation;
 pub use spec::ParseError;
+pub use system::System;
 pub use util::time::Moment;

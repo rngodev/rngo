@@ -1,6 +1,6 @@
 use chrono::Utc;
 use handlebars::Handlebars;
-use rngo_sim::{Channel, Format, Input, Level, Output, spec};
+use rngo_sim::{Channel, Format, Input, Level, Output, System, spec};
 use std::collections::HashMap;
 use std::error::Error;
 use std::io::{BufRead, BufReader, Write};
@@ -33,30 +33,14 @@ pub struct ChannelDispatch {
 }
 
 impl ChannelDispatch {
-    pub fn new(
-        spec: &spec::Spec,
-        channels: Vec<Channel>,
-        output_tx: Sender<Output>,
-    ) -> Result<Self, Box<dyn Error>> {
-        let effect_channels: HashMap<String, String> = spec
-            .effects
-            .iter()
-            .filter_map(|(k, v)| v.channel.as_ref().map(|s| (k.clone(), s.clone())))
-            .collect();
-
-        for channel_key in effect_channels.values() {
-            if !channels.iter().any(|s| &s.key == channel_key) {
-                return Err(format!("effect references unknown channel: {channel_key}").into());
-            }
-        }
-
+    pub fn new(system: System, output_tx: Sender<Output>) -> Result<Self, Box<dyn Error>> {
         let mut formats: HashMap<String, Box<dyn Format>> = HashMap::new();
         let mut stdinpipes = HashMap::new();
         let mut children = HashMap::new();
         let mut reader_threads = vec![];
         let mut hbs = Handlebars::new();
 
-        for channel in channels {
+        for channel in system.channels {
             let Channel {
                 key: channel_key,
                 format,
@@ -129,7 +113,7 @@ impl ChannelDispatch {
         }
 
         Ok(Self {
-            effect_channels,
+            effect_channels: system.effect_channels.clone(),
             formats,
             stdinpipes,
             children,

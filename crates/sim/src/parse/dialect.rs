@@ -6,8 +6,10 @@ use crate::format::Format;
 use crate::schema::custom::CustomParser;
 use crate::simulation::{Simulation, SimulationBuilder};
 use crate::spec::{self, ParseError, Spec};
+use crate::system::System;
 use crate::util::time::Moment;
 use crate::{format, schema};
+use std::collections::HashMap;
 use std::rc::Rc;
 
 pub struct Dialect {
@@ -150,6 +152,17 @@ impl Dialect {
             }
         }
 
+        if !errors.is_empty() {
+            Err(errors)
+        } else {
+            Ok(simulation_builder)
+        }
+    }
+
+    pub fn parse_system(&self, spec: Spec) -> Result<System, Vec<ParseError>> {
+        let mut errors = vec![];
+        let mut channels = vec![];
+
         for (key, channel) in &spec.channels {
             let format = match &channel.format {
                 Some(format) => match self.parse_format(format, &spec) {
@@ -162,17 +175,35 @@ impl Dialect {
                 None => None,
             };
 
-            simulation_builder.set_channel(Channel {
+            channels.push(Channel {
                 key: key.clone(),
                 format,
                 target: channel.target.clone(),
             });
         }
 
+        let effect_channels: HashMap<String, String> = spec
+            .effects
+            .iter()
+            .filter_map(|(k, v)| v.channel.as_ref().map(|s| (k.clone(), s.clone())))
+            .collect();
+
+        for (effect_key, channel_key) in &effect_channels {
+            if !channels.iter().any(|s| &s.key == channel_key) {
+                errors.push(ParseError::SchemaError {
+                    path: Some(vec!["effects".into(), effect_key.clone(), "channel".into()]),
+                    message: format!("unknown channel: {channel_key}"),
+                });
+            }
+        }
+
         if !errors.is_empty() {
             Err(errors)
         } else {
-            Ok(simulation_builder)
+            Ok(System {
+                channels,
+                effect_channels,
+            })
         }
     }
 

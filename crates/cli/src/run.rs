@@ -25,9 +25,9 @@ pub fn run(
         None => load_spec(base)?,
     };
 
-    let mut simulation_builder = Dialect::primitive()
-        .parse_spec(spec.clone())
-        .map_err(join_errors)?;
+    let dialect = Dialect::primitive();
+
+    let mut simulation_builder = dialect.parse_spec(spec.clone()).map_err(join_errors)?;
 
     if let Some(limit) = limit {
         simulation_builder = simulation_builder.limit(limit.get());
@@ -60,8 +60,9 @@ pub fn run(
         .run_log(run_log)
         .build()
         .map_err(join_errors)?;
-    let channels = simulation.take_channels();
-    let mut channel_dispatch = ChannelDispatch::new(&spec, channels, simulation.output_tx())?;
+
+    let system = dialect.parse_system(spec.clone()).map_err(join_errors)?;
+    let mut channel_dispatch = ChannelDispatch::new(system, simulation.output_tx())?;
 
     for input_event in &mut simulation {
         if stdout {
