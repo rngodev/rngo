@@ -95,11 +95,12 @@ pub struct Channel {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-#[serde(tag = "type")]
-pub enum ChannelTarget {
-    Stream { command: String },
-    Exec { command: String },
+#[serde(rename_all = "camelCase")]
+pub struct ChannelTarget {
+    #[serde(rename = "type")]
+    pub ttype: Option<String>,
+    #[serde(flatten)]
+    pub fields: IndexMap<String, Value>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
