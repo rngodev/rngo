@@ -2,9 +2,11 @@ use crate::effect::Input;
 use crate::output::Level;
 use crate::run_log::{Cursor, RunLogIndex, RunLogIndexConfig, RunLogReader};
 use crate::schema::Metadata;
+use crate::signal::SignalOutcome;
 use crate::util::json_pointer::JsonPointer;
-use crate::{RunLog, RunLogEvent};
+use crate::{RunLog, RunLogEvent, spec};
 use chrono::{DateTime, Utc};
+use indexmap::IndexMap;
 use rand::RngExt;
 use rand_pcg::Pcg32;
 use rand_seeder::Seeder;
@@ -184,6 +186,18 @@ impl RunLog for SqliteRunLog {
             rng: Rc::clone(&self.rng),
             next_segment: Rc::clone(&self.next_segment),
         })
+    }
+
+    /// Queries the writer's own connection, so pending, uncommitted events from this run are
+    /// visible to signals without needing a prior commit (see the struct docs).
+    fn evaluate_signals(
+        &self,
+        signals: &IndexMap<String, spec::Signal>,
+    ) -> IndexMap<String, SignalOutcome> {
+        let connection = self.connection.borrow();
+        let outcomes = crate::signal::evaluate(&connection, signals);
+        crate::signal::write_outcomes(&connection, &outcomes);
+        outcomes
     }
 }
 

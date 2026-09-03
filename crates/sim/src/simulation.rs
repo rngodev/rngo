@@ -1,17 +1,17 @@
-use crate::Output;
 use crate::build::{BuildError, SimulationKey};
-use crate::channel::Channel;
 use crate::effect::{Effect, EffectBuilder, Input};
 use crate::run_log::{RunLog, SimpleEventRunLog};
+use crate::signal::SignalOutcome;
 use crate::util::time::Moment;
+use crate::{Output, spec};
 use chrono::{TimeDelta, Utc};
+use indexmap::IndexMap;
 use std::sync::mpsc::{self, Receiver, Sender};
 
 #[derive(Debug)]
 pub struct Simulation {
     event_run_log: Box<dyn RunLog>,
     effects: Vec<Effect>,
-    channels: Vec<Channel>,
     output_tx: Sender<Output>,
     output_rx: Receiver<Output>,
     limit: Option<u64>,
@@ -27,12 +27,6 @@ impl Simulation {
         self.output_tx.clone()
     }
 
-    /// Hands ownership of the simulation's channels to the caller (e.g. the CLI's channel
-    /// dispatch), leaving this simulation's copy empty.
-    pub fn take_channels(&mut self) -> Vec<Channel> {
-        std::mem::take(&mut self.channels)
-    }
-
     /// Pushes any outputs currently waiting in the channel into the run log.
     fn drain_outputs(&mut self) {
         for output in self.output_rx.try_iter() {
@@ -44,11 +38,21 @@ impl Simulation {
     ///
     /// Iteration already drains outputs before computing each event, but outputs sent after
     /// the last event (e.g. a `stream` channel's subprocess flushing its output once it
-    /// receives EOF) arrive after the last `next()` call, so this drains once more. Taking
-    /// `self` by value also ensures the run log is dropped - and so commits any pending
-    /// writes - before this returns.
-    pub fn finish(mut self) {
+    /// receives EOF) arrive after the last `next()` call, so this drains once more. Takes
+    /// `&mut self` rather than consuming it so [`Self::evaluate_signals`] can still see these
+    /// trailing outputs afterward; the run log commits its pending writes once this simulation
+    /// itself is dropped.
+    pub fn finish(&mut self) {
         self.drain_outputs();
+    }
+
+    /// Evaluates `signals` against everything this simulation has logged so far. Typically
+    /// called after [`Self::finish`] so trailing outputs are included.
+    pub fn evaluate_signals(
+        &self,
+        signals: &IndexMap<String, spec::Signal>,
+    ) -> IndexMap<String, SignalOutcome> {
+        self.event_run_log.evaluate_signals(signals)
     }
 }
 
@@ -92,7 +96,6 @@ pub struct SimulationBuilder {
     pub end: Moment,
     event_run_log: Option<Box<dyn RunLog>>,
     effect_builders: Vec<EffectBuilder>,
-    channels: Vec<Channel>,
     limit: Option<u64>,
 }
 
@@ -104,7 +107,6 @@ impl SimulationBuilder {
             end: Moment::Relative(TimeDelta::zero()),
             event_run_log: None,
             effect_builders: vec![],
-            channels: vec![],
             limit: None,
         }
     }
@@ -153,11 +155,6 @@ impl SimulationBuilder {
 
     pub fn set_effect(&mut self, effect: EffectBuilder) {
         self.effect_builders.push(effect)
-    }
-
-    pub fn set_channel(&mut self, channel: Channel) -> &mut Self {
-        self.channels.push(channel);
-        self
     }
 
     pub fn with_effect(
@@ -209,7 +206,6 @@ impl SimulationBuilder {
             Ok(Simulation {
                 event_run_log,
                 effects,
-                channels: self.channels,
                 output_tx,
                 output_rx,
                 limit: self.limit,

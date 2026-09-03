@@ -1,8 +1,10 @@
 mod simple;
 mod sqlite;
 
-use crate::Output;
 use crate::effect::{Input, SkippedInput};
+use crate::signal::SignalOutcome;
+use crate::{Output, spec};
+use indexmap::IndexMap;
 use std::rc::Rc;
 
 pub use simple::SimpleEventRunLog;
@@ -11,6 +13,14 @@ pub use sqlite::SqliteRunLog;
 pub trait RunLog: std::fmt::Debug {
     fn push(&mut self, event: RunLogEvent);
     fn reader(&self) -> Rc<dyn RunLogReader>;
+
+    /// Evaluates `signals` against this run log's recorded events, returning one outcome per
+    /// signal keyed the same way. A backend with no query engine over its events (e.g.
+    /// [`SimpleEventRunLog`]) reports every signal as unsupported rather than failing outright.
+    fn evaluate_signals(
+        &self,
+        signals: &IndexMap<String, spec::Signal>,
+    ) -> IndexMap<String, SignalOutcome>;
 }
 
 pub enum RunLogEvent {

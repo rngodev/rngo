@@ -1,7 +1,8 @@
-use crate::sim::channel::ChannelDispatch;
-use crate::sim::status::StatusRunLog;
+mod status;
+
 use console::style;
 use rngo_sim::{Dialect, SqliteRunLog, spec};
+use status::StatusRunLog;
 use std::collections::HashMap;
 use std::error::Error;
 use std::path::{Path, PathBuf};
@@ -22,9 +23,9 @@ pub fn run(
         None => load_spec(base)?,
     };
 
-    let mut simulation_builder = Dialect::primitive()
-        .parse_simulation(spec.clone())
-        .map_err(join_errors)?;
+    let dialect = Dialect::primitive();
+
+    let mut simulation_builder = dialect.parse_spec(spec.clone()).map_err(join_errors)?;
 
     if let Some(limit) = limit {
         simulation_builder = simulation_builder.limit(limit.get());
@@ -57,29 +58,34 @@ pub fn run(
         .run_log(run_log)
         .build()
         .map_err(join_errors)?;
-    let channels = simulation.take_channels();
-    let mut channel_dispatch = ChannelDispatch::new(&spec, channels, simulation.output_tx())?;
+
+    let system_builder = dialect.parse_system(spec.clone()).map_err(join_errors)?;
+
+    let mut system = system_builder
+        .output_tx(simulation.output_tx())
+        .build()
+        .map_err(join_errors)?;
 
     for input_event in &mut simulation {
         if stdout {
             println!("{}", serde_json::to_string(&input_event)?);
         } else {
-            channel_dispatch.send(&input_event)?;
+            system.send(&input_event)?;
         }
     }
 
     // Closes stdin on every stream channel (triggering exit for those that react to EOF) and
     // kills any stragglers - including output-source channels with no natural end - after a
-    // grace period; `simulation.finish()` drains the trailing outputs this produces and drops
-    // the simulation, committing the run log before signals are evaluated below.
-    channel_dispatch.finish()?;
+    // grace period; `simulation.finish()` drains the trailing outputs this produces so signals
+    // below see them too. The run log itself commits once `simulation` drops at the end of this
+    // function.
+    system.finish();
     simulation.finish();
 
     let mut all_passed = true;
 
     if !spec.signals.is_empty() {
-        let outcomes =
-            rngo_sim::signal::evaluate_from_log(&run_dir.join("log.sqlite"), &spec.signals)?;
+        let outcomes = simulation.evaluate_signals(&spec.signals);
 
         println!();
         println!("{}", style("Audit").bold());
@@ -124,12 +130,12 @@ pub fn run(
     Ok(all_passed)
 }
 
-fn load_spec_file(path: &Path) -> Result<spec::Simulation, Box<dyn Error>> {
+fn load_spec_file(path: &Path) -> Result<spec::Spec, Box<dyn Error>> {
     let value: serde_json::Value = serde_yaml::from_str(&fs::read_to_string(path)?)?;
     Ok(spec::from_value(value).map_err(join_errors)?)
 }
 
-fn load_spec(base: &Path) -> Result<spec::Simulation, Box<dyn Error>> {
+fn load_spec(base: &Path) -> Result<spec::Spec, Box<dyn Error>> {
     let spec_path = base.join(".rngo/spec.yml");
 
     let mut spec: serde_json::Value = if spec_path.exists() {

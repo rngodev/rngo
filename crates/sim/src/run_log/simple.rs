@@ -1,5 +1,7 @@
 use crate::run_log::{Cursor, RunLogIndex, RunLogIndexConfig, RunLogReader};
-use crate::{Input, RunLog, RunLogEvent};
+use crate::signal::{SignalError, SignalOutcome};
+use crate::{Input, RunLog, RunLogEvent, spec};
+use indexmap::IndexMap;
 use rand::RngExt;
 use rand_pcg::Pcg32;
 use rand_seeder::Seeder;
@@ -60,6 +62,23 @@ impl RunLog for SimpleEventRunLog {
             input_events: Rc::clone(&self.input_events),
             rng: Rc::clone(&self.rng),
         })
+    }
+
+    /// Signals are SQL queries, and this in-memory log has no query engine to run them against,
+    /// so every signal comes back as unsupported rather than silently evaluating nothing.
+    fn evaluate_signals(
+        &self,
+        signals: &IndexMap<String, spec::Signal>,
+    ) -> IndexMap<String, SignalOutcome> {
+        signals
+            .keys()
+            .map(|key| {
+                (
+                    key.clone(),
+                    SignalOutcome::error(SignalError::Unsupported { key: key.clone() }),
+                )
+            })
+            .collect()
     }
 }
 

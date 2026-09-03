@@ -1,6 +1,8 @@
 use chrono::{DateTime, FixedOffset};
 use console::{Term, style};
-use rngo_sim::{RunLog, RunLogEvent, RunLogReader};
+use indexmap::IndexMap;
+use rngo_sim::signal::SignalOutcome;
+use rngo_sim::{RunLog, RunLogEvent, RunLogReader, spec};
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -105,6 +107,13 @@ impl RunLog for StatusRunLog {
 
     fn reader(&self) -> Rc<dyn RunLogReader> {
         self.child.reader()
+    }
+
+    fn evaluate_signals(
+        &self,
+        signals: &IndexMap<String, spec::Signal>,
+    ) -> IndexMap<String, SignalOutcome> {
+        self.child.evaluate_signals(signals)
     }
 }
 
