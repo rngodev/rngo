@@ -1,4 +1,3 @@
-mod channel;
 mod status;
 
 use console::style;
