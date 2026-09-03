@@ -190,13 +190,13 @@ impl Dialect {
             let mut channel_builder = Channel::builder(key.clone());
 
             match &channel.format {
-                Some(format) => match self.parse_format(format, &spec) {
+                Some(format) if format.ftype.is_some() => match self.parse_format(format, &spec) {
                     Ok(format) => {
                         channel_builder.set_format(format);
                     }
                     Err(mut e) => errors.append(&mut e),
                 },
-                None => (),
+                _ => (),
             };
 
             match self.parse_target(key, &channel.target) {
@@ -239,7 +239,7 @@ impl Dialect {
             [parser] => parser.parse(format, simulation),
             [] => Err(vec![ParseError::SchemaError {
                 path: None,
-                message: format!("unknown format type"),
+                message: "unknown format type".to_string(),
             }]),
             _ => Err(vec![ParseError::SchemaError {
                 path: None,
@@ -263,7 +263,7 @@ impl Dialect {
             [parser] => parser.parse(channel_key.into(), channel_target),
             [] => Err(vec![ParseError::SchemaError {
                 path: None,
-                message: format!("unknown target type"),
+                message: "unknown target type".to_string(),
             }]),
             _ => Err(vec![ParseError::SchemaError {
                 path: None,

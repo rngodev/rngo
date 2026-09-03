@@ -22,14 +22,14 @@ impl System {
         match self.channels.get_mut(&channel_key) {
             Some(channel) => {
                 let formatted_data = if let Some(format) = &channel.format {
-                    format.format(&input).ok()
+                    format.format(input).ok()
                 } else {
                     None
                 };
 
                 channel.target.send(input, formatted_data)
             }
-            None => return Ok(()),
+            None => Ok(()),
         }
     }
 
