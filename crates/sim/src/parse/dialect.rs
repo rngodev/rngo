@@ -1,12 +1,13 @@
 use super::format::FormatParser;
 use super::schema::{SchemaParseVisitor, SchemaParser};
-use crate::channel::Channel;
+use crate::channel::{self, Channel, ChannelTargetBuilder};
 use crate::effect::Effect;
 use crate::format::Format;
+use crate::parse::ChannelTargetParser;
 use crate::schema::custom::CustomParser;
 use crate::simulation::{Simulation, SimulationBuilder};
 use crate::spec::{self, ParseError, Spec};
-use crate::system::System;
+use crate::system::{System, SystemBuilder};
 use crate::util::time::Moment;
 use crate::{format, schema};
 use std::collections::HashMap;
@@ -15,16 +16,19 @@ use std::rc::Rc;
 pub struct Dialect {
     schema_parsers: Rc<Vec<Box<dyn SchemaParser>>>,
     format_parsers: Rc<Vec<Box<dyn FormatParser>>>,
+    channel_target_parsers: Rc<Vec<Box<dyn ChannelTargetParser>>>,
 }
 
 impl Dialect {
     pub fn new(
         schema_parsers: Vec<Box<dyn SchemaParser>>,
         format_parsers: Vec<Box<dyn FormatParser>>,
+        channel_target_parsers: Vec<Box<dyn ChannelTargetParser>>,
     ) -> Self {
         Dialect {
             schema_parsers: Rc::new(schema_parsers),
             format_parsers: Rc::new(format_parsers),
+            channel_target_parsers: Rc::new(channel_target_parsers),
         }
     }
 
@@ -42,6 +46,10 @@ impl Dialect {
                 Box::new(schema::Str::parser()),
             ],
             vec![Box::new(format::SqlFormat::parser())],
+            vec![
+                Box::new(channel::Exec::parser()),
+                Box::new(channel::Stream::parser()),
+            ],
         )
     }
 
@@ -159,28 +167,9 @@ impl Dialect {
         }
     }
 
-    pub fn parse_system(&self, spec: Spec) -> Result<System, Vec<ParseError>> {
+    pub fn parse_system(&self, spec: Spec) -> Result<SystemBuilder, Vec<ParseError>> {
         let mut errors = vec![];
-        let mut channels = vec![];
-
-        for (key, channel) in &spec.channels {
-            let format = match &channel.format {
-                Some(format) => match self.parse_format(format, &spec) {
-                    Ok(format) => format,
-                    Err(mut e) => {
-                        errors.append(&mut e);
-                        None
-                    }
-                },
-                None => None,
-            };
-
-            channels.push(Channel {
-                key: key.clone(),
-                format,
-                target: channel.target.clone(),
-            });
-        }
+        let mut simulation_builder = System::builder();
 
         let effect_channels: HashMap<String, String> = spec
             .effects
@@ -189,7 +178,7 @@ impl Dialect {
             .collect();
 
         for (effect_key, channel_key) in &effect_channels {
-            if !channels.iter().any(|s| &s.key == channel_key) {
+            if !spec.channels.keys().any(|key| key == channel_key) {
                 errors.push(ParseError::SchemaError {
                     path: Some(vec!["effects".into(), effect_key.clone(), "channel".into()]),
                     message: format!("unknown channel: {channel_key}"),
@@ -197,13 +186,41 @@ impl Dialect {
             }
         }
 
+        for (key, channel) in &spec.channels {
+            let mut channel_builder = Channel::builder(key.clone());
+
+            match &channel.format {
+                Some(format) => match self.parse_format(format, &spec) {
+                    Ok(format) => {
+                        channel_builder.set_format(format);
+                    }
+                    Err(mut e) => errors.append(&mut e),
+                },
+                None => (),
+            };
+
+            match self.parse_target(key, &channel.target) {
+                Ok(target_builder) => {
+                    channel_builder.set_target(target_builder);
+                }
+                Err(mut e) => errors.append(&mut e),
+            }
+
+            let effects = effect_channels
+                .iter()
+                .filter(|(_, channel_key)| *channel_key == key)
+                .map(|(effect_key, _)| effect_key.clone())
+                .collect();
+
+            channel_builder.set_effects(effects);
+
+            simulation_builder.set_channel(channel_builder);
+        }
+
         if !errors.is_empty() {
             Err(errors)
         } else {
-            Ok(System {
-                channels,
-                effect_channels,
-            })
+            Ok(simulation_builder)
         }
     }
 
@@ -211,7 +228,7 @@ impl Dialect {
         &self,
         format: &spec::Format,
         simulation: &Spec,
-    ) -> Result<Option<Box<dyn Format>>, Vec<ParseError>> {
+    ) -> Result<Box<dyn Format>, Vec<ParseError>> {
         let matching: Vec<_> = self
             .format_parsers
             .iter()
@@ -219,11 +236,38 @@ impl Dialect {
             .collect();
 
         match matching.as_slice() {
-            [parser] => parser.parse(format, simulation).map(Some),
-            [] => Ok(None),
+            [parser] => parser.parse(format, simulation),
+            [] => Err(vec![ParseError::SchemaError {
+                path: None,
+                message: format!("unknown format type"),
+            }]),
             _ => Err(vec![ParseError::SchemaError {
                 path: None,
                 message: format!("{} format parsers matched", matching.len()),
+            }]),
+        }
+    }
+
+    fn parse_target(
+        &self,
+        channel_key: &str,
+        channel_target: &spec::ChannelTarget,
+    ) -> Result<Box<dyn ChannelTargetBuilder>, Vec<ParseError>> {
+        let matching: Vec<_> = self
+            .channel_target_parsers
+            .iter()
+            .filter(|p| channel_target.ttype.as_deref() == Some(p.key()))
+            .collect();
+
+        match matching.as_slice() {
+            [parser] => parser.parse(channel_key.into(), channel_target),
+            [] => Err(vec![ParseError::SchemaError {
+                path: None,
+                message: format!("unknown target type"),
+            }]),
+            _ => Err(vec![ParseError::SchemaError {
+                path: None,
+                message: format!("{} target parsers matched", matching.len()),
             }]),
         }
     }

@@ -7,10 +7,17 @@ use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::sync::mpsc::Sender;
 
+#[derive(Debug)]
 pub struct Exec {
     channel_key: String,
     output_tx: Sender<Output>,
     hbs: Handlebars<'static>,
+}
+
+impl Exec {
+    pub fn parser() -> ExecParser {
+        ExecParser {}
+    }
 }
 
 impl ChannelTarget for Exec {
@@ -88,8 +95,8 @@ impl ExecBuilder {
 }
 
 impl ChannelTargetBuilder for ExecBuilder {
-    fn build(self, output_tx: Sender<Output>) -> Result<Box<dyn ChannelTarget>, Vec<BuildError>> {
-        let Some(command) = self.command else {
+    fn build(&self, output_tx: Sender<Output>) -> Result<Box<dyn ChannelTarget>, Vec<BuildError>> {
+        let Some(command) = self.command.clone() else {
             return Err(vec![BuildError::ChannelTarget {
                 channel: self.channel_key.clone(),
                 message: "command not specified".into(),
@@ -106,7 +113,7 @@ impl ChannelTargetBuilder for ExecBuilder {
             })?;
 
         Ok(Box::new(Exec {
-            channel_key: self.channel_key,
+            channel_key: self.channel_key.clone(),
             output_tx,
             hbs,
         }))
@@ -124,7 +131,6 @@ impl ChannelTargetParser for ExecParser {
         &self,
         channel_key: String,
         channel_target: &spec::ChannelTarget,
-        spec: &spec::Spec,
     ) -> Result<Box<dyn ChannelTargetBuilder>, Vec<ParseError>> {
         let command = match channel_target.fields.get("command") {
             Some(value) => match value.as_str() {

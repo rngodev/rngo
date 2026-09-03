@@ -7,6 +7,5 @@ pub trait ChannelTargetParser {
         &self,
         channel_key: String,
         channel_target: &spec::ChannelTarget,
-        spec: &spec::Spec,
     ) -> Result<Box<dyn ChannelTargetBuilder>, Vec<ParseError>>;
 }

@@ -16,11 +16,18 @@ use std::time::{Duration, Instant};
 const SHUTDOWN_GRACE: Duration = Duration::from_millis(200);
 const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(5);
 
+#[derive(Debug)]
 pub struct Stream {
     channel_key: String,
     child: Child,
     stdin: Option<ChildStdin>,
     reader_threads: Vec<JoinHandle<()>>,
+}
+
+impl Stream {
+    pub fn parser() -> StreamParser {
+        StreamParser {}
+    }
 }
 
 impl ChannelTarget for Stream {
@@ -90,8 +97,8 @@ impl StreamBuilder {
 }
 
 impl ChannelTargetBuilder for StreamBuilder {
-    fn build(self, output_tx: Sender<Output>) -> Result<Box<dyn ChannelTarget>, Vec<BuildError>> {
-        let Some(command) = self.command else {
+    fn build(&self, output_tx: Sender<Output>) -> Result<Box<dyn ChannelTarget>, Vec<BuildError>> {
+        let Some(command) = self.command.clone() else {
             return Err(vec![BuildError::ChannelTarget {
                 channel: self.channel_key.clone(),
                 message: "command not specified".into(),
@@ -153,7 +160,7 @@ impl ChannelTargetBuilder for StreamBuilder {
         }
 
         Ok(Box::new(Stream {
-            channel_key: self.channel_key,
+            channel_key: self.channel_key.clone(),
             child,
             stdin,
             reader_threads,
@@ -172,7 +179,6 @@ impl ChannelTargetParser for StreamParser {
         &self,
         channel_key: String,
         channel_target: &spec::ChannelTarget,
-        _spec: &spec::Spec,
     ) -> Result<Box<dyn ChannelTargetBuilder>, Vec<ParseError>> {
         let command = match channel_target.fields.get("command") {
             Some(value) => match value.as_str() {

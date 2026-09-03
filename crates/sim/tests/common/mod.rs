@@ -13,6 +13,8 @@ impl BuildErrorTestExt for BuildError {
             BuildError::Simulation { message, .. } => message,
             BuildError::Effect { message, .. } => message,
             BuildError::Schema { message, .. } => message,
+            BuildError::System { message } => message,
+            BuildError::Channel { message, .. } => message,
             BuildError::ChannelTarget { message, .. } => message,
         }
     }

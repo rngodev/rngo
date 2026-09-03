@@ -1,7 +1,6 @@
 mod channel;
 mod status;
 
-use channel::ChannelDispatch;
 use console::style;
 use rngo_sim::{Dialect, SqliteRunLog, spec};
 use status::StatusRunLog;
@@ -61,14 +60,18 @@ pub fn run(
         .build()
         .map_err(join_errors)?;
 
-    let system = dialect.parse_system(spec.clone()).map_err(join_errors)?;
-    let mut channel_dispatch = ChannelDispatch::new(system, simulation.output_tx())?;
+    let system_builder = dialect.parse_system(spec.clone()).map_err(join_errors)?;
+
+    let mut system = system_builder
+        .output_tx(simulation.output_tx())
+        .build()
+        .map_err(join_errors)?;
 
     for input_event in &mut simulation {
         if stdout {
             println!("{}", serde_json::to_string(&input_event)?);
         } else {
-            channel_dispatch.send(&input_event)?;
+            system.send(&input_event)?;
         }
     }
 
@@ -77,7 +80,7 @@ pub fn run(
     // grace period; `simulation.finish()` drains the trailing outputs this produces so signals
     // below see them too. The run log itself commits once `simulation` drops at the end of this
     // function.
-    channel_dispatch.finish()?;
+    system.finish();
     simulation.finish();
 
     let mut all_passed = true;
