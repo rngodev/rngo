@@ -1,11 +1,13 @@
 use crate::channel::ChannelBuilder;
-use crate::{BuildError, Channel, Input, Output};
+use crate::simulation::SimulationBuilder;
+use crate::{BuildError, Channel, Input, Output, RunLog, SimpleEventRunLog, SimulationEvent};
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver};
 
 pub struct System {
-    pub channels: HashMap<String, Channel>,
-    pub effect_channels: HashMap<String, String>,
+    run_log: Box<dyn RunLog>,
+    channels: HashMap<String, Channel>,
+    effect_channels: HashMap<String, String>,
     output_rx: Receiver<Output>,
 }
 
@@ -39,11 +41,44 @@ impl System {
         }
     }
 
+    pub fn run(
+        &mut self,
+        simulation_builder: SimulationBuilder,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut simulation = simulation_builder
+            .run_log_reader(self.run_log.reader())
+            .build()
+            .unwrap(); // TODO: FIX
+
+        for event in &mut simulation {
+            match event {
+                SimulationEvent::Input(input) => {
+                    let outputs = self.send(&input)?;
+                    self.run_log.push_input(input);
+                    for output in outputs {
+                        self.run_log.push_output(output);
+                    }
+                }
+                SimulationEvent::SkippedInput(_skipped_input) => todo!(),
+            }
+
+            while let Some(output) = self.next() {
+                self.run_log.push_output(output);
+            }
+        }
+
+        Ok(())
+    }
+
     /// Shuts down every channel's target (e.g. closing a `stream` subprocess's stdin and
     /// waiting for it to exit). This can itself produce trailing outputs, so `System` remains
     /// iterable afterward - drain it before dropping to pick those up.
     pub fn finish(&mut self) {
         self.channels.clear();
+
+        while let Some(output) = self.next() {
+            self.run_log.push_output(output);
+        }
     }
 }
 
@@ -58,14 +93,21 @@ impl Iterator for System {
 }
 
 pub struct SystemBuilder {
+    run_log: Option<Box<dyn RunLog>>,
     channel_builders: Vec<ChannelBuilder>,
 }
 
 impl SystemBuilder {
     pub fn new() -> Self {
         Self {
+            run_log: None,
             channel_builders: vec![],
         }
+    }
+
+    pub fn run_log(mut self, run_log: impl RunLog + 'static) -> Self {
+        self.run_log = Some(Box::new(run_log));
+        self
     }
 
     pub fn set_channel(&mut self, channel: ChannelBuilder) {
@@ -87,6 +129,10 @@ impl SystemBuilder {
         let mut errors = vec![];
         let mut channels = HashMap::new();
         let (output_tx, output_rx) = mpsc::channel::<Output>();
+
+        let run_log = self
+            .run_log
+            .unwrap_or_else(|| Box::new(SimpleEventRunLog::new(12345)));
 
         for mut channel_builder in self.channel_builders {
             channel_builder.set_output_tx(output_tx.clone());
@@ -114,6 +160,7 @@ impl SystemBuilder {
             .collect();
 
         Ok(System {
+            run_log,
             channels,
             effect_channels,
             output_rx,

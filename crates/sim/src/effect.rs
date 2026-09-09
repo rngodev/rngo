@@ -19,7 +19,7 @@ pub use trigger::TriggerEvent;
 #[derive(Debug)]
 pub struct Effect {
     pub key: String,
-    event_run_log: Rc<dyn RunLogReader>,
+    run_log_reader: Rc<dyn RunLogReader>,
     trigger: Trigger,
     schema: Box<dyn Schema>,
     end_offset: u64,
@@ -60,7 +60,7 @@ impl Iterator for Effect {
         let result = self.schema.next(&context);
 
         if let Some(data) = result.value {
-            let last_id = self.event_run_log.last().map(|e| e.id).unwrap_or(0);
+            let last_id = self.run_log_reader.last().map(|e| e.id).unwrap_or(0);
 
             Some(Ok(Input {
                 id: last_id + 1,
@@ -328,7 +328,7 @@ impl EffectBuilder {
         match schema_result.and_try(trigger_result).flatten_err() {
             Ok((schema, trigger)) if errors.is_empty() => Ok(Effect {
                 key: self.key,
-                event_run_log: event_run_log.clone(),
+                run_log_reader: event_run_log.clone(),
                 trigger,
                 schema,
                 end_offset,

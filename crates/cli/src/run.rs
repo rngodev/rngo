@@ -1,7 +1,7 @@
 mod status;
 
 use console::style;
-use rngo_sim::{Dialect, RunLog, SimulationEvent, SqliteRunLog, signal, spec};
+use rngo_sim::{Dialect, RunLog, SqliteRunLog, signal, spec};
 use status::StatusRunLog;
 use std::collections::HashMap;
 use std::error::Error;
@@ -26,6 +26,7 @@ pub fn run(
     let dialect = Dialect::primitive();
 
     let mut simulation_builder = dialect.parse_spec(spec.clone()).map_err(join_errors)?;
+    let system_builder = dialect.parse_system(spec.clone()).map_err(join_errors)?;
 
     if let Some(limit) = limit {
         simulation_builder = simulation_builder.limit(limit.get());
@@ -55,48 +56,22 @@ pub fn run(
         effect_channels,
     );
 
-    let mut simulation = simulation_builder
-        .run_log_reader(run_log.reader())
-        .build()
-        .map_err(join_errors)?;
+    if stdout {
+        let mut simulation = simulation_builder
+            .run_log_reader(run_log.reader())
+            .build()
+            .map_err(join_errors)?;
 
-    let system_builder = dialect.parse_system(spec.clone()).map_err(join_errors)?;
-
-    let mut system = system_builder.build().map_err(join_errors)?;
-
-    for event in &mut simulation {
-        if stdout {
+        for event in &mut simulation {
             println!("{}", serde_json::to_string(&event)?);
-        } else {
-            match event {
-                SimulationEvent::Input(input) => {
-                    let outputs = system.send(&input)?;
-                    run_log.push_input(input);
-                    for output in outputs {
-                        run_log.push_output(output);
-                    }
-                }
-                SimulationEvent::SkippedInput(_skipped_input) => todo!(),
-            }
         }
+    } else {
+        let mut system = system_builder
+            .run_log(run_log)
+            .build()
+            .map_err(join_errors)?;
 
-        // `system` buffers ambient output (e.g. a `stream` channel's subprocess writing to
-        // stdout on its own schedule) in an unbounded channel behind the scenes - drain it every
-        // time we pull an event from `simulation` rather than only once at the end, so it can't
-        // build up across a long run. `System::next` is a non-blocking poll (`try_recv`), so this
-        // never waits on anything; it just keeps the buffer near-empty.
-        for output in &mut system {
-            run_log.push_output(output);
-        }
-    }
-
-    // Closes stdin on every stream channel (triggering exit for those that react to EOF) and
-    // kills any stragglers - including output-source channels with no natural end - after a
-    // grace period. This can itself produce trailing output (e.g. a subprocess flushing once it
-    // gets EOF) after the last drain above, so drain once more before signals evaluate the log.
-    system.finish();
-    for output in &mut system {
-        run_log.push_output(output);
+        system.run(simulation_builder)?
     }
 
     let mut all_passed = true;
