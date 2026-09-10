@@ -19,7 +19,7 @@ pub use format::Format;
 pub use output::{Level, Output};
 pub use parse::Dialect;
 pub use run_log::{EffectMetadata, RunLog, RunLogReader, SimpleEventRunLog, SqliteRunLog};
-pub use signal::{SignalError, SignalOutcome};
+pub use signal::{Signal, SignalError, SignalOutcome};
 pub use simulation::{Simulation, SimulationEvent};
 pub use spec::ParseError;
 pub use system::System;

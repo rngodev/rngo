@@ -1,15 +1,18 @@
 use super::format::FormatParser;
 use super::schema::{SchemaParseVisitor, SchemaParser};
+use super::signal::SignalParser;
 use crate::channel::{self, Channel, ChannelTargetBuilder};
 use crate::effect::Effect;
 use crate::format::Format;
 use crate::parse::ChannelTargetParser;
 use crate::schema::custom::CustomParser;
+use crate::signal::Signal;
 use crate::simulation::{Simulation, SimulationBuilder};
 use crate::spec::{self, ParseError, Spec};
 use crate::system::{System, SystemBuilder};
 use crate::util::time::Moment;
-use crate::{format, schema};
+use crate::{format, schema, signal};
+use indexmap::IndexMap;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -17,6 +20,7 @@ pub struct Dialect {
     schema_parsers: Rc<Vec<Box<dyn SchemaParser>>>,
     format_parsers: Rc<Vec<Box<dyn FormatParser>>>,
     channel_target_parsers: Rc<Vec<Box<dyn ChannelTargetParser>>>,
+    signal_parsers: Rc<Vec<Box<dyn SignalParser>>>,
 }
 
 impl Dialect {
@@ -24,11 +28,13 @@ impl Dialect {
         schema_parsers: Vec<Box<dyn SchemaParser>>,
         format_parsers: Vec<Box<dyn FormatParser>>,
         channel_target_parsers: Vec<Box<dyn ChannelTargetParser>>,
+        signal_parsers: Vec<Box<dyn SignalParser>>,
     ) -> Self {
         Dialect {
             schema_parsers: Rc::new(schema_parsers),
             format_parsers: Rc::new(format_parsers),
             channel_target_parsers: Rc::new(channel_target_parsers),
+            signal_parsers: Rc::new(signal_parsers),
         }
     }
 
@@ -50,6 +56,7 @@ impl Dialect {
                 Box::new(channel::Exec::parser()),
                 Box::new(channel::Stream::parser()),
             ],
+            vec![Box::new(signal::SqlSignal::parser())],
         )
     }
 
@@ -169,7 +176,7 @@ impl Dialect {
 
     pub fn parse_system(&self, spec: Spec) -> Result<SystemBuilder, Vec<ParseError>> {
         let mut errors = vec![];
-        let mut simulation_builder = System::builder();
+        let mut system_builder = System::builder();
 
         let effect_channels: HashMap<String, String> = spec
             .effects
@@ -214,13 +221,48 @@ impl Dialect {
 
             channel_builder.set_effects(effects);
 
-            simulation_builder.set_channel(channel_builder);
+            system_builder.set_channel(channel_builder);
         }
+
+        let mut signals = IndexMap::new();
+        for (key, signal) in &spec.signals {
+            match self.parse_signal(key, signal) {
+                Ok(built) => {
+                    signals.insert(key.clone(), built);
+                }
+                Err(mut e) => errors.append(&mut e),
+            }
+        }
+        system_builder.set_signals(signals);
 
         if !errors.is_empty() {
             Err(errors)
         } else {
-            Ok(simulation_builder)
+            Ok(system_builder)
+        }
+    }
+
+    fn parse_signal(
+        &self,
+        key: &str,
+        signal: &spec::Signal,
+    ) -> Result<Box<dyn Signal>, Vec<ParseError>> {
+        let matching: Vec<_> = self
+            .signal_parsers
+            .iter()
+            .filter(|p| signal.stype.as_deref() == Some(p.key()))
+            .collect();
+
+        match matching.as_slice() {
+            [parser] => parser.parse(key, signal),
+            [] => Err(vec![ParseError::SchemaError {
+                path: None,
+                message: "unknown signal type".to_string(),
+            }]),
+            _ => Err(vec![ParseError::SchemaError {
+                path: None,
+                message: format!("{} signal parsers matched", matching.len()),
+            }]),
         }
     }
 

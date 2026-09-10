@@ -1,7 +1,7 @@
 use chrono::{DateTime, FixedOffset};
 use console::{Term, style};
 use rngo_sim::spec::Spec;
-use rngo_sim::{EffectMetadata, Input, Output, RunLog, RunLogReader, spec};
+use rngo_sim::{EffectMetadata, Input, Output, RunLog, RunLogReader};
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -117,8 +117,8 @@ impl RunLog for StatusRunLog {
         self.child.push_metadata(metadata);
     }
 
-    fn get_signal(&self, signal: spec::Signal) -> Option<serde_json::Value> {
-        self.child.get_signal(signal)
+    fn get_signal_value(&self, query: &str) -> Option<serde_json::Value> {
+        self.child.get_signal_value(query)
     }
 
     fn reader(&self) -> Rc<dyn RunLogReader> {

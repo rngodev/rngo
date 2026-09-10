@@ -1,9 +1,9 @@
 mod simple;
 mod sqlite;
 
+use crate::Output;
 use crate::effect::{Input, SkippedInput};
 use crate::schema::Metadata;
-use crate::{Output, spec};
 use serde_json::Value;
 use std::rc::Rc;
 
@@ -14,7 +14,7 @@ pub trait RunLog: std::fmt::Debug {
     fn push_input(&mut self, input: Input);
     fn push_output(&mut self, output: Output);
     fn push_metadata(&mut self, metadata: EffectMetadata);
-    fn get_signal(&self, signal: spec::Signal) -> Option<Value>;
+    fn get_signal_value(&self, query: &str) -> Option<Value>;
     fn reader(&self) -> Rc<dyn RunLogReader>;
 }
 

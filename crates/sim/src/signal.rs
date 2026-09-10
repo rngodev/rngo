@@ -1,10 +1,21 @@
+pub(crate) mod sql;
+
+pub use sql::SqlSignal;
+
+use crate::RunLog;
 use crate::util::cel::json_to_cel;
-use crate::{RunLog, spec};
 use cel::{Context, Program};
-use indexmap::IndexMap;
 use rusqlite::types::Value as SqlValue;
 use serde::Serialize;
 use thiserror::Error;
+
+/// A built, runtime-evaluable signal - the result of a [`crate::parse::SignalParser`] parsing a
+/// [`crate::spec::Signal`]. Mirrors [`crate::format::Format`]: parsing is a single step directly
+/// to this runtime trait, since (unlike schemas) evaluating a signal needs no persistent
+/// build-time resource beyond the [`RunLog`] it's handed on each call.
+pub trait Signal: std::fmt::Debug {
+    fn evaluate(&self, run_log: &dyn RunLog) -> SignalOutcome;
+}
 
 /// `value`/`passed` are `None` together only when `error` is `Some` - a signal with no `expect`
 /// still has a `value`, just no `passed` verdict.
@@ -29,64 +40,35 @@ impl SignalOutcome {
 pub enum SignalError {
     #[error("signal `{key}`: this run log does not support evaluating signals")]
     Unsupported { key: String },
-    #[error("signal `{key}`: expect expression failed to compile: {message}")]
-    ExpectCompile { key: String, message: String },
     #[error("signal `{key}`: expect expression failed to evaluate: {message}")]
     ExpectEval { key: String, message: String },
     #[error("signal `{key}`: expect expression must evaluate to a bool, got {value:?}")]
     ExpectNotBool { key: String, value: cel::Value },
 }
 
-/// Evaluates every signal against `run_log`: fetches each signal's raw value via
-/// [`RunLog::get_signal`] (backend-specific - e.g. a real SQL query for `SqliteRunLog`, always
-/// `None` for `SimpleEventRunLog`), then checks `expect` against it via [`evaluate_one`], which is
-/// backend-agnostic. Records each outcome back onto `run_log` via `RunLog::push_signal_outcome`.
-pub fn evaluate(
-    run_log: &mut dyn RunLog,
-    signals: &IndexMap<String, spec::Signal>,
-) -> IndexMap<String, SignalOutcome> {
-    signals
-        .iter()
-        .map(|(key, signal)| {
-            let value = run_log.get_signal(signal.clone());
-            let outcome = evaluate_one(key, signal, value);
-            (key.clone(), outcome)
-        })
-        .collect()
-}
-
-/// Checks one signal's `expect` expression against `value` - the raw result of
-/// [`RunLog::get_signal`], or `None` if this run log couldn't produce one (either it doesn't
-/// support evaluating signals at all, or the query itself failed).
-pub fn evaluate_one(
+/// Runs a signal's already-compiled `expect` program against `value` - the raw result of
+/// fetching the signal's value (e.g. [`sql::SqlSignal`] running its query against a [`RunLog`]),
+/// or `None` if the fetch couldn't produce one. Backend-agnostic: every [`Signal`] impl's
+/// `evaluate` funnels through here once it has a raw value. Compiling `expect` happens once, at
+/// parse time (see [`sql::SqlSignalParser`]), so a bad expression is rejected before a signal
+/// ever runs rather than on every evaluation.
+pub(crate) fn evaluate_expect(
     key: &str,
-    signal: &spec::Signal,
+    expect: Option<&Program>,
     value: Option<serde_json::Value>,
 ) -> SignalOutcome {
-    let spec::Signal::Sql { expect, .. } = signal;
-
     let Some(value) = value else {
         return SignalOutcome::error(SignalError::Unsupported {
             key: key.to_string(),
         });
     };
 
-    let Some(expect) = expect else {
+    let Some(program) = expect else {
         return SignalOutcome {
             value: Some(value),
             passed: None,
             error: None,
         };
-    };
-
-    let program = match Program::compile(expect) {
-        Ok(p) => p,
-        Err(e) => {
-            return SignalOutcome::error(SignalError::ExpectCompile {
-                key: key.to_string(),
-                message: e.to_string(),
-            });
-        }
     };
 
     let mut ctx = Context::default();
@@ -135,24 +117,14 @@ pub(crate) fn sql_value_to_json(value: SqlValue) -> Option<serde_json::Value> {
 mod tests {
     use super::*;
 
-    fn sql_signal(query: &str, expect: &str) -> spec::Signal {
-        spec::Signal::Sql {
-            query: query.to_string(),
-            expect: Some(expect.to_string()),
-        }
-    }
-
-    fn sql_signal_without_expect(query: &str) -> spec::Signal {
-        spec::Signal::Sql {
-            query: query.to_string(),
-            expect: None,
-        }
+    fn program(expression: &str) -> Program {
+        Program::compile(expression).unwrap()
     }
 
     #[test]
     fn passing_signal() {
-        let signal = sql_signal("unused", "result == 2");
-        let outcome = evaluate_one("check", &signal, Some(serde_json::json!(2)));
+        let expect = program("result == 2");
+        let outcome = evaluate_expect("check", Some(&expect), Some(serde_json::json!(2)));
         assert_eq!(outcome.value, Some(serde_json::json!(2)));
         assert_eq!(outcome.passed, Some(true));
         assert!(outcome.error.is_none());
@@ -160,8 +132,8 @@ mod tests {
 
     #[test]
     fn failing_signal() {
-        let signal = sql_signal("unused", "result == 0");
-        let outcome = evaluate_one("check", &signal, Some(serde_json::json!(1)));
+        let expect = program("result == 0");
+        let outcome = evaluate_expect("check", Some(&expect), Some(serde_json::json!(1)));
         assert_eq!(outcome.value, Some(serde_json::json!(1)));
         assert_eq!(outcome.passed, Some(false));
         assert!(outcome.error.is_none());
@@ -169,8 +141,7 @@ mod tests {
 
     #[test]
     fn missing_expect_has_a_value_but_no_result() {
-        let signal = sql_signal_without_expect("unused");
-        let outcome = evaluate_one("check", &signal, Some(serde_json::json!(1)));
+        let outcome = evaluate_expect("check", None, Some(serde_json::json!(1)));
         assert_eq!(outcome.value, Some(serde_json::json!(1)));
         assert_eq!(outcome.passed, None);
         assert!(outcome.error.is_none());
@@ -178,15 +149,15 @@ mod tests {
 
     #[test]
     fn range_expression() {
-        let signal = sql_signal("unused", "result >= 2 && result <= 5");
-        let outcome = evaluate_one("check", &signal, Some(serde_json::json!(3)));
+        let expect = program("result >= 2 && result <= 5");
+        let outcome = evaluate_expect("check", Some(&expect), Some(serde_json::json!(3)));
         assert_eq!(outcome.passed, Some(true));
     }
 
     #[test]
     fn missing_value_is_reported_as_unsupported() {
-        let signal = sql_signal("unused", "result == 0");
-        let outcome = evaluate_one("check", &signal, None);
+        let expect = program("result == 0");
+        let outcome = evaluate_expect("check", Some(&expect), None);
         assert!(outcome.value.is_none());
         assert!(outcome.passed.is_none());
         assert!(
@@ -200,8 +171,8 @@ mod tests {
 
     #[test]
     fn non_bool_expect_error_is_captured_in_outcome() {
-        let signal = sql_signal("unused", "result");
-        let outcome = evaluate_one("check", &signal, Some(serde_json::json!(3)));
+        let expect = program("result");
+        let outcome = evaluate_expect("check", Some(&expect), Some(serde_json::json!(3)));
         assert!(outcome.value.is_none());
         assert!(outcome.passed.is_none());
         assert!(

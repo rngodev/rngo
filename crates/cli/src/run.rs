@@ -60,7 +60,7 @@ pub fn run(
     let mut all_passed = true;
 
     if !spec.signals.is_empty() {
-        let outcomes = system.audit(&spec.signals);
+        let outcomes = system.audit();
 
         println!();
         println!("{}", style("Audit").bold());
@@ -69,7 +69,10 @@ pub fn run(
         let mut passed = 0;
 
         for (key, outcome) in &outcomes {
-            let spec::Signal::Sql { expect, .. } = &spec.signals[key];
+            let expect = spec.signals[key]
+                .fields
+                .get("expect")
+                .and_then(|v| v.as_str());
 
             if let Some(error) = &outcome.error {
                 all_passed = false;

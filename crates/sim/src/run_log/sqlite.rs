@@ -4,7 +4,7 @@ use crate::run_log::{Cursor, EffectMetadata, RunLogIndex, RunLogIndexConfig, Run
 use crate::schema::Metadata;
 use crate::signal::sql_value_to_json;
 use crate::util::json_pointer::JsonPointer;
-use crate::{Output, RunLog, spec};
+use crate::{Output, RunLog};
 use chrono::{DateTime, Utc};
 use rand::RngExt;
 use rand_pcg::Pcg32;
@@ -191,12 +191,10 @@ impl RunLog for SqliteRunLog {
     /// visible to signals without needing a prior commit (see the struct docs). Only the raw
     /// query result is returned here - compiling/evaluating a signal's `expect` expression
     /// against it is backend-agnostic and lives in `signal.rs`.
-    fn get_signal(&self, signal: spec::Signal) -> Option<serde_json::Value> {
-        let spec::Signal::Sql { query, .. } = signal;
-
+    fn get_signal_value(&self, query: &str) -> Option<serde_json::Value> {
         self.connection
             .borrow()
-            .query_row(&query, [], |row| row.get::<_, rusqlite::types::Value>(0))
+            .query_row(query, [], |row| row.get::<_, rusqlite::types::Value>(0))
             .ok()
             .and_then(sql_value_to_json)
     }
@@ -812,10 +810,7 @@ mod tests {
         push_inputs(&mut run_log, "a", 3);
         run_log.commit();
 
-        let value = run_log.get_signal(spec::Signal::Sql {
-            query: "SELECT COUNT(*) FROM inputs".to_string(),
-            expect: None,
-        });
+        let value = run_log.get_signal_value("SELECT COUNT(*) FROM inputs");
 
         assert_eq!(value, Some(serde_json::json!(3)));
     }
@@ -825,10 +820,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
 
-        let value = run_log.get_signal(spec::Signal::Sql {
-            query: "SELECT COUNT(*) FROM missing_table".to_string(),
-            expect: None,
-        });
+        let value = run_log.get_signal_value("SELECT COUNT(*) FROM missing_table");
 
         assert_eq!(value, None);
     }

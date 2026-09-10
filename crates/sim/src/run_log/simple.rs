@@ -1,5 +1,5 @@
 use crate::run_log::{Cursor, EffectMetadata, RunLogIndex, RunLogIndexConfig, RunLogReader};
-use crate::{Input, Output, RunLog, spec};
+use crate::{Input, Output, RunLog};
 use rand::RngExt;
 use rand_pcg::Pcg32;
 use rand_seeder::Seeder;
@@ -65,7 +65,7 @@ impl RunLog for SimpleEventRunLog {
         self.metadata.push(metadata);
     }
 
-    fn get_signal(&self, _signal: spec::Signal) -> Option<serde_json::Value> {
+    fn get_signal_value(&self, _query: &str) -> Option<serde_json::Value> {
         None
     }
 

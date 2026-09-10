@@ -103,13 +103,11 @@ pub struct ChannelTarget {
     pub fields: IndexMap<String, Value>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-#[serde(tag = "type")]
-pub enum Signal {
-    Sql {
-        query: String,
-        #[serde(default)]
-        expect: Option<String>,
-    },
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Signal {
+    #[serde(rename = "type")]
+    pub stype: Option<String>,
+    #[serde(flatten)]
+    pub fields: IndexMap<String, Value>,
 }
