@@ -58,10 +58,10 @@ impl Dialect {
         value: serde_json::Value,
     ) -> Result<SimulationBuilder, Vec<ParseError>> {
         let spec: Spec = spec::from_value(value)?;
-        self.parse_spec(spec)
+        self.parse_simulation(spec)
     }
 
-    pub fn parse_spec(&self, spec: Spec) -> Result<SimulationBuilder, Vec<ParseError>> {
+    pub fn parse_simulation(&self, spec: Spec) -> Result<SimulationBuilder, Vec<ParseError>> {
         let mut errors = vec![];
         let mut simulation_builder = Simulation::builder();
         let simulation_moment_parser = Moment::parser();

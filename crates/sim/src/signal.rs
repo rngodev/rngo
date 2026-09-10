@@ -50,7 +50,6 @@ pub fn evaluate(
         .map(|(key, signal)| {
             let value = run_log.get_signal(signal.clone());
             let outcome = evaluate_one(key, signal, value);
-            run_log.push_signal_outcome(key, &outcome);
             (key.clone(), outcome)
         })
         .collect()

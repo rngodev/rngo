@@ -1,9 +1,8 @@
 mod status;
 
 use console::style;
-use rngo_sim::{Dialect, RunLog, SqliteRunLog, signal, spec};
+use rngo_sim::{Dialect, SqliteRunLog, spec};
 use status::StatusRunLog;
-use std::collections::HashMap;
 use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::{fmt, fs};
@@ -25,11 +24,18 @@ pub fn run(
 
     let dialect = Dialect::primitive();
 
-    let mut simulation_builder = dialect.parse_spec(spec.clone()).map_err(join_errors)?;
-    let system_builder = dialect.parse_system(spec.clone()).map_err(join_errors)?;
+    let mut simulation_builder = dialect
+        .parse_simulation(spec.clone())
+        .map_err(join_errors)?;
+
+    let mut system_builder = dialect.parse_system(spec.clone()).map_err(join_errors)?;
 
     if let Some(limit) = limit {
         simulation_builder = simulation_builder.limit(limit.get());
+    }
+
+    if stdout {
+        system_builder.set_stdout(true);
     }
 
     if dry_run {
@@ -37,47 +43,24 @@ pub fn run(
         return Ok(true);
     }
 
-    let run_dir = new_run_dir(base)?;
-    fs::create_dir_all(&run_dir)?;
-    fs::write(
-        run_dir.join("spec.json"),
-        serde_json::to_string_pretty(&spec)?,
-    )?;
-    update_last_symlink(base, &run_dir)?;
+    let run_dir = prepare_run_dir(base, &spec)?;
 
-    let effect_channels: HashMap<String, String> = spec
-        .effects
-        .iter()
-        .filter_map(|(k, v)| v.channel.as_ref().map(|s| (k.clone(), s.clone())))
-        .collect();
-
-    let mut run_log = StatusRunLog::new(
+    let run_log = StatusRunLog::new(
         Box::new(SqliteRunLog::new(run_dir.clone(), simulation_builder.seed)),
-        effect_channels,
+        &spec,
     );
 
-    if stdout {
-        let mut simulation = simulation_builder
-            .run_log_reader(run_log.reader())
-            .build()
-            .map_err(join_errors)?;
+    let mut system = system_builder
+        .run_log(run_log)
+        .build()
+        .map_err(join_errors)?;
 
-        for event in &mut simulation {
-            println!("{}", serde_json::to_string(&event)?);
-        }
-    } else {
-        let mut system = system_builder
-            .run_log(run_log)
-            .build()
-            .map_err(join_errors)?;
-
-        system.run(simulation_builder)?
-    }
+    system.run(simulation_builder)?;
 
     let mut all_passed = true;
 
     if !spec.signals.is_empty() {
-        let outcomes = signal::evaluate(&mut run_log, &spec.signals);
+        let outcomes = system.audit(&spec.signals);
 
         println!();
         println!("{}", style("Audit").bold());
@@ -233,6 +216,17 @@ fn load_spec(base: &Path) -> Result<spec::Spec, Box<dyn Error>> {
     }
 
     Ok(spec::from_value(spec).map_err(join_errors)?)
+}
+
+fn prepare_run_dir(base: &Path, spec: &spec::Spec) -> Result<PathBuf, Box<dyn Error>> {
+    let run_dir = new_run_dir(base)?;
+    fs::create_dir_all(&run_dir)?;
+    fs::write(
+        run_dir.join("spec.json"),
+        serde_json::to_string_pretty(spec)?,
+    )?;
+    update_last_symlink(base, &run_dir)?;
+    Ok(run_dir)
 }
 
 fn new_run_dir(base: &Path) -> Result<PathBuf, Box<dyn Error>> {

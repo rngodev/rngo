@@ -1,4 +1,5 @@
 mod exec;
+mod stdout;
 mod stream;
 
 use crate::format::Format;
@@ -7,6 +8,7 @@ use std::error::Error;
 use std::sync::mpsc::Sender;
 
 pub use exec::Exec;
+pub use stdout::Stdout;
 pub use stream::Stream;
 
 #[derive(Debug)]

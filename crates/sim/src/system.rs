@@ -1,6 +1,11 @@
-use crate::channel::ChannelBuilder;
+use indexmap::IndexMap;
+
+use crate::channel::{ChannelBuilder, Stdout};
 use crate::simulation::SimulationBuilder;
-use crate::{BuildError, Channel, Input, Output, RunLog, SimpleEventRunLog, SimulationEvent};
+use crate::{
+    BuildError, Channel, EffectMetadata, Input, Output, RunLog, SignalOutcome, SimpleEventRunLog,
+    SimulationEvent, signal, spec,
+};
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver};
 
@@ -16,29 +21,32 @@ impl System {
         SystemBuilder::new()
     }
 
-    /// Sends `input` to whichever channel its effect is assigned to, if any, returning any
-    /// outputs the channel target produced synchronously in direct response (e.g. an `exec`
-    /// target's captured stdout/stderr). Outputs a target produces on its own schedule (e.g. a
-    /// `stream` target's subprocess writing to stdout at some later point) are not returned here
-    /// - drain them from `System` itself, which implements `Iterator<Item = Output>`.
-    pub fn send(&mut self, input: &Input) -> Result<Vec<Output>, Box<dyn std::error::Error>> {
+    pub fn send(&mut self, input: &Input) -> Result<(), Box<dyn std::error::Error>> {
         let channel_key = match self.effect_channels.get(&input.effect) {
-            Some(k) => k.clone(),
-            None => return Ok(vec![]),
+            Some(k) => k,
+            None => return Ok(()),
         };
 
-        match self.channels.get_mut(&channel_key) {
-            Some(channel) => {
-                let formatted_data = if let Some(format) = &channel.format {
-                    format.format(input).ok()
-                } else {
-                    None
-                };
+        if let Some(channel) = self.channels.get_mut(channel_key) {
+            let formatted_data = if let Some(format) = &channel.format {
+                format.format(input).ok()
+            } else {
+                None
+            };
 
-                channel.target.send(input, formatted_data)
+            let outputs = channel.target.send(input, formatted_data)?;
+            self.run_log.push_input(input.clone());
+            for output in outputs {
+                self.run_log.push_output(output);
             }
-            None => Ok(vec![]),
-        }
+        };
+
+        self.drain_outputs();
+        Ok(())
+    }
+
+    pub fn add_metadata(&mut self, metadata: EffectMetadata) {
+        self.run_log.push_metadata(metadata);
     }
 
     pub fn run(
@@ -53,21 +61,29 @@ impl System {
         for event in &mut simulation {
             match event {
                 SimulationEvent::Input(input) => {
-                    let outputs = self.send(&input)?;
-                    self.run_log.push_input(input);
-                    for output in outputs {
-                        self.run_log.push_output(output);
-                    }
+                    self.send(&input)?;
                 }
-                SimulationEvent::SkippedInput(_skipped_input) => todo!(),
-            }
-
-            while let Some(output) = self.next() {
-                self.run_log.push_output(output);
+                SimulationEvent::SkippedInput(skipped_input) => {
+                    self.add_metadata(skipped_input.into());
+                }
             }
         }
 
         Ok(())
+    }
+
+    pub fn audit(
+        &self,
+        signals: &IndexMap<String, spec::Signal>,
+    ) -> IndexMap<String, SignalOutcome> {
+        signals
+            .iter()
+            .map(|(key, signal)| {
+                let value = self.run_log.get_signal(signal.clone());
+                let outcome = signal::evaluate_one(key, signal, value);
+                (key.clone(), outcome)
+            })
+            .collect()
     }
 
     /// Shuts down every channel's target (e.g. closing a `stream` subprocess's stdin and
@@ -75,26 +91,20 @@ impl System {
     /// iterable afterward - drain it before dropping to pick those up.
     pub fn finish(&mut self) {
         self.channels.clear();
+        self.drain_outputs();
+    }
 
-        while let Some(output) = self.next() {
+    fn drain_outputs(&mut self) {
+        while let Some(output) = self.output_rx.try_recv().ok() {
             self.run_log.push_output(output);
         }
-    }
-}
-
-/// Yields outputs a channel target has produced on its own schedule (e.g. a `stream` target's
-/// subprocess writing to stdout), as opposed to the outputs `send` returns directly.
-impl Iterator for System {
-    type Item = Output;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.output_rx.try_recv().ok()
     }
 }
 
 pub struct SystemBuilder {
     run_log: Option<Box<dyn RunLog>>,
     channel_builders: Vec<ChannelBuilder>,
+    stdout: bool,
 }
 
 impl SystemBuilder {
@@ -102,11 +112,25 @@ impl SystemBuilder {
         Self {
             run_log: None,
             channel_builders: vec![],
+            stdout: false,
         }
     }
 
     pub fn run_log(mut self, run_log: impl RunLog + 'static) -> Self {
         self.run_log = Some(Box::new(run_log));
+        self
+    }
+
+    /// Routes every channel's events to stdout instead of its configured target (e.g. a `stream`
+    /// subprocess never gets spawned). Each channel's `format`, if any, still applies, so stdout
+    /// output looks like what the channel would have actually sent.
+    pub fn stdout(mut self, value: bool) -> Self {
+        self.set_stdout(value);
+        self
+    }
+
+    pub fn set_stdout(&mut self, value: bool) -> &mut Self {
+        self.stdout = value;
         self
     }
 
@@ -135,6 +159,9 @@ impl SystemBuilder {
             .unwrap_or_else(|| Box::new(SimpleEventRunLog::new(12345)));
 
         for mut channel_builder in self.channel_builders {
+            if self.stdout {
+                channel_builder.set_target(Box::new(Stdout::builder()));
+            }
             channel_builder.set_output_tx(output_tx.clone());
 
             match channel_builder.build() {

@@ -69,8 +69,6 @@ impl RunLog for SimpleEventRunLog {
         None
     }
 
-    fn push_signal_outcome(&mut self, _key: &str, _outcome: &crate::signal::SignalOutcome) {}
-
     fn reader(&self) -> Rc<dyn RunLogReader> {
         Rc::new(SimpleEventRunLogReader {
             inputs: Rc::clone(&self.inputs),
