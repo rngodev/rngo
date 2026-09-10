@@ -1,6 +1,7 @@
 use super::format::FormatParser;
 use super::schema::{SchemaParseVisitor, SchemaParser};
 use super::signal::SignalParser;
+use crate::audit::Audit;
 use crate::channel::{self, Channel, ChannelTargetBuilder};
 use crate::effect::Effect;
 use crate::format::Format;
@@ -224,7 +225,17 @@ impl Dialect {
             system_builder.set_channel(channel_builder);
         }
 
+        if !errors.is_empty() {
+            Err(errors)
+        } else {
+            Ok(system_builder)
+        }
+    }
+
+    pub fn parse_audit(&self, spec: Spec) -> Result<Audit, Vec<ParseError>> {
+        let mut errors = vec![];
         let mut signals = IndexMap::new();
+
         for (key, signal) in &spec.signals {
             match self.parse_signal(key, signal) {
                 Ok(built) => {
@@ -233,12 +244,11 @@ impl Dialect {
                 Err(mut e) => errors.append(&mut e),
             }
         }
-        system_builder.set_signals(signals);
 
         if !errors.is_empty() {
             Err(errors)
         } else {
-            Ok(system_builder)
+            Ok(Audit::new(signals))
         }
     }
 

@@ -1,11 +1,7 @@
-use indexmap::IndexMap;
-
 use crate::channel::{ChannelBuilder, Stdout};
-use crate::signal::Signal;
 use crate::simulation::SimulationBuilder;
 use crate::{
-    BuildError, Channel, EffectMetadata, Input, Output, RunLog, SignalOutcome, SimpleEventRunLog,
-    SimulationEvent,
+    BuildError, Channel, EffectMetadata, Input, Output, RunLog, SimpleEventRunLog, SimulationEvent,
 };
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver};
@@ -14,7 +10,6 @@ pub struct System {
     run_log: Box<dyn RunLog>,
     channels: HashMap<String, Channel>,
     effect_channels: HashMap<String, String>,
-    signals: IndexMap<String, Box<dyn Signal>>,
     output_rx: Receiver<Output>,
 }
 
@@ -74,11 +69,8 @@ impl System {
         Ok(())
     }
 
-    pub fn audit(&self) -> IndexMap<String, SignalOutcome> {
-        self.signals
-            .iter()
-            .map(|(key, signal)| (key.clone(), signal.evaluate(self.run_log.as_ref())))
-            .collect()
+    pub(crate) fn run_log(&self) -> &dyn RunLog {
+        self.run_log.as_ref()
     }
 
     /// Shuts down every channel's target (e.g. closing a `stream` subprocess's stdin and
@@ -99,7 +91,6 @@ impl System {
 pub struct SystemBuilder {
     run_log: Option<Box<dyn RunLog>>,
     channel_builders: Vec<ChannelBuilder>,
-    signals: IndexMap<String, Box<dyn Signal>>,
     stdout: bool,
 }
 
@@ -108,7 +99,6 @@ impl SystemBuilder {
         Self {
             run_log: None,
             channel_builders: vec![],
-            signals: IndexMap::new(),
             stdout: false,
         }
     }
@@ -133,16 +123,6 @@ impl SystemBuilder {
 
     pub fn set_channel(&mut self, channel: ChannelBuilder) {
         self.channel_builders.push(channel)
-    }
-
-    pub fn signals(mut self, signals: IndexMap<String, Box<dyn Signal>>) -> Self {
-        self.set_signals(signals);
-        self
-    }
-
-    pub fn set_signals(&mut self, signals: IndexMap<String, Box<dyn Signal>>) -> &mut Self {
-        self.signals = signals;
-        self
     }
 
     pub fn with_channel(
@@ -197,7 +177,6 @@ impl SystemBuilder {
             run_log,
             channels,
             effect_channels,
-            signals: self.signals,
             output_rx,
         })
     }

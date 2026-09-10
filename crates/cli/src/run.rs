@@ -1,7 +1,7 @@
 mod status;
 
 use console::style;
-use rngo_sim::{Dialect, SqliteRunLog, spec};
+use rngo_sim::{Dialect, SignalOutcome, SqliteRunLog, spec};
 use status::StatusRunLog;
 use std::error::Error;
 use std::path::{Path, PathBuf};
@@ -29,6 +29,8 @@ pub fn run(
         .map_err(join_errors)?;
 
     let mut system_builder = dialect.parse_system(spec.clone()).map_err(join_errors)?;
+
+    let audit = dialect.parse_audit(spec.clone()).map_err(join_errors)?;
 
     if let Some(limit) = limit {
         simulation_builder = simulation_builder.limit(limit.get());
@@ -60,7 +62,7 @@ pub fn run(
     let mut all_passed = true;
 
     if !spec.signals.is_empty() {
-        let outcomes = system.audit();
+        let report = audit.run(&system);
 
         println!();
         println!("{}", style("Audit").bold());
@@ -68,34 +70,36 @@ pub fn run(
         let mut checked = 0;
         let mut passed = 0;
 
-        for (key, outcome) in &outcomes {
+        for (key, outcome) in &report.outcomes {
             let expect = spec.signals[key]
                 .fields
                 .get("expect")
                 .and_then(|v| v.as_str());
 
-            if let Some(error) = &outcome.error {
-                all_passed = false;
-                if expect.is_some() {
-                    checked += 1;
-                }
-                println!("{key}: error - {error}");
-                continue;
-            }
-
-            let value = outcome.value.as_ref().unwrap();
-            match expect {
-                Some(expect) => {
-                    checked += 1;
-                    if outcome.passed.unwrap() {
-                        passed += 1;
-                        println!("{key}: {value} (passed)");
-                    } else {
-                        all_passed = false;
-                        println!("{key}: {value} (failed - expected '{expect}')");
+            match outcome {
+                SignalOutcome::Error { error } => {
+                    all_passed = false;
+                    if expect.is_some() {
+                        checked += 1;
                     }
+                    println!("{key}: error - {error}");
                 }
-                None => println!("{key}: {value}"),
+                SignalOutcome::Success {
+                    value,
+                    passed: verdict,
+                } => match expect {
+                    Some(expect) => {
+                        checked += 1;
+                        if verdict.unwrap() {
+                            passed += 1;
+                            println!("{key}: {value} (passed)");
+                        } else {
+                            all_passed = false;
+                            println!("{key}: {value} (failed - expected '{expect}')");
+                        }
+                    }
+                    None => println!("{key}: {value}"),
+                },
             }
         }
 

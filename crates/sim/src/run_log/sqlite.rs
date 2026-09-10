@@ -2,13 +2,13 @@ use crate::effect::Input;
 use crate::output::Level;
 use crate::run_log::{Cursor, EffectMetadata, RunLogIndex, RunLogIndexConfig, RunLogReader};
 use crate::schema::Metadata;
-use crate::signal::sql_value_to_json;
 use crate::util::json_pointer::JsonPointer;
 use crate::{Output, RunLog};
 use chrono::{DateTime, Utc};
 use rand::RngExt;
 use rand_pcg::Pcg32;
 use rand_seeder::Seeder;
+use rusqlite::types::Value as SqlValue;
 use rusqlite::{Connection, OptionalExtension};
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
@@ -190,7 +190,7 @@ impl RunLog for SqliteRunLog {
     /// Queries the writer's own connection, so pending, uncommitted events from this run are
     /// visible to signals without needing a prior commit (see the struct docs). Only the raw
     /// query result is returned here - compiling/evaluating a signal's `expect` expression
-    /// against it is backend-agnostic and lives in `signal.rs`.
+    /// against it is backend-agnostic and lives in `signal/sql.rs`.
     fn get_signal_value(&self, query: &str) -> Option<serde_json::Value> {
         self.connection
             .borrow()
@@ -220,6 +220,18 @@ impl Drop for SqliteRunLog {
 /// (`schema/reference.rs`) - nothing downstream reads a reconstructed `Input`'s timestamp.
 fn placeholder_timestamp() -> DateTime<chrono::FixedOffset> {
     DateTime::<Utc>::UNIX_EPOCH.fixed_offset()
+}
+
+fn sql_value_to_json(value: SqlValue) -> Option<serde_json::Value> {
+    Some(match value {
+        SqlValue::Null => serde_json::Value::Null,
+        SqlValue::Integer(i) => serde_json::Value::from(i),
+        SqlValue::Real(f) => serde_json::Number::from_f64(f)
+            .map(serde_json::Value::Number)
+            .unwrap_or(serde_json::Value::Null),
+        SqlValue::Text(s) => serde_json::Value::String(s),
+        SqlValue::Blob(_) => return None,
+    })
 }
 
 fn metadata_for_input(connection: &Connection, input_id: i64) -> Vec<Metadata> {
