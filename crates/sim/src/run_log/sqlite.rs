@@ -224,19 +224,6 @@ impl RunLogWriter for SqliteRunLogWriter {
         );
         self.record();
     }
-
-    /// Queries the shared connection, so pending, uncommitted events from this run - written by
-    /// this writer or any other handle sharing the store - are visible to signals without needing
-    /// a prior commit (see the struct docs). Only the raw query result is returned here -
-    /// compiling/evaluating a signal's `expect` expression against it is backend-agnostic and
-    /// lives in `signal/sql.rs`.
-    fn get_signal_value(&self, query: &str) -> Option<serde_json::Value> {
-        self.connection
-            .borrow()
-            .query_row(query, [], |row| row.get::<_, rusqlite::types::Value>(0))
-            .ok()
-            .and_then(sql_value_to_json)
-    }
 }
 
 /// The `inputs` table has no `timestamp` column, so rows reconstructed into an [`Input`] carry a
@@ -280,8 +267,8 @@ fn metadata_for_input(connection: &Connection, input_id: i64) -> Vec<Metadata> {
         .collect()
 }
 
-/// Shared by [`RunLogReader::last`] and [`RunLog::last_input`] - both just want the most recently
-/// inserted input, visible to the writer's own pending, uncommitted rows.
+/// Backs [`RunLogReader::last`] - the most recently inserted input, visible to any writer's
+/// pending, uncommitted rows since it's the shared connection.
 fn query_last(connection: &Connection) -> Option<Rc<Input>> {
     let row = connection
         .prepare_cached("SELECT id, effect, offset, data FROM inputs ORDER BY id DESC LIMIT 1")
@@ -432,6 +419,18 @@ struct SqliteRunLogReader {
 impl RunLogReader for SqliteRunLogReader {
     fn last(&self) -> Option<Rc<Input>> {
         query_last(&self.connection.borrow())
+    }
+
+    /// Queries the shared connection, so pending, uncommitted events from this run - written by
+    /// any writer sharing the store - are visible without needing a prior commit (see the struct
+    /// docs). Only the raw query result is returned here - compiling/evaluating a signal's
+    /// `expect` expression against it is backend-agnostic and lives in `signal/sql.rs`.
+    fn query(&self, query: &str) -> Option<serde_json::Value> {
+        self.connection
+            .borrow()
+            .query_row(query, [], |row| row.get::<_, rusqlite::types::Value>(0))
+            .ok()
+            .and_then(sql_value_to_json)
     }
 
     fn index(&self, config: RunLogIndexConfig) -> Box<dyn RunLogIndex> {
@@ -854,9 +853,7 @@ mod tests {
         push_inputs(&run_log, "a", 3);
         run_log.commit();
 
-        let value = run_log
-            .writer()
-            .get_signal_value("SELECT COUNT(*) FROM inputs");
+        let value = run_log.reader().query("SELECT COUNT(*) FROM inputs");
 
         assert_eq!(value, Some(serde_json::json!(3)));
     }
@@ -866,9 +863,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
 
-        let value = run_log
-            .writer()
-            .get_signal_value("SELECT COUNT(*) FROM missing_table");
+        let value = run_log.reader().query("SELECT COUNT(*) FROM missing_table");
 
         assert_eq!(value, None);
     }

@@ -1,8 +1,8 @@
 use crate::channel::{ChannelBuilder, Stdout};
 use crate::simulation::SimulationBuilder;
 use crate::{
-    BuildError, Channel, EffectMetadata, Input, Output, RunLog, RunLogWriter, SimpleEventRunLog,
-    SimulationEvent,
+    BuildError, Channel, EffectMetadata, Input, Output, RunLog, RunLogReader, RunLogWriter,
+    SimpleEventRunLog, SimulationEvent,
 };
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -72,8 +72,8 @@ impl System {
         Ok(())
     }
 
-    pub(crate) fn writer(&self) -> &dyn RunLogWriter {
-        self.writer.as_ref()
+    pub(crate) fn reader(&self) -> Rc<dyn RunLogReader> {
+        self.run_log.reader()
     }
 
     /// Shuts down every channel's target (e.g. closing a `stream` subprocess's stdin and

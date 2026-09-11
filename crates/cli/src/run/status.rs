@@ -151,10 +151,6 @@ impl RunLogWriter for StatusRunLogWriter {
         self.render(false);
         self.child.push_metadata(metadata);
     }
-
-    fn get_signal_value(&self, query: &str) -> Option<serde_json::Value> {
-        self.child.get_signal_value(query)
-    }
 }
 
 impl Drop for StatusRunLogWriter {

@@ -16,10 +16,12 @@ impl Audit {
     }
 
     pub fn run(&self, system: &System) -> AuditReport {
+        let reader = system.reader();
+
         let outcomes = self
             .signals
             .iter()
-            .map(|(key, signal)| (key.clone(), signal.evaluate(system.writer())))
+            .map(|(key, signal)| (key.clone(), signal.evaluate(reader.as_ref())))
             .collect();
 
         AuditReport { outcomes }

@@ -1,5 +1,5 @@
 use super::{Signal, SignalOutcome};
-use crate::RunLogWriter;
+use crate::RunLogReader;
 use crate::parse::SignalParser;
 use crate::spec::{self, ParseError};
 use crate::util::cel::json_to_cel;
@@ -19,14 +19,14 @@ impl SqlSignal {
 }
 
 impl Signal for SqlSignal {
-    fn evaluate(&self, run_log: &dyn RunLogWriter) -> SignalOutcome {
-        let value = run_log.get_signal_value(&self.query);
+    fn evaluate(&self, run_log: &dyn RunLogReader) -> SignalOutcome {
+        let value = run_log.query(&self.query);
         evaluate_expect(&self.key, self.expect.as_ref(), value)
     }
 }
 
 /// Runs an already-compiled `expect` program against `value` - the raw result of running the
-/// signal's query against a [`RunLogWriter`], or `None` if the run log couldn't produce one. Compiling
+/// signal's query against a [`RunLogReader`], or `None` if the run log couldn't produce one. Compiling
 /// `expect` happens once, at parse time (see [`SqlSignalParser::parse`]), so a bad expression is
 /// rejected before a signal ever runs rather than on every evaluation.
 fn evaluate_expect(

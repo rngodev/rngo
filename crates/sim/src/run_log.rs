@@ -24,11 +24,16 @@ pub trait RunLogWriter: std::fmt::Debug {
     fn push_input(&self, input: Input);
     fn push_output(&self, output: Output);
     fn push_metadata(&self, metadata: EffectMetadata);
-    fn get_signal_value(&self, query: &str) -> Option<Value>;
 }
 
 pub trait RunLogReader: std::fmt::Debug {
     fn last(&self) -> Option<Rc<Input>>;
+
+    /// Runs a backend-specific query string against the log, returning the single scalar column
+    /// of its first row - or `None` if this backend can't answer it (e.g. [`SimpleEventRunLog`],
+    /// which has no query engine behind it) or the query itself produced no result.
+    fn query(&self, query: &str) -> Option<Value>;
+
     fn index(&self, config: RunLogIndexConfig) -> Box<dyn RunLogIndex>;
 }
 

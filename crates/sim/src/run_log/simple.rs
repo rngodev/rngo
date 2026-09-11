@@ -18,6 +18,11 @@ impl RunLogReader for SimpleEventRunLogReader {
         self.inputs.borrow().last().cloned()
     }
 
+    // No SQL engine backs an in-memory run log.
+    fn query(&self, _query: &str) -> Option<serde_json::Value> {
+        None
+    }
+
     fn index(&self, config: RunLogIndexConfig) -> Box<dyn RunLogIndex> {
         Box::new(SimpleEventRunLogIndex {
             inputs: Rc::clone(&self.inputs),
@@ -87,10 +92,6 @@ impl RunLogWriter for SimpleEventRunLogWriter {
 
     fn push_metadata(&self, metadata: EffectMetadata) {
         self.metadata.borrow_mut().push(metadata);
-    }
-
-    fn get_signal_value(&self, _query: &str) -> Option<serde_json::Value> {
-        None
     }
 }
 
