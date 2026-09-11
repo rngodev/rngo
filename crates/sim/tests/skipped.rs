@@ -1,5 +1,7 @@
 use rngo_sim::build::*;
-use rngo_sim::{RunLog, SimpleEventRunLog, Simulation, SimulationEvent, SqliteRunLog};
+use rngo_sim::{
+    EffectMetadata, RunLog, SimpleEventRunLog, Simulation, SimulationEvent, SqliteRunLog,
+};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
@@ -31,7 +33,9 @@ fn reference_with_no_prior_events_is_skipped_not_logged() {
                 input_count += 1;
             }
             SimulationEvent::SkippedInput(skipped) => {
-                writer.push_metadata(skipped.into());
+                for metadata in Vec::<EffectMetadata>::from(skipped) {
+                    writer.push_metadata(metadata);
+                }
             }
         }
     }

@@ -127,6 +127,35 @@ fn commit(connection: &RefCell<Connection>, pending: &Cell<usize>) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn insert_metadata_row(
+    connection: &Connection,
+    mtype: &str,
+    input_id: Option<i64>,
+    effect: Option<&str>,
+    offset: Option<u64>,
+    attribute: Option<&JsonPointer>,
+    data: Option<&serde_json::Value>,
+    segment: Option<&str>,
+) {
+    connection
+        .prepare_cached(
+            "INSERT INTO metadata (type, input_id, effect, offset, attribute, data, segment) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        )
+        .unwrap()
+        .execute(rusqlite::params![
+            mtype,
+            input_id,
+            effect,
+            offset.map(|o| o as i64),
+            attribute.map(|a| a.to_string()),
+            data.map(|v| v.to_string()),
+            segment,
+        ])
+        .unwrap();
+}
+
+/// Inserts a row per entry of an [`Input`]'s own attached metadata, all sharing that input's id.
 fn insert_metadata(
     connection: &Connection,
     input_id: Option<i64>,
@@ -135,21 +164,32 @@ fn insert_metadata(
     metadata: &[Metadata],
 ) {
     for m in metadata {
-        connection
-            .prepare_cached(
-                "INSERT INTO metadata (input_id, effect, offset, type, attribute, data) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            )
-            .unwrap()
-            .execute(rusqlite::params![
-                input_id,
-                effect,
-                offset as i64,
-                m.mtype,
-                m.attribute.as_ref().map(|a| a.to_string()),
-                m.data.as_ref().map(|v| v.to_string()),
-            ])
-            .unwrap();
+        insert_metadata_row(
+            connection,
+            &m.mtype,
+            input_id,
+            Some(effect),
+            Some(offset),
+            m.attribute.as_ref(),
+            m.data.as_ref(),
+            None,
+        );
     }
+}
+
+/// Inserts the single row an [`EffectMetadata`] describes (e.g. a skipped occurrence's entry,
+/// logged with no `input_id`).
+fn insert_effect_metadata(connection: &Connection, metadata: &EffectMetadata) {
+    insert_metadata_row(
+        connection,
+        &metadata.mtype,
+        metadata.input_id,
+        metadata.effect.as_deref(),
+        metadata.offset,
+        metadata.attribute.as_ref(),
+        metadata.data.as_ref(),
+        metadata.segment.as_deref(),
+    );
 }
 
 #[derive(Debug)]
@@ -215,13 +255,7 @@ impl RunLogWriter for SqliteRunLogWriter {
     }
 
     fn push_metadata(&self, metadata: EffectMetadata) {
-        insert_metadata(
-            &self.connection.borrow(),
-            metadata.input_id,
-            &metadata.effect,
-            metadata.offset,
-            &metadata.metadata,
-        );
+        insert_effect_metadata(&self.connection.borrow(), &metadata);
         self.record();
     }
 }
@@ -382,13 +416,16 @@ fn query_sample(
                     .unwrap();
 
                 if let Some((id, offset, _)) = &row {
-                    connection
-                        .prepare_cached(
-                            "INSERT INTO metadata (type, input_id, effect, offset, segment) VALUES ('_unique_reference', ?1, ?2, ?3, ?4)",
-                        )
-                        .unwrap()
-                        .execute(rusqlite::params![id, key, offset, segment])
-                        .unwrap();
+                    insert_metadata_row(
+                        connection,
+                        "_unique_reference",
+                        Some(*id),
+                        Some(key),
+                        Some(*offset as u64),
+                        None,
+                        None,
+                        Some(segment),
+                    );
                 }
 
                 row
@@ -561,14 +598,13 @@ mod tests {
         let writer = run_log.writer();
 
         writer.push_metadata(EffectMetadata {
+            mtype: "skipped".into(),
             input_id: None,
-            effect: "ping".to_string(),
-            offset: 42,
-            metadata: vec![Metadata {
-                mtype: "skipped".into(),
-                attribute: None,
-                data: None,
-            }],
+            effect: Some("ping".to_string()),
+            offset: Some(42),
+            attribute: None,
+            data: None,
+            segment: None,
         });
 
         run_log.commit();

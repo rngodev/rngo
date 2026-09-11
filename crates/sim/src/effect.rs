@@ -2,7 +2,9 @@ mod clock;
 mod trigger;
 
 use crate::build::{BuildError, EffectKey};
-use crate::run_log::{Cursor, RunLog, RunLogIndexConfig, RunLogReader, SimpleEventRunLog};
+use crate::run_log::{
+    Cursor, EffectMetadata, RunLog, RunLogIndexConfig, RunLogReader, SimpleEventRunLog,
+};
 use crate::schema::{Metadata, Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext};
 use crate::util::ext::FlattenErr;
 use crate::util::time::Moment;
@@ -97,6 +99,33 @@ pub struct SkippedInput {
     pub offset: u64,
     pub timestamp: DateTime<FixedOffset>,
     pub metadata: Vec<Metadata>,
+}
+
+/// A skipped occurrence never produces a stored input, so every row it logs has no `input_id` to
+/// attach to - one [`EffectMetadata`] per [`Metadata`] entry it carried, matching the
+/// one-row-per-entry shape of the `metadata` table (see `run_log/sqlite.rs`).
+impl From<SkippedInput> for Vec<EffectMetadata> {
+    fn from(skipped: SkippedInput) -> Self {
+        let SkippedInput {
+            effect,
+            offset,
+            metadata,
+            ..
+        } = skipped;
+
+        metadata
+            .into_iter()
+            .map(|m: Metadata| EffectMetadata {
+                mtype: m.mtype,
+                input_id: None,
+                effect: Some(effect.clone()),
+                offset: Some(offset),
+                attribute: m.attribute,
+                data: m.data,
+                segment: None,
+            })
+            .collect()
+    }
 }
 
 #[derive(Debug)]

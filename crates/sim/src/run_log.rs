@@ -2,8 +2,8 @@ mod simple;
 mod sqlite;
 
 use crate::Output;
-use crate::effect::{Input, SkippedInput};
-use crate::schema::Metadata;
+use crate::effect::Input;
+use crate::util::json_pointer::JsonPointer;
 use serde_json::Value;
 use std::rc::Rc;
 
@@ -53,23 +53,16 @@ pub enum Cursor {
     Unique,
 }
 
+/// One row of the `metadata` table (see `run_log/sqlite.rs`) - a single [`crate::schema::Metadata`]
+/// entry plus the input/effect/offset context it's attached to. Mirrors that table's columns
+/// (minus `type`, renamed `mtype` to dodge the keyword) - only `type` itself is `NOT NULL`.
 #[derive(Clone, Debug)]
 pub struct EffectMetadata {
-    input_id: Option<i64>,
-    effect: String,
-    offset: u64,
-    metadata: Vec<Metadata>,
-}
-
-/// A skipped occurrence never produces a stored input, so its metadata is always logged with no
-/// `input_id` to attach to.
-impl From<SkippedInput> for EffectMetadata {
-    fn from(skipped: SkippedInput) -> Self {
-        EffectMetadata {
-            input_id: None,
-            effect: skipped.effect,
-            offset: skipped.offset,
-            metadata: skipped.metadata,
-        }
-    }
+    pub mtype: String,
+    pub input_id: Option<i64>,
+    pub effect: Option<String>,
+    pub offset: Option<u64>,
+    pub attribute: Option<JsonPointer>,
+    pub data: Option<Value>,
+    pub segment: Option<String>,
 }

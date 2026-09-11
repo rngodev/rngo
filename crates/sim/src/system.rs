@@ -63,7 +63,9 @@ impl System {
                     self.send(&input)?;
                 }
                 SimulationEvent::SkippedInput(skipped_input) => {
-                    self.add_metadata(skipped_input.into());
+                    for metadata in Vec::<EffectMetadata>::from(skipped_input) {
+                        self.add_metadata(metadata);
+                    }
                 }
             }
         }
