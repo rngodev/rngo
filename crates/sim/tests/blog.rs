@@ -1,25 +1,19 @@
 mod common;
 
 use rngo_sim::build::*;
-use rngo_sim::{Dialect, RunLog, SimpleEventRunLog, Simulation, SimulationEvent};
+use rngo_sim::{Dialect, Simulation, SimulationEvent};
 use serde_json::Value;
 
-/// `Simulation` only reads from a run log now (for `reference()` lookups); writing to it is the
-/// caller's job, same as `cli/src/run.rs`. "post" references "user", so without pushing each
-/// yielded input back into `run_log` as it's produced, `reference().effect("user")` would never
-/// see any prior data and every "post" attempt would be skipped.
-fn assert_simulation(run_log: SimpleEventRunLog, simulation: Simulation) {
-    let writer = run_log.writer();
-
+/// `Simulation` writes each input it produces back into its run log as it's yielded (see
+/// `SimulationBuilder::run_log`), so "post" - which references "user" - sees prior "user" data as
+/// soon as it's emitted instead of every attempt being skipped for lack of anything to resolve.
+fn assert_simulation(simulation: Simulation) {
     // A "post" fired before any "user" exists yet has nothing for its `reference` to resolve, so
     // it's skipped rather than emitted - filter down to real inputs first, then take 60 of those,
     // so an incidental early skip can't leave fewer than 60 to assert against.
     let events: Vec<_> = simulation
         .filter_map(|event| match event {
-            SimulationEvent::Input(input) => {
-                writer.push_input(input.clone());
-                Some(input)
-            }
+            SimulationEvent::Input(input) => Some(input),
             SimulationEvent::SkippedInput(_) => None,
         })
         .take(60)
@@ -123,7 +117,6 @@ fn assert_simulation(run_log: SimpleEventRunLog, simulation: Simulation) {
 #[test]
 fn builder() {
     let mut simulation_builder = Simulation::builder();
-    let run_log = SimpleEventRunLog::new(simulation_builder.seed);
 
     simulation_builder
         .with_effect("user", |e| {
@@ -163,11 +156,8 @@ fn builder() {
             )
         });
 
-    let simulation = simulation_builder
-        .run_log_reader(run_log.reader())
-        .build()
-        .unwrap();
-    assert_simulation(run_log, simulation);
+    let simulation = simulation_builder.build().unwrap();
+    assert_simulation(simulation);
 }
 
 #[test]
@@ -225,10 +215,6 @@ fn spec() {
 
     let value: serde_json::Value = serde_json::from_str(json).unwrap();
     let simulation_builder = Dialect::primitive().parse_simulation_json(value).unwrap();
-    let run_log = SimpleEventRunLog::new(simulation_builder.seed);
-    let simulation = simulation_builder
-        .run_log_reader(run_log.reader())
-        .build()
-        .unwrap();
-    assert_simulation(run_log, simulation);
+    let simulation = simulation_builder.build().unwrap();
+    assert_simulation(simulation);
 }

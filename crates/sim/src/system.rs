@@ -35,7 +35,6 @@ impl System {
             };
 
             let outputs = channel.target.send(input, formatted_data)?;
-            self.writer.push_input(input.clone());
             for output in outputs {
                 self.writer.push_output(output);
             }
@@ -54,7 +53,7 @@ impl System {
         simulation_builder: SimulationBuilder,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let mut simulation = simulation_builder
-            .run_log_reader(self.run_log.reader())
+            .run_log(self.run_log.as_ref())
             .build()
             .unwrap(); // TODO: FIX
 

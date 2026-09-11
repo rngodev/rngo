@@ -16,19 +16,19 @@ fn reference_with_no_prior_events_is_skipped_not_logged() {
     });
 
     let simulation = simulation_builder
-        .run_log_reader(run_log.reader())
+        .run_log(&run_log)
         .limit(5)
         .build()
         .unwrap();
 
-    // Simulation no longer writes to a run log itself - that's the caller's job, mirroring
-    // cli/src/run.rs: push a real input, or the skipped occurrence's metadata, as each arrives.
+    // `Simulation` writes each real input to the run log itself now (see
+    // `SimulationBuilder::run_log`); only a skipped occurrence's metadata is still the caller's
+    // job, mirroring cli/src/run.rs.
     let mut input_count = 0;
     for event in simulation {
         match event {
-            SimulationEvent::Input(input) => {
+            SimulationEvent::Input(_) => {
                 input_count += 1;
-                writer.push_input(input);
             }
             SimulationEvent::SkippedInput(skipped) => {
                 writer.push_metadata(skipped.into());
@@ -77,10 +77,7 @@ fn object_with_a_skipped_property_is_itself_skipped() {
         )
     });
 
-    let simulation = simulation_builder
-        .run_log_reader(run_log.reader())
-        .build()
-        .unwrap();
+    let simulation = simulation_builder.run_log(&run_log).build().unwrap();
 
     let events: Vec<_> = simulation
         .take(5)
@@ -110,10 +107,7 @@ fn array_with_a_skipped_item_is_itself_skipped() {
         )
     });
 
-    let simulation = simulation_builder
-        .run_log_reader(run_log.reader())
-        .build()
-        .unwrap();
+    let simulation = simulation_builder.run_log(&run_log).build().unwrap();
 
     let events: Vec<_> = simulation
         .take(5)

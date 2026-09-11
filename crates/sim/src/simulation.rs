@@ -2,7 +2,7 @@ use crate::build::{BuildError, SimulationKey};
 use crate::effect::{Effect, EffectBuilder, Input, SkippedInput};
 use crate::run_log::SimpleEventRunLog;
 use crate::util::time::Moment;
-use crate::{RunLog, RunLogReader};
+use crate::{RunLog, RunLogReader, RunLogWriter};
 use chrono::{TimeDelta, Utc};
 use serde::Serialize;
 use std::rc::Rc;
@@ -10,6 +10,7 @@ use std::rc::Rc;
 #[derive(Debug)]
 pub struct Simulation {
     effects: Vec<Effect>,
+    writer: Rc<dyn RunLogWriter>,
     limit: Option<u64>,
     emitted: u64,
 }
@@ -40,6 +41,7 @@ impl Iterator for Simulation {
         match self.effects.first_mut()?.next()? {
             Ok(input) => {
                 self.emitted += 1;
+                self.writer.push_input(input.clone());
                 Some(SimulationEvent::Input(input))
             }
             Err(skipped_input) => {
@@ -59,6 +61,7 @@ pub struct SimulationBuilder {
     pub start: Moment,
     pub end: Moment,
     run_log_reader: Option<Rc<dyn RunLogReader>>,
+    run_log_writer: Option<Rc<dyn RunLogWriter>>,
     effect_builders: Vec<EffectBuilder>,
     limit: Option<u64>,
 }
@@ -70,13 +73,19 @@ impl SimulationBuilder {
             start: Moment::Relative(TimeDelta::days(-30)),
             end: Moment::Relative(TimeDelta::zero()),
             run_log_reader: None,
+            run_log_writer: None,
             effect_builders: vec![],
             limit: None,
         }
     }
 
-    pub fn run_log_reader(mut self, run_log_reader: Rc<dyn RunLogReader>) -> Self {
-        self.run_log_reader = Some(run_log_reader);
+    /// Mints an independent reader (for effects' `reference()` lookups) and writer (for logging
+    /// each [`Input`] this simulation produces - see [`Simulation::next`]) off `run_log`, sharing
+    /// its underlying state with any other handles minted from the same store (e.g.
+    /// [`crate::System`]'s own writer).
+    pub fn run_log(mut self, run_log: &dyn RunLog) -> Self {
+        self.run_log_reader = Some(run_log.reader());
+        self.run_log_writer = Some(run_log.writer());
         self
     }
 
@@ -145,9 +154,13 @@ impl SimulationBuilder {
             });
         }
 
-        let run_log_reader = self
-            .run_log_reader
-            .unwrap_or_else(|| SimpleEventRunLog::new(self.seed).reader());
+        let (run_log_reader, run_log_writer) = match (self.run_log_reader, self.run_log_writer) {
+            (Some(reader), Some(writer)) => (reader, writer),
+            _ => {
+                let default_run_log = SimpleEventRunLog::new(self.seed);
+                (default_run_log.reader(), default_run_log.writer())
+            }
+        };
 
         let mut effects = vec![];
 
@@ -168,6 +181,7 @@ impl SimulationBuilder {
         if errors.is_empty() {
             Ok(Simulation {
                 effects,
+                writer: run_log_writer,
                 limit: self.limit,
                 emitted: 0,
             })
