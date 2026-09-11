@@ -19,7 +19,7 @@ impl Audit {
         let outcomes = self
             .signals
             .iter()
-            .map(|(key, signal)| (key.clone(), signal.evaluate(system.run_log())))
+            .map(|(key, signal)| (key.clone(), signal.evaluate(system.writer())))
             .collect();
 
         AuditReport { outcomes }

@@ -8,14 +8,16 @@ use serde_json::Value;
 /// caller's job, same as `cli/src/run.rs`. "post" references "user", so without pushing each
 /// yielded input back into `run_log` as it's produced, `reference().effect("user")` would never
 /// see any prior data and every "post" attempt would be skipped.
-fn assert_simulation(mut run_log: SimpleEventRunLog, simulation: Simulation) {
+fn assert_simulation(run_log: SimpleEventRunLog, simulation: Simulation) {
+    let writer = run_log.writer();
+
     // A "post" fired before any "user" exists yet has nothing for its `reference` to resolve, so
     // it's skipped rather than emitted - filter down to real inputs first, then take 60 of those,
     // so an incidental early skip can't leave fewer than 60 to assert against.
     let events: Vec<_> = simulation
         .filter_map(|event| match event {
             SimulationEvent::Input(input) => {
-                run_log.push_input(input.clone());
+                writer.push_input(input.clone());
                 Some(input)
             }
             SimulationEvent::SkippedInput(_) => None,

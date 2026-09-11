@@ -6,7 +6,8 @@ use tempfile::TempDir;
 #[test]
 fn reference_with_no_prior_events_is_skipped_not_logged() {
     let tmp = TempDir::new().unwrap();
-    let mut run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
+    let run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
+    let writer = run_log.writer();
 
     let mut simulation_builder = Simulation::builder();
     simulation_builder.with_effect("derived", |e| {
@@ -27,10 +28,10 @@ fn reference_with_no_prior_events_is_skipped_not_logged() {
         match event {
             SimulationEvent::Input(input) => {
                 input_count += 1;
-                run_log.push_input(input);
+                writer.push_input(input);
             }
             SimulationEvent::SkippedInput(skipped) => {
-                run_log.push_metadata(skipped.into());
+                writer.push_metadata(skipped.into());
             }
         }
     }
@@ -42,6 +43,7 @@ fn reference_with_no_prior_events_is_skipped_not_logged() {
 
     // Dropping the run log commits its pending transaction (see `SqliteRunLog`'s `Drop` impl),
     // so its writes are visible to a fresh connection opened on the same file.
+    drop(writer);
     drop(run_log);
 
     let conn = Connection::open(tmp.path().join("log.sqlite")).unwrap();

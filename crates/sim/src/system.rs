@@ -1,13 +1,16 @@
 use crate::channel::{ChannelBuilder, Stdout};
 use crate::simulation::SimulationBuilder;
 use crate::{
-    BuildError, Channel, EffectMetadata, Input, Output, RunLog, SimpleEventRunLog, SimulationEvent,
+    BuildError, Channel, EffectMetadata, Input, Output, RunLog, RunLogWriter, SimpleEventRunLog,
+    SimulationEvent,
 };
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver};
 
 pub struct System {
     run_log: Box<dyn RunLog>,
+    writer: Rc<dyn RunLogWriter>,
     channels: HashMap<String, Channel>,
     effect_channels: HashMap<String, String>,
     output_rx: Receiver<Output>,
@@ -32,9 +35,9 @@ impl System {
             };
 
             let outputs = channel.target.send(input, formatted_data)?;
-            self.run_log.push_input(input.clone());
+            self.writer.push_input(input.clone());
             for output in outputs {
-                self.run_log.push_output(output);
+                self.writer.push_output(output);
             }
         };
 
@@ -43,7 +46,7 @@ impl System {
     }
 
     pub fn add_metadata(&mut self, metadata: EffectMetadata) {
-        self.run_log.push_metadata(metadata);
+        self.writer.push_metadata(metadata);
     }
 
     pub fn run(
@@ -69,8 +72,8 @@ impl System {
         Ok(())
     }
 
-    pub(crate) fn run_log(&self) -> &dyn RunLog {
-        self.run_log.as_ref()
+    pub(crate) fn writer(&self) -> &dyn RunLogWriter {
+        self.writer.as_ref()
     }
 
     /// Shuts down every channel's target (e.g. closing a `stream` subprocess's stdin and
@@ -82,8 +85,8 @@ impl System {
     }
 
     fn drain_outputs(&mut self) {
-        while let Some(output) = self.output_rx.try_recv().ok() {
-            self.run_log.push_output(output);
+        while let Ok(output) = self.output_rx.try_recv() {
+            self.writer.push_output(output);
         }
     }
 }
@@ -163,6 +166,8 @@ impl SystemBuilder {
             return Err(errors);
         }
 
+        let writer = run_log.writer();
+
         let effect_channels = channels
             .values()
             .flat_map(|channel| {
@@ -175,6 +180,7 @@ impl SystemBuilder {
 
         Ok(System {
             run_log,
+            writer,
             channels,
             effect_channels,
             output_rx,

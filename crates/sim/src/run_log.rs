@@ -10,12 +10,21 @@ use std::rc::Rc;
 pub use simple::SimpleEventRunLog;
 pub use sqlite::SqliteRunLog;
 
+/// A run's storage backend. Doesn't expose reads or writes itself - instead it mints
+/// independent, cheaply-cloneable handles via [`RunLog::reader`] and [`RunLog::writer`], each
+/// sharing the same underlying state. Any number of readers and writers can be minted and held
+/// concurrently (e.g. [`crate::System`] writes inputs/outputs while another component writes
+/// audit results), the same way multiple effects already hold their own [`RunLogReader`].
 pub trait RunLog: std::fmt::Debug {
-    fn push_input(&mut self, input: Input);
-    fn push_output(&mut self, output: Output);
-    fn push_metadata(&mut self, metadata: EffectMetadata);
-    fn get_signal_value(&self, query: &str) -> Option<Value>;
     fn reader(&self) -> Rc<dyn RunLogReader>;
+    fn writer(&self) -> Rc<dyn RunLogWriter>;
+}
+
+pub trait RunLogWriter: std::fmt::Debug {
+    fn push_input(&self, input: Input);
+    fn push_output(&self, output: Output);
+    fn push_metadata(&self, metadata: EffectMetadata);
+    fn get_signal_value(&self, query: &str) -> Option<Value>;
 }
 
 pub trait RunLogReader: std::fmt::Debug {

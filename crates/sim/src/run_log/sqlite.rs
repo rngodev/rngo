@@ -3,7 +3,7 @@ use crate::output::Level;
 use crate::run_log::{Cursor, EffectMetadata, RunLogIndex, RunLogIndexConfig, RunLogReader};
 use crate::schema::Metadata;
 use crate::util::json_pointer::JsonPointer;
-use crate::{Output, RunLog};
+use crate::{Output, RunLog, RunLogWriter};
 use chrono::{DateTime, Utc};
 use rand::RngExt;
 use rand_pcg::Pcg32;
@@ -19,12 +19,12 @@ use std::str::FromStr;
 const BATCH_SIZE: usize = 500;
 
 /// The sole store of a run's inputs, outputs, and metadata, on disk at `<run_dir>/log.sqlite`.
-/// The reader shares the writer's connection (rather than opening a second one) so that
-/// mid-transaction lookups - e.g. `effect.rs` computing the next input id from `last()` before
-/// the current batch commits - see the writer's pending, uncommitted rows. It also owns a single
-/// RNG seeded from the simulation's seed, shared with every reader/index it hands out, so
-/// `RunLogIndex::sample`'s random branch is reproducible for a given seed rather than drawing from
-/// an unseeded global generator.
+/// Every reader and writer it mints shares this same connection (rather than opening a new one
+/// per handle) so that mid-transaction lookups - e.g. `effect.rs` computing the next input id
+/// from `last()`, or a second writer persisting audit results - see every other handle's pending,
+/// uncommitted rows. It also owns a single RNG seeded from the simulation's seed, shared with
+/// every reader/index it hands out, so `RunLogIndex::sample`'s random branch is reproducible for
+/// a given seed rather than drawing from an unseeded global generator.
 #[derive(Debug)]
 pub struct SqliteRunLog {
     connection: Rc<RefCell<Connection>>,
@@ -32,7 +32,9 @@ pub struct SqliteRunLog {
     /// Hands out a distinct id to each `Cursor::Unique` index, so their "already returned"
     /// bookkeeping in the `metadata` table doesn't collide.
     next_segment: Rc<Cell<u64>>,
-    pending: usize,
+    /// Shared with every writer handle, so any of them batching inserts trips the same commit
+    /// threshold rather than each keeping an independent, under-counting total.
+    pending: Rc<Cell<usize>>,
 }
 
 impl SqliteRunLog {
@@ -84,58 +86,91 @@ impl SqliteRunLog {
                 Seeder::from(&format!("{seed}-run_log")).into_rng(),
             )),
             next_segment: Rc::new(Cell::new(0)),
-            pending: 0,
+            pending: Rc::new(Cell::new(0)),
         }
     }
 
-    fn record(&mut self) {
-        self.pending += 1;
-        if self.pending >= BATCH_SIZE {
-            self.commit();
-        }
-    }
-
-    fn commit(&mut self) {
-        if self.pending > 0 {
-            self.connection
-                .borrow()
-                .execute_batch("COMMIT; BEGIN;")
-                .unwrap();
-            self.pending = 0;
-        }
-    }
-
-    fn insert_metadata(
-        &mut self,
-        input_id: Option<i64>,
-        effect: &str,
-        offset: u64,
-        metadata: &[Metadata],
-    ) {
-        let connection = self.connection.borrow();
-        for m in metadata {
-            connection
-                .prepare_cached(
-                    "INSERT INTO metadata (input_id, effect, offset, type, attribute, data) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                )
-                .unwrap()
-                .execute(rusqlite::params![
-                    input_id,
-                    effect,
-                    offset as i64,
-                    m.mtype,
-                    m.attribute.as_ref().map(|a| a.to_string()),
-                    m.data.as_ref().map(|v| v.to_string()),
-                ])
-                .unwrap();
-        }
+    /// Force-commits any writer's pending batch, so subsequent reads on a fresh connection (e.g.
+    /// a test opening the file directly) see rows that haven't hit the `BATCH_SIZE` threshold.
+    pub fn commit(&self) {
+        commit(&self.connection, &self.pending);
     }
 }
 
 impl RunLog for SqliteRunLog {
-    fn push_input(&mut self, input: Input) {
-        self.connection
-            .borrow()
+    fn reader(&self) -> Rc<dyn RunLogReader> {
+        Rc::new(SqliteRunLogReader {
+            connection: Rc::clone(&self.connection),
+            rng: Rc::clone(&self.rng),
+            next_segment: Rc::clone(&self.next_segment),
+        })
+    }
+
+    fn writer(&self) -> Rc<dyn RunLogWriter> {
+        Rc::new(SqliteRunLogWriter {
+            connection: Rc::clone(&self.connection),
+            pending: Rc::clone(&self.pending),
+        })
+    }
+}
+
+impl Drop for SqliteRunLog {
+    fn drop(&mut self) {
+        let _ = self.connection.borrow().execute_batch("COMMIT;");
+    }
+}
+
+fn commit(connection: &RefCell<Connection>, pending: &Cell<usize>) {
+    if pending.get() > 0 {
+        connection.borrow().execute_batch("COMMIT; BEGIN;").unwrap();
+        pending.set(0);
+    }
+}
+
+fn insert_metadata(
+    connection: &Connection,
+    input_id: Option<i64>,
+    effect: &str,
+    offset: u64,
+    metadata: &[Metadata],
+) {
+    for m in metadata {
+        connection
+            .prepare_cached(
+                "INSERT INTO metadata (input_id, effect, offset, type, attribute, data) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            )
+            .unwrap()
+            .execute(rusqlite::params![
+                input_id,
+                effect,
+                offset as i64,
+                m.mtype,
+                m.attribute.as_ref().map(|a| a.to_string()),
+                m.data.as_ref().map(|v| v.to_string()),
+            ])
+            .unwrap();
+    }
+}
+
+#[derive(Debug)]
+struct SqliteRunLogWriter {
+    connection: Rc<RefCell<Connection>>,
+    pending: Rc<Cell<usize>>,
+}
+
+impl SqliteRunLogWriter {
+    fn record(&self) {
+        self.pending.set(self.pending.get() + 1);
+        if self.pending.get() >= BATCH_SIZE {
+            commit(&self.connection, &self.pending);
+        }
+    }
+}
+
+impl RunLogWriter for SqliteRunLogWriter {
+    fn push_input(&self, input: Input) {
+        let connection = self.connection.borrow();
+        connection
             .prepare_cached("INSERT INTO inputs (id, effect, offset, data) VALUES (?1, ?2, ?3, ?4)")
             .unwrap()
             .execute(rusqlite::params![
@@ -146,16 +181,18 @@ impl RunLog for SqliteRunLog {
             ])
             .unwrap();
 
-        self.insert_metadata(
+        insert_metadata(
+            &connection,
             Some(input.id as i64),
             &input.effect,
             input.offset,
             &input.metadata,
         );
+        drop(connection);
         self.record();
     }
 
-    fn push_output(&mut self, output: Output) {
+    fn push_output(&self, output: Output) {
         self.connection
             .borrow()
             .prepare_cached(
@@ -177,8 +214,9 @@ impl RunLog for SqliteRunLog {
         self.record();
     }
 
-    fn push_metadata(&mut self, metadata: EffectMetadata) {
-        self.insert_metadata(
+    fn push_metadata(&self, metadata: EffectMetadata) {
+        insert_metadata(
+            &self.connection.borrow(),
             metadata.input_id,
             &metadata.effect,
             metadata.offset,
@@ -187,30 +225,17 @@ impl RunLog for SqliteRunLog {
         self.record();
     }
 
-    /// Queries the writer's own connection, so pending, uncommitted events from this run are
-    /// visible to signals without needing a prior commit (see the struct docs). Only the raw
-    /// query result is returned here - compiling/evaluating a signal's `expect` expression
-    /// against it is backend-agnostic and lives in `signal/sql.rs`.
+    /// Queries the shared connection, so pending, uncommitted events from this run - written by
+    /// this writer or any other handle sharing the store - are visible to signals without needing
+    /// a prior commit (see the struct docs). Only the raw query result is returned here -
+    /// compiling/evaluating a signal's `expect` expression against it is backend-agnostic and
+    /// lives in `signal/sql.rs`.
     fn get_signal_value(&self, query: &str) -> Option<serde_json::Value> {
         self.connection
             .borrow()
             .query_row(query, [], |row| row.get::<_, rusqlite::types::Value>(0))
             .ok()
             .and_then(sql_value_to_json)
-    }
-
-    fn reader(&self) -> Rc<dyn RunLogReader> {
-        Rc::new(SqliteRunLogReader {
-            connection: Rc::clone(&self.connection),
-            rng: Rc::clone(&self.rng),
-            next_segment: Rc::clone(&self.next_segment),
-        })
-    }
-}
-
-impl Drop for SqliteRunLog {
-    fn drop(&mut self) {
-        let _ = self.connection.borrow().execute_batch("COMMIT;");
     }
 }
 
@@ -461,9 +486,10 @@ mod tests {
     #[test]
     fn writes_input_output_and_metadata_rows() {
         let tmp = TempDir::new().unwrap();
-        let mut run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
+        let writer = run_log.writer();
 
-        run_log.push_input(Input {
+        writer.push_input(Input {
             id: 1,
             effect: "ping".to_string(),
             offset: 42,
@@ -475,7 +501,7 @@ mod tests {
                 data: Some(serde_json::json!({ "message": "partial value" })),
             }],
         });
-        run_log.push_output(Output {
+        writer.push_output(Output {
             input_id: Some(1),
             timestamp: Utc::now(),
             channel: "logger".to_string(),
@@ -532,9 +558,10 @@ mod tests {
     #[test]
     fn skipped_inputs_write_metadata_with_no_input_row() {
         let tmp = TempDir::new().unwrap();
-        let mut run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
+        let writer = run_log.writer();
 
-        run_log.push_metadata(EffectMetadata {
+        writer.push_metadata(EffectMetadata {
             input_id: None,
             effect: "ping".to_string(),
             offset: 42,
@@ -585,10 +612,11 @@ mod tests {
     #[test]
     fn batches_across_commits() {
         let tmp = TempDir::new().unwrap();
-        let mut run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
+        let writer = run_log.writer();
 
         for i in 0..(BATCH_SIZE * 2 + 3) {
-            run_log.push_input(Input {
+            writer.push_input(Input {
                 id: (i + 1) as u64,
                 effect: "ping".to_string(),
                 offset: i as u64,
@@ -617,10 +645,11 @@ mod tests {
     #[test]
     fn last_returns_most_recently_inserted_input_including_uncommitted() {
         let tmp = TempDir::new().unwrap();
-        let mut run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
         let reader = run_log.reader();
+        let writer = run_log.writer();
 
-        run_log.push_input(Input {
+        writer.push_input(Input {
             id: 1,
             effect: "ping".to_string(),
             offset: 0,
@@ -633,7 +662,7 @@ mod tests {
         let last = reader.last().unwrap();
         assert_eq!(last.id, 1);
 
-        run_log.push_input(Input {
+        writer.push_input(Input {
             id: 2,
             effect: "ping".to_string(),
             offset: 1,
@@ -649,11 +678,12 @@ mod tests {
     #[test]
     fn index_last_only_returns_most_recent_matching_effect() {
         let tmp = TempDir::new().unwrap();
-        let mut run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
         let reader = run_log.reader();
+        let writer = run_log.writer();
 
         for (i, effect) in [(1, "a"), (2, "b"), (3, "a")] {
-            run_log.push_input(Input {
+            writer.push_input(Input {
                 id: i,
                 effect: effect.to_string(),
                 offset: i,
@@ -675,11 +705,12 @@ mod tests {
     /// then samples that effect's index `draws` times, returning the sampled ids.
     fn sampled_ids(seed: u64, draws: usize) -> Vec<u64> {
         let tmp = TempDir::new().unwrap();
-        let mut run_log = SqliteRunLog::new(tmp.path().to_path_buf(), seed);
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf(), seed);
         let reader = run_log.reader();
+        let writer = run_log.writer();
 
         for i in 1..=10u64 {
-            run_log.push_input(Input {
+            writer.push_input(Input {
                 id: i,
                 effect: "a".to_string(),
                 offset: i,
@@ -720,9 +751,10 @@ mod tests {
         assert!(index.sample().is_none());
     }
 
-    fn push_inputs(run_log: &mut SqliteRunLog, effect: &str, count: u64) {
+    fn push_inputs(run_log: &SqliteRunLog, effect: &str, count: u64) {
+        let writer = run_log.writer();
         for i in 1..=count {
-            run_log.push_input(Input {
+            writer.push_input(Input {
                 id: i,
                 effect: effect.to_string(),
                 offset: i,
@@ -736,9 +768,9 @@ mod tests {
     #[test]
     fn unique_cursor_never_repeats_and_exhausts() {
         let tmp = TempDir::new().unwrap();
-        let mut run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
         let reader = run_log.reader();
-        push_inputs(&mut run_log, "a", 5);
+        push_inputs(&run_log, "a", 5);
 
         let index = reader.index(RunLogIndexConfig::ByEffect {
             key: "a".to_string(),
@@ -762,9 +794,9 @@ mod tests {
     fn unique_cursor_is_deterministic_for_a_fixed_seed() {
         fn draw_all(seed: u64) -> Vec<u64> {
             let tmp = TempDir::new().unwrap();
-            let mut run_log = SqliteRunLog::new(tmp.path().to_path_buf(), seed);
+            let run_log = SqliteRunLog::new(tmp.path().to_path_buf(), seed);
             let reader = run_log.reader();
-            push_inputs(&mut run_log, "a", 10);
+            push_inputs(&run_log, "a", 10);
 
             let index = reader.index(RunLogIndexConfig::ByEffect {
                 key: "a".to_string(),
@@ -780,9 +812,9 @@ mod tests {
     #[test]
     fn unique_cursor_state_is_independent_per_index() {
         let tmp = TempDir::new().unwrap();
-        let mut run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
         let reader = run_log.reader();
-        push_inputs(&mut run_log, "a", 1);
+        push_inputs(&run_log, "a", 1);
 
         let index_a = reader.index(RunLogIndexConfig::ByEffect {
             key: "a".to_string(),
@@ -801,9 +833,9 @@ mod tests {
     #[test]
     fn unique_cursor_consumed_markers_do_not_leak_into_input_metadata() {
         let tmp = TempDir::new().unwrap();
-        let mut run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
         let reader = run_log.reader();
-        push_inputs(&mut run_log, "a", 1);
+        push_inputs(&run_log, "a", 1);
 
         let index = reader.index(RunLogIndexConfig::ByEffect {
             key: "a".to_string(),
@@ -818,11 +850,13 @@ mod tests {
     #[test]
     fn get_signal_returns_query_value() {
         let tmp = TempDir::new().unwrap();
-        let mut run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
-        push_inputs(&mut run_log, "a", 3);
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
+        push_inputs(&run_log, "a", 3);
         run_log.commit();
 
-        let value = run_log.get_signal_value("SELECT COUNT(*) FROM inputs");
+        let value = run_log
+            .writer()
+            .get_signal_value("SELECT COUNT(*) FROM inputs");
 
         assert_eq!(value, Some(serde_json::json!(3)));
     }
@@ -832,7 +866,9 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
 
-        let value = run_log.get_signal_value("SELECT COUNT(*) FROM missing_table");
+        let value = run_log
+            .writer()
+            .get_signal_value("SELECT COUNT(*) FROM missing_table");
 
         assert_eq!(value, None);
     }

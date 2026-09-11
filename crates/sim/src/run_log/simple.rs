@@ -1,5 +1,5 @@
 use crate::run_log::{Cursor, EffectMetadata, RunLogIndex, RunLogIndexConfig, RunLogReader};
-use crate::{Input, Output, RunLog};
+use crate::{Input, Output, RunLog, RunLogWriter};
 use rand::RngExt;
 use rand_pcg::Pcg32;
 use rand_seeder::Seeder;
@@ -34,8 +34,8 @@ impl RunLogReader for SimpleEventRunLogReader {
 #[derive(Debug)]
 pub struct SimpleEventRunLog {
     inputs: Rc<RefCell<Vec<Rc<Input>>>>,
-    outputs: Vec<Output>,
-    metadata: Vec<EffectMetadata>,
+    outputs: Rc<RefCell<Vec<Output>>>,
+    metadata: Rc<RefCell<Vec<EffectMetadata>>>,
     rng: Rc<RefCell<Pcg32>>,
 }
 
@@ -43,8 +43,8 @@ impl SimpleEventRunLog {
     pub fn new(seed: u64) -> Self {
         SimpleEventRunLog {
             inputs: Rc::new(RefCell::new(Vec::new())),
-            outputs: vec![],
-            metadata: vec![],
+            outputs: Rc::new(RefCell::new(Vec::new())),
+            metadata: Rc::new(RefCell::new(Vec::new())),
             rng: Rc::new(RefCell::new(
                 Seeder::from(&format!("{seed}-run_log")).into_rng(),
             )),
@@ -53,27 +53,44 @@ impl SimpleEventRunLog {
 }
 
 impl RunLog for SimpleEventRunLog {
-    fn push_input(&mut self, input: Input) {
-        self.inputs.borrow_mut().push(Rc::new(input));
-    }
-
-    fn push_output(&mut self, output: Output) {
-        self.outputs.push(output);
-    }
-
-    fn push_metadata(&mut self, metadata: EffectMetadata) {
-        self.metadata.push(metadata);
-    }
-
-    fn get_signal_value(&self, _query: &str) -> Option<serde_json::Value> {
-        None
-    }
-
     fn reader(&self) -> Rc<dyn RunLogReader> {
         Rc::new(SimpleEventRunLogReader {
             inputs: Rc::clone(&self.inputs),
             rng: Rc::clone(&self.rng),
         })
+    }
+
+    fn writer(&self) -> Rc<dyn RunLogWriter> {
+        Rc::new(SimpleEventRunLogWriter {
+            inputs: Rc::clone(&self.inputs),
+            outputs: Rc::clone(&self.outputs),
+            metadata: Rc::clone(&self.metadata),
+        })
+    }
+}
+
+#[derive(Debug)]
+struct SimpleEventRunLogWriter {
+    inputs: Rc<RefCell<Vec<Rc<Input>>>>,
+    outputs: Rc<RefCell<Vec<Output>>>,
+    metadata: Rc<RefCell<Vec<EffectMetadata>>>,
+}
+
+impl RunLogWriter for SimpleEventRunLogWriter {
+    fn push_input(&self, input: Input) {
+        self.inputs.borrow_mut().push(Rc::new(input));
+    }
+
+    fn push_output(&self, output: Output) {
+        self.outputs.borrow_mut().push(output);
+    }
+
+    fn push_metadata(&self, metadata: EffectMetadata) {
+        self.metadata.borrow_mut().push(metadata);
+    }
+
+    fn get_signal_value(&self, _query: &str) -> Option<serde_json::Value> {
+        None
     }
 }
 
@@ -135,11 +152,12 @@ mod tests {
     /// Builds a `SimpleEventRunLog` under the given seed, populates it with ten inputs on effect
     /// "a", then samples that effect's index `draws` times, returning the sampled ids.
     fn sampled_ids(seed: u64, draws: usize) -> Vec<u64> {
-        let mut run_log = SimpleEventRunLog::new(seed);
+        let run_log = SimpleEventRunLog::new(seed);
         let reader = run_log.reader();
+        let writer = run_log.writer();
 
         for i in 1..=10u64 {
-            run_log.push_input(Input {
+            writer.push_input(Input {
                 id: i,
                 effect: "a".to_string(),
                 offset: i,
@@ -167,9 +185,10 @@ mod tests {
         assert_ne!(sampled_ids(1, 5), sampled_ids(2, 5));
     }
 
-    fn push_inputs(run_log: &mut SimpleEventRunLog, effect: &str, count: u64) {
+    fn push_inputs(run_log: &SimpleEventRunLog, effect: &str, count: u64) {
+        let writer = run_log.writer();
         for i in 1..=count {
-            run_log.push_input(Input {
+            writer.push_input(Input {
                 id: i,
                 effect: effect.to_string(),
                 offset: i,
@@ -182,9 +201,9 @@ mod tests {
 
     #[test]
     fn unique_cursor_never_repeats_and_exhausts() {
-        let mut run_log = SimpleEventRunLog::new(1);
+        let run_log = SimpleEventRunLog::new(1);
         let reader = run_log.reader();
-        push_inputs(&mut run_log, "a", 5);
+        push_inputs(&run_log, "a", 5);
 
         let index = reader.index(RunLogIndexConfig::ByEffect {
             key: "a".to_string(),
@@ -207,9 +226,9 @@ mod tests {
     #[test]
     fn unique_cursor_is_deterministic_for_a_fixed_seed() {
         fn draw_all(seed: u64) -> Vec<u64> {
-            let mut run_log = SimpleEventRunLog::new(seed);
+            let run_log = SimpleEventRunLog::new(seed);
             let reader = run_log.reader();
-            push_inputs(&mut run_log, "a", 10);
+            push_inputs(&run_log, "a", 10);
 
             let index = reader.index(RunLogIndexConfig::ByEffect {
                 key: "a".to_string(),
@@ -224,9 +243,9 @@ mod tests {
 
     #[test]
     fn unique_cursor_state_is_independent_per_index() {
-        let mut run_log = SimpleEventRunLog::new(1);
+        let run_log = SimpleEventRunLog::new(1);
         let reader = run_log.reader();
-        push_inputs(&mut run_log, "a", 1);
+        push_inputs(&run_log, "a", 1);
 
         let index_a = reader.index(RunLogIndexConfig::ByEffect {
             key: "a".to_string(),
@@ -244,12 +263,12 @@ mod tests {
 
     #[test]
     fn reader_reflects_inputs_pushed_after_it_was_created() {
-        let mut run_log = SimpleEventRunLog::new(1);
+        let run_log = SimpleEventRunLog::new(1);
         let reader = run_log.reader();
 
         assert!(reader.last().is_none());
 
-        push_inputs(&mut run_log, "a", 1);
+        push_inputs(&run_log, "a", 1);
 
         assert_eq!(reader.last().unwrap().id, 1);
     }
