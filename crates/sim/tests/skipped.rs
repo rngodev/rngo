@@ -1,5 +1,5 @@
 use rngo_sim::build::*;
-use rngo_sim::{RunLog, SimpleEventRunLog, Simulation, SimulationEvent, SqliteRunLog};
+use rngo_sim::{SimpleEventRunLog, Simulation, SqliteRunLog};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
@@ -7,7 +7,6 @@ use tempfile::TempDir;
 fn reference_with_no_prior_events_is_skipped_not_logged() {
     let tmp = TempDir::new().unwrap();
     let run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
-    let writer = run_log.writer();
 
     let mut simulation_builder = Simulation::builder();
     simulation_builder.with_effect("derived", |e| {
@@ -21,20 +20,9 @@ fn reference_with_no_prior_events_is_skipped_not_logged() {
         .build()
         .unwrap();
 
-    // `Simulation` writes each real input to the run log itself now (see
-    // `SimulationBuilder::run_log`); only a skipped occurrence's metadata is still the caller's
-    // job, mirroring cli/src/run.rs.
-    let mut input_count = 0;
-    for event in simulation {
-        match event {
-            SimulationEvent::Input(_) => {
-                input_count += 1;
-            }
-            SimulationEvent::SkippedInput(skipped) => {
-                writer.push_metadata(skipped.into());
-            }
-        }
-    }
+    // `Simulation` now writes every real input, and every skipped occurrence's metadata, to the
+    // run log itself as it iterates (see `Simulation::next`).
+    let input_count = simulation.count();
 
     assert_eq!(
         input_count, 0,
@@ -43,7 +31,6 @@ fn reference_with_no_prior_events_is_skipped_not_logged() {
 
     // Dropping the run log commits its pending transaction (see `SqliteRunLog`'s `Drop` impl),
     // so its writes are visible to a fresh connection opened on the same file.
-    drop(writer);
     drop(run_log);
 
     let conn = Connection::open(tmp.path().join("log.sqlite")).unwrap();
@@ -77,15 +64,16 @@ fn object_with_a_skipped_property_is_itself_skipped() {
         )
     });
 
-    let simulation = simulation_builder.run_log(&run_log).build().unwrap();
+    // `.limit(5)` bounds total attempts, not real inputs - without it, an effect that always
+    // skips would loop internally until the simulation's time window itself runs out (see
+    // `Simulation::next`), rather than stopping quickly.
+    let simulation = simulation_builder
+        .run_log(&run_log)
+        .limit(5)
+        .build()
+        .unwrap();
 
-    let events: Vec<_> = simulation
-        .take(5)
-        .filter_map(|event| match event {
-            SimulationEvent::Input(input) => Some(input),
-            SimulationEvent::SkippedInput(_) => None,
-        })
-        .collect();
+    let events: Vec<_> = simulation.collect();
 
     assert!(
         events.is_empty(),
@@ -107,15 +95,13 @@ fn array_with_a_skipped_item_is_itself_skipped() {
         )
     });
 
-    let simulation = simulation_builder.run_log(&run_log).build().unwrap();
+    let simulation = simulation_builder
+        .run_log(&run_log)
+        .limit(5)
+        .build()
+        .unwrap();
 
-    let events: Vec<_> = simulation
-        .take(5)
-        .filter_map(|event| match event {
-            SimulationEvent::Input(input) => Some(input),
-            SimulationEvent::SkippedInput(_) => None,
-        })
-        .collect();
+    let events: Vec<_> = simulation.collect();
 
     assert!(
         events.is_empty(),

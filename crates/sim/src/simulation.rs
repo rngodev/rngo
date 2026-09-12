@@ -1,10 +1,9 @@
 use crate::build::{BuildError, SimulationKey};
-use crate::effect::{Effect, EffectBuilder, Input, SkippedInput};
+use crate::effect::{Effect, EffectBuilder, Input};
 use crate::run_log::SimpleEventRunLog;
 use crate::util::time::Moment;
 use crate::{RunLog, RunLogReader, RunLogWriter};
 use chrono::{TimeDelta, Utc};
-use serde::Serialize;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -21,35 +20,28 @@ impl Simulation {
     }
 }
 
-#[derive(Debug, Serialize)]
-pub enum SimulationEvent {
-    Input(Input),
-    SkippedInput(SkippedInput),
-}
-
 impl Iterator for Simulation {
-    type Item = SimulationEvent;
+    type Item = Input;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.limit.is_some_and(|limit| self.emitted >= limit) {
-            return None;
-        }
-
-        self.effects
-            .sort_unstable_by_key(|e| e.next_offset().unwrap_or(u64::MAX));
-
-        match self.effects.first_mut()?.next()? {
-            Ok(input) => {
-                self.emitted += 1;
-                self.writer.push_input(input.clone());
-                Some(SimulationEvent::Input(input))
+        loop {
+            if self.limit.is_some_and(|limit| self.emitted >= limit) {
+                return None;
             }
-            Err(skipped_input) => {
-                self.emitted += 1;
-                if self.limit.is_some_and(|limit| self.emitted >= limit) {
-                    return None;
+
+            self.effects
+                .sort_unstable_by_key(|e| e.next_offset().unwrap_or(u64::MAX));
+
+            match self.effects.first_mut()?.next()? {
+                Ok(input) => {
+                    self.emitted += 1;
+                    self.writer.push_input(input.clone());
+                    return Some(input);
                 }
-                Some(SimulationEvent::SkippedInput(skipped_input))
+                Err(skipped_input) => {
+                    self.emitted += 1;
+                    self.writer.push_metadata(skipped_input.into());
+                }
             }
         }
     }
@@ -193,7 +185,6 @@ impl SimulationBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::SimulationEvent;
     use crate::build::BuildError;
     use crate::schema::{
         Metadata, Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult,
@@ -245,25 +236,16 @@ mod tests {
             e.trigger_hertz(1000.0).schema(AlternatingSchemaBuilder)
         });
 
-        let events: Vec<_> = simulation_builder.limit(5).build().unwrap().collect();
+        let inputs: Vec<_> = simulation_builder.limit(5).build().unwrap().collect();
 
-        // 5 emitted total (limit) - every attempt is yielded now, whether it succeeded or was
-        // skipped, so the cap shows up directly in the total count.
+        // The limit caps total attempts, not just real inputs - a skipped occurrence no longer
+        // appears in the iterator at all (it's written to the run log's metadata instead, see
+        // `Simulation::next`), so alternating Ok, Err, Ok, Err, Ok across a 5-attempt budget
+        // yields exactly the 3 real inputs, not 5.
         assert_eq!(
-            events.len(),
-            5,
-            "limit should count both effect and error events toward the cap"
-        );
-
-        // Alternating Ok, Err, Ok, Err, Ok - so 3 of the 5 are real inputs, confirming the errors
-        // above weren't free retries that let more than 3 successes slip in under the same cap.
-        let input_count = events
-            .iter()
-            .filter(|e| matches!(e, SimulationEvent::Input(_)))
-            .count();
-        assert_eq!(
-            input_count, 3,
-            "alternating Ok/Err schema should produce 3 real inputs among the 5 attempts"
+            inputs.len(),
+            3,
+            "limit should count both real and skipped attempts toward the cap"
         );
     }
 }

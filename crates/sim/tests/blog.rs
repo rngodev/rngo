@@ -1,23 +1,16 @@
 mod common;
 
 use rngo_sim::build::*;
-use rngo_sim::{Dialect, Simulation, SimulationEvent};
+use rngo_sim::{Dialect, Simulation};
 use serde_json::Value;
 
 /// `Simulation` writes each input it produces back into its run log as it's yielded (see
 /// `SimulationBuilder::run_log`), so "post" - which references "user" - sees prior "user" data as
-/// soon as it's emitted instead of every attempt being skipped for lack of anything to resolve.
+/// soon as it's emitted instead of every attempt being skipped for lack of anything to resolve. A
+/// "post" fired before any "user" exists is skipped rather than yielded (its metadata just goes to
+/// the run log - see `Simulation::next`), so plain `take(60)` is enough to get 60 real inputs.
 fn assert_simulation(simulation: Simulation) {
-    // A "post" fired before any "user" exists yet has nothing for its `reference` to resolve, so
-    // it's skipped rather than emitted - filter down to real inputs first, then take 60 of those,
-    // so an incidental early skip can't leave fewer than 60 to assert against.
-    let events: Vec<_> = simulation
-        .filter_map(|event| match event {
-            SimulationEvent::Input(input) => Some(input),
-            SimulationEvent::SkippedInput(_) => None,
-        })
-        .take(60)
-        .collect();
+    let events: Vec<_> = simulation.take(60).collect();
 
     let user_events: Vec<_> = events
         .iter()

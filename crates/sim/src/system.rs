@@ -2,7 +2,7 @@ use crate::channel::{ChannelBuilder, Stdout};
 use crate::simulation::SimulationBuilder;
 use crate::{
     BuildError, Channel, Input, Metadata, Output, RunLog, RunLogReader, RunLogWriter,
-    SimpleEventRunLog, SimulationEvent,
+    SimpleEventRunLog,
 };
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -57,15 +57,8 @@ impl System {
             .build()
             .unwrap(); // TODO: FIX
 
-        for event in &mut simulation {
-            match event {
-                SimulationEvent::Input(input) => {
-                    self.send(&input)?;
-                }
-                SimulationEvent::SkippedInput(skipped_input) => {
-                    self.add_metadata(skipped_input.into());
-                }
-            }
+        for input in &mut simulation {
+            self.send(&input)?;
         }
 
         Ok(())
