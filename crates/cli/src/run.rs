@@ -1,8 +1,8 @@
-use crate::sim::channel::ChannelDispatch;
-use crate::sim::status::StatusRunLog;
+mod status;
+
 use console::style;
-use rngo_sim::{Dialect, SqliteRunLog, spec};
-use std::collections::HashMap;
+use rngo_sim::{Dialect, SignalOutcome, SqliteRunLog, spec};
+use status::StatusRunLog;
 use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::{fmt, fs};
@@ -22,12 +22,22 @@ pub fn run(
         None => load_spec(base)?,
     };
 
-    let mut simulation_builder = Dialect::primitive()
+    let dialect = Dialect::primitive();
+
+    let mut simulation_builder = dialect
         .parse_simulation(spec.clone())
         .map_err(join_errors)?;
 
+    let mut system_builder = dialect.parse_system(spec.clone()).map_err(join_errors)?;
+
+    let audit = dialect.parse_audit(spec.clone()).map_err(join_errors)?;
+
     if let Some(limit) = limit {
         simulation_builder = simulation_builder.limit(limit.get());
+    }
+
+    if stdout {
+        system_builder.set_stdout(true);
     }
 
     if dry_run {
@@ -35,51 +45,25 @@ pub fn run(
         return Ok(true);
     }
 
-    let run_dir = new_run_dir(base)?;
-    fs::create_dir_all(&run_dir)?;
-    fs::write(
-        run_dir.join("spec.json"),
-        serde_json::to_string_pretty(&spec)?,
-    )?;
-    update_last_symlink(base, &run_dir)?;
+    let run_dir = prepare_run_dir(base, &spec)?;
 
-    let effect_channels: HashMap<String, String> = spec
-        .effects
-        .iter()
-        .filter_map(|(k, v)| v.channel.as_ref().map(|s| (k.clone(), s.clone())))
-        .collect();
     let run_log = StatusRunLog::new(
         Box::new(SqliteRunLog::new(run_dir.clone(), simulation_builder.seed)),
-        effect_channels,
+        &spec,
     );
 
-    let mut simulation = simulation_builder
+    let mut system = system_builder
         .run_log(run_log)
         .build()
         .map_err(join_errors)?;
-    let channels = simulation.take_channels();
-    let mut channel_dispatch = ChannelDispatch::new(&spec, channels, simulation.output_tx())?;
 
-    for input_event in &mut simulation {
-        if stdout {
-            println!("{}", serde_json::to_string(&input_event)?);
-        } else {
-            channel_dispatch.send(&input_event)?;
-        }
-    }
-
-    // Closes stdin on every stream channel (triggering exit for those that react to EOF) and
-    // kills any stragglers - including output-source channels with no natural end - after a
-    // grace period; `simulation.finish()` drains the trailing outputs this produces and drops
-    // the simulation, committing the run log before signals are evaluated below.
-    channel_dispatch.finish()?;
-    simulation.finish();
+    system.run(simulation_builder)?;
+    system.finish();
 
     let mut all_passed = true;
 
     if !spec.signals.is_empty() {
-        let outcomes =
-            rngo_sim::signal::evaluate_from_log(&run_dir.join("log.sqlite"), &spec.signals)?;
+        let report = audit.run(&mut system);
 
         println!();
         println!("{}", style("Audit").bold());
@@ -87,31 +71,36 @@ pub fn run(
         let mut checked = 0;
         let mut passed = 0;
 
-        for (key, outcome) in &outcomes {
-            let spec::Signal::Sql { expect, .. } = &spec.signals[key];
+        for (key, outcome) in &report.outcomes {
+            let expect = spec.signals[key]
+                .fields
+                .get("expect")
+                .and_then(|v| v.as_str());
 
-            if let Some(error) = &outcome.error {
-                all_passed = false;
-                if expect.is_some() {
-                    checked += 1;
-                }
-                println!("{key}: error - {error}");
-                continue;
-            }
-
-            let value = outcome.value.as_ref().unwrap();
-            match expect {
-                Some(expect) => {
-                    checked += 1;
-                    if outcome.passed.unwrap() {
-                        passed += 1;
-                        println!("{key}: {value} (passed)");
-                    } else {
-                        all_passed = false;
-                        println!("{key}: {value} (failed - expected '{expect}')");
+            match outcome {
+                SignalOutcome::Error { error } => {
+                    all_passed = false;
+                    if expect.is_some() {
+                        checked += 1;
                     }
+                    println!("{key}: error - {error}");
                 }
-                None => println!("{key}: {value}"),
+                SignalOutcome::Success {
+                    value,
+                    passed: verdict,
+                } => match expect {
+                    Some(expect) => {
+                        checked += 1;
+                        if verdict.unwrap() {
+                            passed += 1;
+                            println!("{key}: {value} (passed)");
+                        } else {
+                            all_passed = false;
+                            println!("{key}: {value} (failed - expected '{expect}')");
+                        }
+                    }
+                    None => println!("{key}: {value}"),
+                },
             }
         }
 
@@ -124,12 +113,12 @@ pub fn run(
     Ok(all_passed)
 }
 
-fn load_spec_file(path: &Path) -> Result<spec::Simulation, Box<dyn Error>> {
+fn load_spec_file(path: &Path) -> Result<spec::Spec, Box<dyn Error>> {
     let value: serde_json::Value = serde_yaml::from_str(&fs::read_to_string(path)?)?;
     Ok(spec::from_value(value).map_err(join_errors)?)
 }
 
-fn load_spec(base: &Path) -> Result<spec::Simulation, Box<dyn Error>> {
+fn load_spec(base: &Path) -> Result<spec::Spec, Box<dyn Error>> {
     let spec_path = base.join(".rngo/spec.yml");
 
     let mut spec: serde_json::Value = if spec_path.exists() {
@@ -237,6 +226,17 @@ fn load_spec(base: &Path) -> Result<spec::Simulation, Box<dyn Error>> {
     Ok(spec::from_value(spec).map_err(join_errors)?)
 }
 
+fn prepare_run_dir(base: &Path, spec: &spec::Spec) -> Result<PathBuf, Box<dyn Error>> {
+    let run_dir = new_run_dir(base)?;
+    fs::create_dir_all(&run_dir)?;
+    fs::write(
+        run_dir.join("spec.json"),
+        serde_json::to_string_pretty(spec)?,
+    )?;
+    update_last_symlink(base, &run_dir)?;
+    Ok(run_dir)
+}
+
 fn new_run_dir(base: &Path) -> Result<PathBuf, Box<dyn Error>> {
     let runs_dir = base.join(".rngo/runs");
     fs::create_dir_all(&runs_dir)?;
@@ -278,17 +278,18 @@ mod tests {
     fn signal_outcome(base: &Path, key: &str) -> (serde_json::Value, bool) {
         let connection =
             rusqlite::Connection::open(base.join(".rngo/runs/last/log.sqlite")).unwrap();
-        let (value, result): (Option<String>, Option<String>) = connection
-            .query_row(
-                "SELECT value, result FROM signals WHERE key = ?1",
-                rusqlite::params![key],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
+        let mut statement = connection
+            .prepare("SELECT data FROM metadata WHERE type = 'signal'")
             .unwrap();
-        (
-            serde_json::from_str(&value.unwrap()).unwrap(),
-            result.unwrap() == "passed",
-        )
+        let outcome = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .map(|data| serde_json::from_str::<serde_json::Value>(&data.unwrap()).unwrap())
+            .find(|outcome| outcome["key"] == key)
+            .unwrap_or_else(|| panic!("no signal metadata found for key {key}"));
+
+        let passed = outcome["passed"].as_bool().unwrap_or(false);
+        (outcome["value"].clone(), passed)
     }
 
     #[test]

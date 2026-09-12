@@ -1,19 +1,15 @@
-use crate::Output;
 use crate::build::{BuildError, SimulationKey};
-use crate::channel::Channel;
 use crate::effect::{Effect, EffectBuilder, Input};
-use crate::run_log::{RunLog, SimpleEventRunLog};
+use crate::run_log::SimpleEventRunLog;
 use crate::util::time::Moment;
+use crate::{RunLog, RunLogReader, RunLogWriter};
 use chrono::{TimeDelta, Utc};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct Simulation {
-    event_run_log: Box<dyn RunLog>,
     effects: Vec<Effect>,
-    channels: Vec<Channel>,
-    output_tx: Sender<Output>,
-    output_rx: Receiver<Output>,
+    writer: Rc<dyn RunLogWriter>,
     limit: Option<u64>,
     emitted: u64,
 }
@@ -22,63 +18,29 @@ impl Simulation {
     pub fn builder() -> SimulationBuilder {
         SimulationBuilder::new()
     }
-
-    pub fn output_tx(&self) -> Sender<Output> {
-        self.output_tx.clone()
-    }
-
-    /// Hands ownership of the simulation's channels to the caller (e.g. the CLI's channel
-    /// dispatch), leaving this simulation's copy empty.
-    pub fn take_channels(&mut self) -> Vec<Channel> {
-        std::mem::take(&mut self.channels)
-    }
-
-    /// Pushes any outputs currently waiting in the channel into the run log.
-    fn drain_outputs(&mut self) {
-        for output in self.output_rx.try_iter() {
-            self.event_run_log.push(output.into());
-        }
-    }
-
-    /// Finalizes the simulation once effect dispatch has fully shut down.
-    ///
-    /// Iteration already drains outputs before computing each event, but outputs sent after
-    /// the last event (e.g. a `stream` channel's subprocess flushing its output once it
-    /// receives EOF) arrive after the last `next()` call, so this drains once more. Taking
-    /// `self` by value also ensures the run log is dropped - and so commits any pending
-    /// writes - before this returns.
-    pub fn finish(mut self) {
-        self.drain_outputs();
-    }
 }
 
 impl Iterator for Simulation {
     type Item = Input;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.drain_outputs();
-
-        if self.limit.is_some_and(|limit| self.emitted >= limit) {
-            return None;
-        }
-
         loop {
+            if self.limit.is_some_and(|limit| self.emitted >= limit) {
+                return None;
+            }
+
             self.effects
                 .sort_unstable_by_key(|e| e.next_offset().unwrap_or(u64::MAX));
 
             match self.effects.first_mut()?.next()? {
-                Ok(input_event) => {
+                Ok(input) => {
                     self.emitted += 1;
-                    self.event_run_log.push(input_event.clone().into());
-                    return Some(input_event);
+                    self.writer.push_input(input.clone());
+                    return Some(input);
                 }
-                Err(skipped_event) => {
+                Err(skipped_input) => {
                     self.emitted += 1;
-                    self.event_run_log.push(skipped_event.into());
-                    if self.limit.is_some_and(|limit| self.emitted >= limit) {
-                        return None;
-                    }
-                    continue;
+                    self.writer.push_metadata(skipped_input.into());
                 }
             }
         }
@@ -90,9 +52,9 @@ pub struct SimulationBuilder {
     pub seed: u64,
     pub start: Moment,
     pub end: Moment,
-    event_run_log: Option<Box<dyn RunLog>>,
+    run_log_reader: Option<Rc<dyn RunLogReader>>,
+    run_log_writer: Option<Rc<dyn RunLogWriter>>,
     effect_builders: Vec<EffectBuilder>,
-    channels: Vec<Channel>,
     limit: Option<u64>,
 }
 
@@ -102,15 +64,20 @@ impl SimulationBuilder {
             seed: 1,
             start: Moment::Relative(TimeDelta::days(-30)),
             end: Moment::Relative(TimeDelta::zero()),
-            event_run_log: None,
+            run_log_reader: None,
+            run_log_writer: None,
             effect_builders: vec![],
-            channels: vec![],
             limit: None,
         }
     }
 
-    pub fn run_log(mut self, run_log: impl RunLog + 'static) -> Self {
-        self.event_run_log = Some(Box::new(run_log));
+    /// Mints an independent reader (for effects' `reference()` lookups) and writer (for logging
+    /// each [`Input`] this simulation produces - see [`Simulation::next`]) off `run_log`, sharing
+    /// its underlying state with any other handles minted from the same store (e.g.
+    /// [`crate::System`]'s own writer).
+    pub fn run_log(mut self, run_log: &dyn RunLog) -> Self {
+        self.run_log_reader = Some(run_log.reader());
+        self.run_log_writer = Some(run_log.writer());
         self
     }
 
@@ -155,11 +122,6 @@ impl SimulationBuilder {
         self.effect_builders.push(effect)
     }
 
-    pub fn set_channel(&mut self, channel: Channel) -> &mut Self {
-        self.channels.push(channel);
-        self
-    }
-
     pub fn with_effect(
         &mut self,
         key: &str,
@@ -184,9 +146,13 @@ impl SimulationBuilder {
             });
         }
 
-        let event_run_log = self
-            .event_run_log
-            .unwrap_or_else(|| Box::new(SimpleEventRunLog::new(self.seed)));
+        let (run_log_reader, run_log_writer) = match (self.run_log_reader, self.run_log_writer) {
+            (Some(reader), Some(writer)) => (reader, writer),
+            _ => {
+                let default_run_log = SimpleEventRunLog::new(self.seed);
+                (default_run_log.reader(), default_run_log.writer())
+            }
+        };
 
         let mut effects = vec![];
 
@@ -195,7 +161,7 @@ impl SimulationBuilder {
                 .set_now(now)
                 .set_sim_start(start)
                 .set_sim_end(end)
-                .set_event_run_log(event_run_log.reader())
+                .set_event_run_log(run_log_reader.clone())
                 .set_seed(self.seed);
 
             match effect_builder.build() {
@@ -205,13 +171,9 @@ impl SimulationBuilder {
         }
 
         if errors.is_empty() {
-            let (output_tx, output_rx) = mpsc::channel::<Output>();
             Ok(Simulation {
-                event_run_log,
                 effects,
-                channels: self.channels,
-                output_tx,
-                output_rx,
+                writer: run_log_writer,
                 limit: self.limit,
                 emitted: 0,
             })
@@ -274,13 +236,16 @@ mod tests {
             e.trigger_hertz(1000.0).schema(AlternatingSchemaBuilder)
         });
 
-        let events: Vec<_> = simulation_builder.limit(5).build().unwrap().collect();
+        let inputs: Vec<_> = simulation_builder.limit(5).build().unwrap().collect();
 
-        // 5 emitted total (limit), alternating Ok, Err, Ok, Err, Ok - so 3 are yielded.
+        // The limit caps total attempts, not just real inputs - a skipped occurrence no longer
+        // appears in the iterator at all (it's written to the run log's metadata instead, see
+        // `Simulation::next`), so alternating Ok, Err, Ok, Err, Ok across a 5-attempt budget
+        // yields exactly the 3 real inputs, not 5.
         assert_eq!(
-            events.len(),
+            inputs.len(),
             3,
-            "limit should count both effect and error events toward the cap"
+            "limit should count both real and skipped attempts toward the cap"
         );
     }
 }

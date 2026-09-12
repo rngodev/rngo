@@ -6,7 +6,7 @@ use rngo_sim::{BuildError, Dialect, EffectKey, Simulation};
 use serde_json::Value;
 
 fn effect_offsets(sim: Simulation, take: usize) -> Vec<u64> {
-    sim.take(take).map(|e| e.offset).collect()
+    sim.map(|input| input.offset).take(take).collect()
 }
 
 /// The default simulation window is 30 days (start = -30d, end = now).
@@ -93,7 +93,7 @@ fn effect_respects_end_time_via_spec() {
         .build()
         .unwrap();
 
-    let offsets: Vec<u64> = sim.map(|e| e.offset).collect();
+    let offsets: Vec<u64> = sim.map(|input| input.offset).collect();
 
     // 2024-01-01 to 2024-06-01 = 31+29+31+30+31 = 152 days (2024 is a leap year)
     let effect_end_offset: u64 = 152 * 86_400;
@@ -140,7 +140,7 @@ fn effect_respects_both_start_and_end() {
         .build()
         .unwrap();
 
-    let offsets: Vec<u64> = sim.map(|e| e.offset).collect();
+    let offsets: Vec<u64> = sim.map(|input| input.offset).collect();
 
     // 2024 is a leap year.
     // 2024-04-01 is day 92 (31+29+31+1), so offset = 91 days from Jan 1.

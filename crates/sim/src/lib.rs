@@ -1,3 +1,4 @@
+mod audit;
 pub mod build;
 mod channel;
 mod effect;
@@ -9,16 +10,19 @@ pub mod schema;
 pub mod signal;
 mod simulation;
 pub mod spec;
+mod system;
 mod util;
 
+pub use audit::{Audit, AuditReport};
 pub use build::{BuildError, EffectKey, SchemaEdge, SimulationKey};
 pub use channel::Channel;
 pub use effect::{Effect, Input};
 pub use format::Format;
 pub use output::{Level, Output};
 pub use parse::Dialect;
-pub use run_log::{RunLog, RunLogEvent, RunLogReader, SimpleEventRunLog, SqliteRunLog};
-pub use signal::{SignalError, SignalOutcome};
+pub use run_log::{Metadata, RunLog, RunLogReader, RunLogWriter, SimpleEventRunLog, SqliteRunLog};
+pub use signal::{Signal, SignalOutcome};
 pub use simulation::Simulation;
 pub use spec::ParseError;
+pub use system::System;
 pub use util::time::Moment;
