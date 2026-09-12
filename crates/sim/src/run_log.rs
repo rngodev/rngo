@@ -3,7 +3,6 @@ mod sqlite;
 
 use crate::Output;
 use crate::effect::Input;
-use crate::util::json_pointer::JsonPointer;
 use serde_json::Value;
 use std::rc::Rc;
 
@@ -23,7 +22,7 @@ pub trait RunLog: std::fmt::Debug {
 pub trait RunLogWriter: std::fmt::Debug {
     fn push_input(&self, input: Input);
     fn push_output(&self, output: Output);
-    fn push_metadata(&self, metadata: EffectMetadata);
+    fn push_metadata(&self, metadata: Metadata);
 }
 
 pub trait RunLogReader: std::fmt::Debug {
@@ -55,17 +54,19 @@ pub enum Cursor {
 
 /// One row of the standalone `metadata` table (see `run_log/sqlite.rs`) - for metadata with no
 /// input/output row of its own to be embedded in directly (e.g. a skipped occurrence, or an
-/// audit signal's result). A single [`crate::schema::Metadata`] entry plus the effect/offset
-/// context it's attached to. Mostly mirrors that table's columns (minus `type`, renamed `mtype`
-/// to dodge the keyword) - only `type` itself is `NOT NULL`. Has no `effect` field: a row with an
-/// `input_id` can already recover it via a join to `inputs`, and a row with no id at all (e.g. a
-/// skipped occurrence, see `effect.rs`) folds it into `data` instead.
+/// audit signal's result). Named `Metadata` rather than `EffectMetadata` since it's no longer
+/// effect-specific; distinct from [`crate::schema::Metadata`], the per-entry description that
+/// this type's `data` (for a skipped occurrence) or `inputs`/`outputs`' own `metadata` column
+/// embed. Mirrors the table's columns (minus `type`, renamed `mtype` to dodge the keyword) - only
+/// `type` itself is `NOT NULL`. Has no `effect` field: a row with an `input_id`/`output_id` can
+/// already recover it via a join, and a row with no id at all (e.g. a skipped occurrence, see
+/// `effect.rs`) folds it into `data` instead.
 #[derive(Clone, Debug)]
-pub struct EffectMetadata {
+pub struct Metadata {
     pub mtype: String,
     pub input_id: Option<i64>,
+    pub output_id: Option<i64>,
     pub offset: Option<u64>,
-    pub attribute: Option<JsonPointer>,
     pub data: Option<Value>,
     pub segment: Option<String>,
 }

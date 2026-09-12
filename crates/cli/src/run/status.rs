@@ -1,7 +1,7 @@
 use chrono::{DateTime, FixedOffset};
 use console::{Term, style};
 use rngo_sim::spec::Spec;
-use rngo_sim::{EffectMetadata, Input, Output, RunLog, RunLogReader, RunLogWriter};
+use rngo_sim::{Input, Metadata, Output, RunLog, RunLogReader, RunLogWriter};
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
@@ -147,7 +147,7 @@ impl RunLogWriter for StatusRunLogWriter {
         self.child.push_output(output);
     }
 
-    fn push_metadata(&self, metadata: EffectMetadata) {
+    fn push_metadata(&self, metadata: Metadata) {
         self.render(false);
         self.child.push_metadata(metadata);
     }

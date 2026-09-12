@@ -1,4 +1,4 @@
-use crate::run_log::EffectMetadata;
+use crate::run_log::Metadata;
 use crate::signal::{Signal, SignalOutcome};
 use crate::system::System;
 use indexmap::IndexMap;
@@ -35,11 +35,11 @@ impl Audit {
                 map.insert("key".to_string(), serde_json::Value::String(key.clone()));
             }
 
-            system.add_metadata(EffectMetadata {
+            system.add_metadata(Metadata {
                 mtype: "signal".to_string(),
                 input_id: None,
+                output_id: None,
                 offset: None,
-                attribute: None,
                 data: Some(data),
                 segment: None,
             });

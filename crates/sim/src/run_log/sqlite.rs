@@ -1,7 +1,6 @@
 use crate::effect::Input;
 use crate::output::Level;
-use crate::run_log::{Cursor, EffectMetadata, RunLogIndex, RunLogIndexConfig, RunLogReader};
-use crate::util::json_pointer::JsonPointer;
+use crate::run_log::{Cursor, Metadata, RunLogIndex, RunLogIndexConfig, RunLogReader};
 use crate::{Output, RunLog, RunLogWriter};
 use chrono::{DateTime, Utc};
 use rand::RngExt;
@@ -64,14 +63,15 @@ impl SqliteRunLog {
 
                 CREATE TABLE IF NOT EXISTS metadata (
                     type TEXT NOT NULL,
+                    segment TEXT,
                     input_id INTEGER,
+                    output_id INTEGER,
                     offset INTEGER,
-                    attribute TEXT,
-                    data TEXT,
-                    segment TEXT
+                    data TEXT
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_metadata_input_id ON metadata(input_id);
+                CREATE INDEX IF NOT EXISTS idx_metadata_output_id ON metadata(output_id);
 
                 CREATE INDEX IF NOT EXISTS idx_metadata_unique_reference
                     ON metadata(segment, input_id) WHERE type = '_unique_reference';
@@ -132,36 +132,36 @@ fn insert_metadata_row(
     connection: &Connection,
     mtype: &str,
     input_id: Option<i64>,
+    output_id: Option<i64>,
     offset: Option<u64>,
-    attribute: Option<&JsonPointer>,
     data: Option<&serde_json::Value>,
     segment: Option<&str>,
 ) {
     connection
         .prepare_cached(
-            "INSERT INTO metadata (type, input_id, offset, attribute, data, segment) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO metadata (type, input_id, output_id, offset, data, segment) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         )
         .unwrap()
         .execute(rusqlite::params![
             mtype,
             input_id,
+            output_id,
             offset.map(|o| o as i64),
-            attribute.map(|a| a.to_string()),
             data.map(|v| v.to_string()),
             segment,
         ])
         .unwrap();
 }
 
-/// Inserts the single row an [`EffectMetadata`] describes (e.g. a skipped occurrence's entry,
+/// Inserts the single row a standalone [`Metadata`] describes (e.g. a skipped occurrence's entry,
 /// logged with no `input_id`).
-fn insert_effect_metadata(connection: &Connection, metadata: &EffectMetadata) {
+fn insert_metadata(connection: &Connection, metadata: &Metadata) {
     insert_metadata_row(
         connection,
         &metadata.mtype,
         metadata.input_id,
+        metadata.output_id,
         metadata.offset,
-        metadata.attribute.as_ref(),
         metadata.data.as_ref(),
         metadata.segment.as_deref(),
     );
@@ -225,8 +225,8 @@ impl RunLogWriter for SqliteRunLogWriter {
         self.record();
     }
 
-    fn push_metadata(&self, metadata: EffectMetadata) {
-        insert_effect_metadata(&self.connection.borrow(), &metadata);
+    fn push_metadata(&self, metadata: Metadata) {
+        insert_metadata(&self.connection.borrow(), &metadata);
         self.record();
     }
 }
@@ -375,8 +375,8 @@ fn query_sample(
                         connection,
                         "_unique_reference",
                         Some(*id),
-                        Some(*offset as u64),
                         None,
+                        Some(*offset as u64),
                         None,
                         Some(segment),
                     );
@@ -465,7 +465,7 @@ impl RunLogIndex for SqliteRunLogIndex {
 mod tests {
     use super::*;
     use crate::effect::Input;
-    use crate::schema::Metadata;
+    use crate::schema::Metadata as SchemaMetadata;
     use chrono::Utc;
     use tempfile::TempDir;
 
@@ -485,7 +485,7 @@ mod tests {
             offset: 42,
             timestamp: Utc::now().fixed_offset(),
             data: serde_json::json!({ "a": 1 }),
-            metadata: vec![Metadata {
+            metadata: vec![SchemaMetadata {
                 mtype: "error".into(),
                 attribute: None,
                 data: Some(serde_json::json!({ "message": "partial value" })),
@@ -497,7 +497,7 @@ mod tests {
             channel: "logger".to_string(),
             level: Level::Info,
             data: "hello".to_string(),
-            metadata: vec![Metadata {
+            metadata: vec![SchemaMetadata {
                 mtype: "error".into(),
                 attribute: None,
                 data: Some(serde_json::json!({ "message": "delivery failed" })),
@@ -545,11 +545,11 @@ mod tests {
         let run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
         let writer = run_log.writer();
 
-        writer.push_metadata(EffectMetadata {
+        writer.push_metadata(Metadata {
             mtype: "skipped".into(),
             input_id: None,
+            output_id: None,
             offset: Some(42),
-            attribute: None,
             data: None,
             segment: None,
         });
@@ -563,22 +563,56 @@ mod tests {
             .unwrap();
         assert_eq!(input_count, 0);
 
-        let (metadata_input_id, metadata_offset, metadata_type, metadata_data): (
+        let (metadata_input_id, metadata_output_id, metadata_offset, metadata_type, metadata_data): (
+            Option<i64>,
             Option<i64>,
             i64,
             String,
             Option<String>,
         ) = conn
             .query_row(
-                "SELECT input_id, offset, type, data FROM metadata",
+                "SELECT input_id, output_id, offset, type, data FROM metadata",
                 [],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
             )
             .unwrap();
         assert_eq!(metadata_input_id, None);
+        assert_eq!(metadata_output_id, None);
         assert_eq!(metadata_offset, 42);
         assert_eq!(metadata_type, "skipped");
         assert_eq!(metadata_data, None);
+    }
+
+    #[test]
+    fn standalone_metadata_can_carry_an_output_id() {
+        let tmp = TempDir::new().unwrap();
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
+        let writer = run_log.writer();
+
+        writer.push_metadata(Metadata {
+            mtype: "delivery_failed".into(),
+            input_id: None,
+            output_id: Some(7),
+            offset: None,
+            data: None,
+            segment: None,
+        });
+
+        run_log.commit();
+
+        let conn = open(tmp.path());
+        let output_id: Option<i64> = conn
+            .query_row("SELECT output_id FROM metadata", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(output_id, Some(7));
     }
 
     #[test]

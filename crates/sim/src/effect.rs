@@ -3,9 +3,11 @@ mod trigger;
 
 use crate::build::{BuildError, EffectKey};
 use crate::run_log::{
-    Cursor, EffectMetadata, RunLog, RunLogIndexConfig, RunLogReader, SimpleEventRunLog,
+    Cursor, Metadata, RunLog, RunLogIndexConfig, RunLogReader, SimpleEventRunLog,
 };
-use crate::schema::{Metadata, Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext};
+use crate::schema::{
+    Metadata as SchemaMetadata, Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext,
+};
 use crate::util::ext::FlattenErr;
 use crate::util::time::Moment;
 use chrono::{DateTime, FixedOffset, TimeDelta};
@@ -90,7 +92,7 @@ pub struct Input {
     pub offset: u64,
     pub timestamp: DateTime<FixedOffset>,
     pub data: Value,
-    pub metadata: Vec<Metadata>,
+    pub metadata: Vec<SchemaMetadata>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,14 +100,14 @@ pub struct SkippedInput {
     pub effect: String,
     pub offset: u64,
     pub timestamp: DateTime<FixedOffset>,
-    pub metadata: Vec<Metadata>,
+    pub metadata: Vec<SchemaMetadata>,
 }
 
-/// A skipped occurrence never produces a stored input, so every row it logs has no `input_id` to
-/// attach to - one [`EffectMetadata`] per [`Metadata`] entry it carried, matching the
-/// one-row-per-entry shape of the `metadata` table (see `run_log/sqlite.rs`). The `metadata` table
-/// has no `effect` column, so the effect key is folded into `data` instead.
-impl From<SkippedInput> for Vec<EffectMetadata> {
+/// A skipped occurrence never produces a stored input, so it logs as its own standalone
+/// [`Metadata`] row with no `input_id` to attach to (see `run_log/sqlite.rs`) - the effect key
+/// and the full list of [`SchemaMetadata`] entries it carried both fold into `data`, since the
+/// `metadata` table has no `effect` column and this is a single row, not one per entry.
+impl From<SkippedInput> for Metadata {
     fn from(skipped: SkippedInput) -> Self {
         let SkippedInput {
             effect,
@@ -114,24 +116,14 @@ impl From<SkippedInput> for Vec<EffectMetadata> {
             ..
         } = skipped;
 
-        metadata
-            .into_iter()
-            .map(|m: Metadata| {
-                let mut data = m.data.unwrap_or_else(|| Value::Object(Default::default()));
-                if let Value::Object(map) = &mut data {
-                    map.insert("effect".to_string(), Value::String(effect.clone()));
-                }
-
-                EffectMetadata {
-                    mtype: m.mtype,
-                    input_id: None,
-                    offset: Some(offset),
-                    attribute: m.attribute,
-                    data: Some(data),
-                    segment: None,
-                }
-            })
-            .collect()
+        Metadata {
+            mtype: "skipped".to_string(),
+            input_id: None,
+            output_id: None,
+            offset: Some(offset),
+            data: Some(serde_json::json!({ "effect": effect, "metadata": metadata })),
+            segment: None,
+        }
     }
 }
 

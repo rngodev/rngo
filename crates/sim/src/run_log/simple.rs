@@ -1,4 +1,4 @@
-use crate::run_log::{Cursor, EffectMetadata, RunLogIndex, RunLogIndexConfig, RunLogReader};
+use crate::run_log::{Cursor, Metadata, RunLogIndex, RunLogIndexConfig, RunLogReader};
 use crate::{Input, Output, RunLog, RunLogWriter};
 use rand::RngExt;
 use rand_pcg::Pcg32;
@@ -40,7 +40,7 @@ impl RunLogReader for SimpleEventRunLogReader {
 pub struct SimpleEventRunLog {
     inputs: Rc<RefCell<Vec<Rc<Input>>>>,
     outputs: Rc<RefCell<Vec<Output>>>,
-    metadata: Rc<RefCell<Vec<EffectMetadata>>>,
+    metadata: Rc<RefCell<Vec<Metadata>>>,
     rng: Rc<RefCell<Pcg32>>,
 }
 
@@ -78,7 +78,7 @@ impl RunLog for SimpleEventRunLog {
 struct SimpleEventRunLogWriter {
     inputs: Rc<RefCell<Vec<Rc<Input>>>>,
     outputs: Rc<RefCell<Vec<Output>>>,
-    metadata: Rc<RefCell<Vec<EffectMetadata>>>,
+    metadata: Rc<RefCell<Vec<Metadata>>>,
 }
 
 impl RunLogWriter for SimpleEventRunLogWriter {
@@ -90,7 +90,7 @@ impl RunLogWriter for SimpleEventRunLogWriter {
         self.outputs.borrow_mut().push(output);
     }
 
-    fn push_metadata(&self, metadata: EffectMetadata) {
+    fn push_metadata(&self, metadata: Metadata) {
         self.metadata.borrow_mut().push(metadata);
     }
 }

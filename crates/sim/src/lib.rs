@@ -20,9 +20,7 @@ pub use effect::{Effect, Input};
 pub use format::Format;
 pub use output::{Level, Output};
 pub use parse::Dialect;
-pub use run_log::{
-    EffectMetadata, RunLog, RunLogReader, RunLogWriter, SimpleEventRunLog, SqliteRunLog,
-};
+pub use run_log::{Metadata, RunLog, RunLogReader, RunLogWriter, SimpleEventRunLog, SqliteRunLog};
 pub use signal::{Signal, SignalOutcome};
 pub use simulation::{Simulation, SimulationEvent};
 pub use spec::ParseError;

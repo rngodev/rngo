@@ -1,7 +1,7 @@
 use crate::channel::{ChannelBuilder, Stdout};
 use crate::simulation::SimulationBuilder;
 use crate::{
-    BuildError, Channel, EffectMetadata, Input, Output, RunLog, RunLogReader, RunLogWriter,
+    BuildError, Channel, Input, Metadata, Output, RunLog, RunLogReader, RunLogWriter,
     SimpleEventRunLog, SimulationEvent,
 };
 use std::collections::HashMap;
@@ -44,7 +44,7 @@ impl System {
         Ok(())
     }
 
-    pub fn add_metadata(&mut self, metadata: EffectMetadata) {
+    pub fn add_metadata(&mut self, metadata: Metadata) {
         self.writer.push_metadata(metadata);
     }
 
@@ -63,9 +63,7 @@ impl System {
                     self.send(&input)?;
                 }
                 SimulationEvent::SkippedInput(skipped_input) => {
-                    for metadata in Vec::<EffectMetadata>::from(skipped_input) {
-                        self.add_metadata(metadata);
-                    }
+                    self.add_metadata(skipped_input.into());
                 }
             }
         }
