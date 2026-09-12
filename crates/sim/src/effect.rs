@@ -125,7 +125,6 @@ impl From<SkippedInput> for Vec<EffectMetadata> {
                 EffectMetadata {
                     mtype: m.mtype,
                     input_id: None,
-                    output_id: None,
                     offset: Some(offset),
                     attribute: m.attribute,
                     data: Some(data),

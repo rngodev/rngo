@@ -1,7 +1,6 @@
 use crate::effect::Input;
 use crate::output::Level;
 use crate::run_log::{Cursor, EffectMetadata, RunLogIndex, RunLogIndexConfig, RunLogReader};
-use crate::schema::Metadata;
 use crate::util::json_pointer::JsonPointer;
 use crate::{Output, RunLog, RunLogWriter};
 use chrono::{DateTime, Utc};
@@ -13,7 +12,6 @@ use rusqlite::{Connection, OptionalExtension};
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::str::FromStr;
 
 /// Number of pushed events to accumulate in a single transaction before committing.
 const BATCH_SIZE: usize = 500;
@@ -51,7 +49,8 @@ impl SqliteRunLog {
                     id INTEGER NOT NULL,
                     effect TEXT NOT NULL,
                     offset INTEGER NOT NULL,
-                    data TEXT NOT NULL
+                    data TEXT NOT NULL,
+                    metadata TEXT NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS outputs (
@@ -59,13 +58,13 @@ impl SqliteRunLog {
                     input_id INTEGER,
                     timestamp TEXT NOT NULL,
                     level TEXT NOT NULL,
-                    data TEXT NOT NULL
+                    data TEXT NOT NULL,
+                    metadata TEXT NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS metadata (
                     type TEXT NOT NULL,
                     input_id INTEGER,
-                    output_id INTEGER,
                     offset INTEGER,
                     attribute TEXT,
                     data TEXT,
@@ -73,7 +72,6 @@ impl SqliteRunLog {
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_metadata_input_id ON metadata(input_id);
-                CREATE INDEX IF NOT EXISTS idx_metadata_output_id ON metadata(output_id);
 
                 CREATE INDEX IF NOT EXISTS idx_metadata_unique_reference
                     ON metadata(segment, input_id) WHERE type = '_unique_reference';
@@ -130,12 +128,10 @@ fn commit(connection: &RefCell<Connection>, pending: &Cell<usize>) {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn insert_metadata_row(
     connection: &Connection,
     mtype: &str,
     input_id: Option<i64>,
-    output_id: Option<i64>,
     offset: Option<u64>,
     attribute: Option<&JsonPointer>,
     data: Option<&serde_json::Value>,
@@ -143,13 +139,12 @@ fn insert_metadata_row(
 ) {
     connection
         .prepare_cached(
-            "INSERT INTO metadata (type, input_id, output_id, offset, attribute, data, segment) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO metadata (type, input_id, offset, attribute, data, segment) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         )
         .unwrap()
         .execute(rusqlite::params![
             mtype,
             input_id,
-            output_id,
             offset.map(|o| o as i64),
             attribute.map(|a| a.to_string()),
             data.map(|v| v.to_string()),
@@ -165,7 +160,6 @@ fn insert_effect_metadata(connection: &Connection, metadata: &EffectMetadata) {
         connection,
         &metadata.mtype,
         metadata.input_id,
-        metadata.output_id,
         metadata.offset,
         metadata.attribute.as_ref(),
         metadata.data.as_ref(),
@@ -190,32 +184,21 @@ impl SqliteRunLogWriter {
 
 impl RunLogWriter for SqliteRunLogWriter {
     fn push_input(&self, input: Input) {
-        let connection = self.connection.borrow();
-        connection
-            .prepare_cached("INSERT INTO inputs (id, effect, offset, data) VALUES (?1, ?2, ?3, ?4)")
+        self.connection
+            .borrow()
+            .prepare_cached(
+                "INSERT INTO inputs (id, effect, offset, data, metadata) VALUES (?1, ?2, ?3, ?4, ?5)",
+            )
             .unwrap()
             .execute(rusqlite::params![
                 input.id as i64,
                 input.effect,
                 input.offset as i64,
                 serde_json::to_string(&input.data).unwrap(),
+                serde_json::to_string(&input.metadata).unwrap(),
             ])
             .unwrap();
 
-        for m in &input.metadata {
-            insert_metadata_row(
-                &connection,
-                &m.mtype,
-                Some(input.id as i64),
-                None,
-                Some(input.offset),
-                m.attribute.as_ref(),
-                m.data.as_ref(),
-                None,
-            );
-        }
-
-        drop(connection);
         self.record();
     }
 
@@ -223,7 +206,7 @@ impl RunLogWriter for SqliteRunLogWriter {
         self.connection
             .borrow()
             .prepare_cached(
-                "INSERT INTO outputs (input_id, timestamp, channel, level, data) VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO outputs (input_id, timestamp, channel, level, data, metadata) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             )
             .unwrap()
             .execute(rusqlite::params![
@@ -236,6 +219,7 @@ impl RunLogWriter for SqliteRunLogWriter {
                     Level::Info => "info",
                 },
                 output.data,
+                serde_json::to_string(&output.metadata).unwrap(),
             ])
             .unwrap();
         self.record();
@@ -267,45 +251,26 @@ fn sql_value_to_json(value: SqlValue) -> Option<serde_json::Value> {
     })
 }
 
-fn metadata_for_input(connection: &Connection, input_id: i64) -> Vec<Metadata> {
-    connection
-        .prepare_cached(
-            "SELECT type, attribute, data FROM metadata WHERE input_id = ?1 AND type != '_unique_reference'",
-        )
-        .unwrap()
-        .query_map(rusqlite::params![input_id], |row| {
-            let mtype: String = row.get(0)?;
-            let attribute: Option<String> = row.get(1)?;
-            let data: Option<String> = row.get(2)?;
-            Ok(Metadata {
-                mtype,
-                attribute: attribute.map(|a| JsonPointer::from_str(&a).unwrap()),
-                data: data.map(|d| serde_json::from_str(&d).unwrap()),
-            })
-        })
-        .unwrap()
-        .map(|r| r.unwrap())
-        .collect()
-}
-
 /// Backs [`RunLogReader::last`] - the most recently inserted input, visible to any writer's
 /// pending, uncommitted rows since it's the shared connection.
 fn query_last(connection: &Connection) -> Option<Rc<Input>> {
     let row = connection
-        .prepare_cached("SELECT id, effect, offset, data FROM inputs ORDER BY id DESC LIMIT 1")
+        .prepare_cached(
+            "SELECT id, effect, offset, data, metadata FROM inputs ORDER BY id DESC LIMIT 1",
+        )
         .unwrap()
         .query_row([], |row| {
             let id: i64 = row.get(0)?;
             let effect: String = row.get(1)?;
             let offset: i64 = row.get(2)?;
             let data: String = row.get(3)?;
-            Ok((id, effect, offset, data))
+            let metadata: String = row.get(4)?;
+            Ok((id, effect, offset, data, metadata))
         })
         .optional()
         .unwrap()?;
 
-    let (id, effect, offset, data) = row;
-    let metadata = metadata_for_input(connection, id);
+    let (id, effect, offset, data, metadata) = row;
 
     Some(Rc::new(Input {
         id: id as u64,
@@ -313,7 +278,7 @@ fn query_last(connection: &Connection) -> Option<Rc<Input>> {
         offset: offset as u64,
         timestamp: placeholder_timestamp(),
         data: serde_json::from_str(&data).unwrap(),
-        metadata,
+        metadata: serde_json::from_str(&metadata).unwrap(),
     }))
 }
 
@@ -330,14 +295,15 @@ fn query_sample(
     let row = match cursor {
         Cursor::Last => connection
             .prepare_cached(
-                "SELECT id, offset, data FROM inputs WHERE effect = ?1 ORDER BY id DESC LIMIT 1",
+                "SELECT id, offset, data, metadata FROM inputs WHERE effect = ?1 ORDER BY id DESC LIMIT 1",
             )
             .unwrap()
             .query_row(rusqlite::params![key], |row| {
                 let id: i64 = row.get(0)?;
                 let offset: i64 = row.get(1)?;
                 let data: String = row.get(2)?;
-                Ok((id, offset, data))
+                let metadata: String = row.get(3)?;
+                Ok((id, offset, data, metadata))
             })
             .optional()
             .unwrap(),
@@ -354,14 +320,15 @@ fn query_sample(
                 let offset_index = rng.borrow_mut().random_range(0..count);
                 connection
                     .prepare_cached(
-                        "SELECT id, offset, data FROM inputs WHERE effect = ?1 ORDER BY id ASC LIMIT 1 OFFSET ?2",
+                        "SELECT id, offset, data, metadata FROM inputs WHERE effect = ?1 ORDER BY id ASC LIMIT 1 OFFSET ?2",
                     )
                     .unwrap()
                     .query_row(rusqlite::params![key, offset_index], |row| {
                         let id: i64 = row.get(0)?;
                         let offset: i64 = row.get(1)?;
                         let data: String = row.get(2)?;
-                        Ok((id, offset, data))
+                        let metadata: String = row.get(3)?;
+                        Ok((id, offset, data, metadata))
                     })
                     .optional()
                     .unwrap()
@@ -387,7 +354,7 @@ fn query_sample(
                 let offset_index = rng.borrow_mut().random_range(0..count);
                 let row = connection
                     .prepare_cached(
-                        "SELECT i.id, i.offset, i.data FROM inputs i WHERE i.effect = ?1 AND NOT EXISTS (
+                        "SELECT i.id, i.offset, i.data, i.metadata FROM inputs i WHERE i.effect = ?1 AND NOT EXISTS (
                             SELECT 1 FROM metadata m
                             WHERE m.type = '_unique_reference' AND m.segment = ?2 AND m.input_id = i.id
                         ) ORDER BY i.id ASC LIMIT 1 OFFSET ?3",
@@ -397,17 +364,17 @@ fn query_sample(
                         let id: i64 = row.get(0)?;
                         let offset: i64 = row.get(1)?;
                         let data: String = row.get(2)?;
-                        Ok((id, offset, data))
+                        let metadata: String = row.get(3)?;
+                        Ok((id, offset, data, metadata))
                     })
                     .optional()
                     .unwrap();
 
-                if let Some((id, offset, _)) = &row {
+                if let Some((id, offset, _, _)) = &row {
                     insert_metadata_row(
                         connection,
                         "_unique_reference",
                         Some(*id),
-                        None,
                         Some(*offset as u64),
                         None,
                         None,
@@ -420,8 +387,7 @@ fn query_sample(
         }
     }?;
 
-    let (id, offset, data) = row;
-    let metadata = metadata_for_input(connection, id);
+    let (id, offset, data, metadata) = row;
 
     Some(Rc::new(Input {
         id: id as u64,
@@ -429,7 +395,7 @@ fn query_sample(
         offset: offset as u64,
         timestamp: placeholder_timestamp(),
         data: serde_json::from_str(&data).unwrap(),
-        metadata,
+        metadata: serde_json::from_str(&metadata).unwrap(),
     }))
 }
 
@@ -499,6 +465,7 @@ impl RunLogIndex for SqliteRunLogIndex {
 mod tests {
     use super::*;
     use crate::effect::Input;
+    use crate::schema::Metadata;
     use chrono::Utc;
     use tempfile::TempDir;
 
@@ -507,7 +474,7 @@ mod tests {
     }
 
     #[test]
-    fn writes_input_output_and_metadata_rows() {
+    fn writes_input_and_output_metadata_inline() {
         let tmp = TempDir::new().unwrap();
         let run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
         let writer = run_log.writer();
@@ -530,6 +497,11 @@ mod tests {
             channel: "logger".to_string(),
             level: Level::Info,
             data: "hello".to_string(),
+            metadata: vec![Metadata {
+                mtype: "error".into(),
+                attribute: None,
+                data: Some(serde_json::json!({ "message": "delivery failed" })),
+            }],
         });
 
         // Force the pending transaction closed so the rows are visible to a fresh connection.
@@ -537,35 +509,34 @@ mod tests {
 
         let conn = open(tmp.path());
 
-        let effect: String = conn
-            .query_row("SELECT effect FROM inputs", [], |row| row.get(0))
+        let (effect, input_metadata): (String, String) = conn
+            .query_row("SELECT effect, metadata FROM inputs", [], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
             .unwrap();
         assert_eq!(effect, "ping");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&input_metadata).unwrap(),
+            serde_json::json!([{ "type": "error", "attribute": null, "data": { "message": "partial value" } }])
+        );
 
-        let output_data: String = conn
-            .query_row("SELECT data FROM outputs", [], |row| row.get(0))
+        let (output_data, output_metadata): (String, String) = conn
+            .query_row("SELECT data, metadata FROM outputs", [], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
             .unwrap();
         assert_eq!(output_data, "hello");
-
-        let (metadata_input_id, metadata_offset, metadata_type, metadata_data): (
-            i64,
-            i64,
-            String,
-            String,
-        ) = conn
-            .query_row(
-                "SELECT input_id, offset, type, data FROM metadata",
-                [],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
-            )
-            .unwrap();
-        assert_eq!(metadata_input_id, 1);
-        assert_eq!(metadata_offset, 42);
-        assert_eq!(metadata_type, "error");
         assert_eq!(
-            serde_json::from_str::<serde_json::Value>(&metadata_data).unwrap(),
-            serde_json::json!({ "message": "partial value" })
+            serde_json::from_str::<serde_json::Value>(&output_metadata).unwrap(),
+            serde_json::json!([{ "type": "error", "attribute": null, "data": { "message": "delivery failed" } }])
         );
+
+        // Neither push touches the standalone `metadata` table - that's only for metadata with no
+        // input/output row of its own to be embedded in.
+        let standalone_metadata_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM metadata", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(standalone_metadata_count, 0);
     }
 
     #[test]
@@ -577,7 +548,6 @@ mod tests {
         writer.push_metadata(EffectMetadata {
             mtype: "skipped".into(),
             input_id: None,
-            output_id: None,
             offset: Some(42),
             attribute: None,
             data: None,

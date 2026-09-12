@@ -38,7 +38,6 @@ impl Audit {
             system.add_metadata(EffectMetadata {
                 mtype: "signal".to_string(),
                 input_id: None,
-                output_id: None,
                 offset: None,
                 attribute: None,
                 data: Some(data),

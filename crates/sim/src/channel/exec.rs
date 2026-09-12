@@ -52,6 +52,7 @@ impl ChannelTarget for Exec {
                         level,
                         data: line,
                         timestamp,
+                        metadata: vec![],
                     });
                 }
             }
@@ -64,6 +65,7 @@ impl ChannelTarget for Exec {
                 level: Level::Error,
                 data: format!("command exited with {}", output.status),
                 timestamp,
+                metadata: vec![],
             });
         }
 

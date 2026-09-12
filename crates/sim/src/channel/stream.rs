@@ -154,6 +154,7 @@ impl ChannelTargetBuilder for StreamBuilder {
                             level: Level::Info,
                             data: line,
                             timestamp: Utc::now(),
+                            metadata: vec![],
                         });
                     }
                 }
@@ -172,6 +173,7 @@ impl ChannelTargetBuilder for StreamBuilder {
                             level: Level::Error,
                             data: line,
                             timestamp: Utc::now(),
+                            metadata: vec![],
                         });
                     }
                 }
