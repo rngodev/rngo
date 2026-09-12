@@ -65,12 +65,15 @@ impl SqliteRunLog {
                 CREATE TABLE IF NOT EXISTS metadata (
                     type TEXT NOT NULL,
                     input_id INTEGER,
-                    effect TEXT,
+                    output_id INTEGER,
                     offset INTEGER,
                     attribute TEXT,
                     data TEXT,
                     segment TEXT
                 );
+
+                CREATE INDEX IF NOT EXISTS idx_metadata_input_id ON metadata(input_id);
+                CREATE INDEX IF NOT EXISTS idx_metadata_output_id ON metadata(output_id);
 
                 CREATE INDEX IF NOT EXISTS idx_metadata_unique_reference
                     ON metadata(segment, input_id) WHERE type = '_unique_reference';
@@ -132,7 +135,7 @@ fn insert_metadata_row(
     connection: &Connection,
     mtype: &str,
     input_id: Option<i64>,
-    effect: Option<&str>,
+    output_id: Option<i64>,
     offset: Option<u64>,
     attribute: Option<&JsonPointer>,
     data: Option<&serde_json::Value>,
@@ -140,41 +143,19 @@ fn insert_metadata_row(
 ) {
     connection
         .prepare_cached(
-            "INSERT INTO metadata (type, input_id, effect, offset, attribute, data, segment) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO metadata (type, input_id, output_id, offset, attribute, data, segment) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         )
         .unwrap()
         .execute(rusqlite::params![
             mtype,
             input_id,
-            effect,
+            output_id,
             offset.map(|o| o as i64),
             attribute.map(|a| a.to_string()),
             data.map(|v| v.to_string()),
             segment,
         ])
         .unwrap();
-}
-
-/// Inserts a row per entry of an [`Input`]'s own attached metadata, all sharing that input's id.
-fn insert_metadata(
-    connection: &Connection,
-    input_id: Option<i64>,
-    effect: &str,
-    offset: u64,
-    metadata: &[Metadata],
-) {
-    for m in metadata {
-        insert_metadata_row(
-            connection,
-            &m.mtype,
-            input_id,
-            Some(effect),
-            Some(offset),
-            m.attribute.as_ref(),
-            m.data.as_ref(),
-            None,
-        );
-    }
 }
 
 /// Inserts the single row an [`EffectMetadata`] describes (e.g. a skipped occurrence's entry,
@@ -184,7 +165,7 @@ fn insert_effect_metadata(connection: &Connection, metadata: &EffectMetadata) {
         connection,
         &metadata.mtype,
         metadata.input_id,
-        metadata.effect.as_deref(),
+        metadata.output_id,
         metadata.offset,
         metadata.attribute.as_ref(),
         metadata.data.as_ref(),
@@ -221,13 +202,19 @@ impl RunLogWriter for SqliteRunLogWriter {
             ])
             .unwrap();
 
-        insert_metadata(
-            &connection,
-            Some(input.id as i64),
-            &input.effect,
-            input.offset,
-            &input.metadata,
-        );
+        for m in &input.metadata {
+            insert_metadata_row(
+                &connection,
+                &m.mtype,
+                Some(input.id as i64),
+                None,
+                Some(input.offset),
+                m.attribute.as_ref(),
+                m.data.as_ref(),
+                None,
+            );
+        }
+
         drop(connection);
         self.record();
     }
@@ -420,7 +407,7 @@ fn query_sample(
                         connection,
                         "_unique_reference",
                         Some(*id),
-                        Some(key),
+                        None,
                         Some(*offset as u64),
                         None,
                         None,
@@ -560,29 +547,19 @@ mod tests {
             .unwrap();
         assert_eq!(output_data, "hello");
 
-        let (metadata_input_id, metadata_effect, metadata_offset, metadata_type, metadata_data): (
+        let (metadata_input_id, metadata_offset, metadata_type, metadata_data): (
             i64,
-            String,
             i64,
             String,
             String,
         ) = conn
             .query_row(
-                "SELECT input_id, effect, offset, type, data FROM metadata",
+                "SELECT input_id, offset, type, data FROM metadata",
                 [],
-                |row| {
-                    Ok((
-                        row.get(0)?,
-                        row.get(1)?,
-                        row.get(2)?,
-                        row.get(3)?,
-                        row.get(4)?,
-                    ))
-                },
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .unwrap();
         assert_eq!(metadata_input_id, 1);
-        assert_eq!(metadata_effect, "ping");
         assert_eq!(metadata_offset, 42);
         assert_eq!(metadata_type, "error");
         assert_eq!(
@@ -600,7 +577,7 @@ mod tests {
         writer.push_metadata(EffectMetadata {
             mtype: "skipped".into(),
             input_id: None,
-            effect: Some("ping".to_string()),
+            output_id: None,
             offset: Some(42),
             attribute: None,
             data: None,
@@ -616,29 +593,19 @@ mod tests {
             .unwrap();
         assert_eq!(input_count, 0);
 
-        let (metadata_input_id, metadata_effect, metadata_offset, metadata_type, metadata_data): (
+        let (metadata_input_id, metadata_offset, metadata_type, metadata_data): (
             Option<i64>,
-            String,
             i64,
             String,
             Option<String>,
         ) = conn
             .query_row(
-                "SELECT input_id, effect, offset, type, data FROM metadata",
+                "SELECT input_id, offset, type, data FROM metadata",
                 [],
-                |row| {
-                    Ok((
-                        row.get(0)?,
-                        row.get(1)?,
-                        row.get(2)?,
-                        row.get(3)?,
-                        row.get(4)?,
-                    ))
-                },
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .unwrap();
         assert_eq!(metadata_input_id, None);
-        assert_eq!(metadata_effect, "ping");
         assert_eq!(metadata_offset, 42);
         assert_eq!(metadata_type, "skipped");
         assert_eq!(metadata_data, None);

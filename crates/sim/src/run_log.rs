@@ -54,13 +54,15 @@ pub enum Cursor {
 }
 
 /// One row of the `metadata` table (see `run_log/sqlite.rs`) - a single [`crate::schema::Metadata`]
-/// entry plus the input/effect/offset context it's attached to. Mirrors that table's columns
-/// (minus `type`, renamed `mtype` to dodge the keyword) - only `type` itself is `NOT NULL`.
+/// entry plus the input/output/offset context it's attached to. Mirrors that table's columns
+/// (minus `type`, renamed `mtype` to dodge the keyword) - only `type` itself is `NOT NULL`. Has no
+/// `effect` field: a row with an `input_id` can already recover it via a join to `inputs`, and a
+/// row with neither id (e.g. a skipped occurrence, see `effect.rs`) folds it into `data` instead.
 #[derive(Clone, Debug)]
 pub struct EffectMetadata {
     pub mtype: String,
     pub input_id: Option<i64>,
-    pub effect: Option<String>,
+    pub output_id: Option<i64>,
     pub offset: Option<u64>,
     pub attribute: Option<JsonPointer>,
     pub data: Option<Value>,

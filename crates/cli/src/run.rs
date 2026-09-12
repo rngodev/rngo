@@ -58,11 +58,12 @@ pub fn run(
         .map_err(join_errors)?;
 
     system.run(simulation_builder)?;
+    system.finish();
 
     let mut all_passed = true;
 
     if !spec.signals.is_empty() {
-        let report = audit.run(&system);
+        let report = audit.run(&mut system);
 
         println!();
         println!("{}", style("Audit").bold());
@@ -277,17 +278,18 @@ mod tests {
     fn signal_outcome(base: &Path, key: &str) -> (serde_json::Value, bool) {
         let connection =
             rusqlite::Connection::open(base.join(".rngo/runs/last/log.sqlite")).unwrap();
-        let (value, result): (Option<String>, Option<String>) = connection
-            .query_row(
-                "SELECT value, result FROM signals WHERE key = ?1",
-                rusqlite::params![key],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
+        let mut statement = connection
+            .prepare("SELECT data FROM metadata WHERE type = 'signal'")
             .unwrap();
-        (
-            serde_json::from_str(&value.unwrap()).unwrap(),
-            result.unwrap() == "passed",
-        )
+        let outcome = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .map(|data| serde_json::from_str::<serde_json::Value>(&data.unwrap()).unwrap())
+            .find(|outcome| outcome["key"] == key)
+            .unwrap_or_else(|| panic!("no signal metadata found for key {key}"));
+
+        let passed = outcome["passed"].as_bool().unwrap_or(false);
+        (outcome["value"].clone(), passed)
     }
 
     #[test]
