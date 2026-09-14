@@ -1,16 +1,11 @@
 use crate::channel::{ChannelBuilder, Stdout};
-use crate::simulation::SimulationBuilder;
-use crate::{
-    BuildError, Channel, Input, Metadata, Output, RunLog, RunLogReader, RunLogWriter,
-    SimpleEventRunLog,
-};
+use crate::{BuildError, Channel, Input, Output, RunLog, RunLogWriter, SimpleEventRunLog};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver};
 
 pub struct System {
-    run_log: Box<dyn RunLog>,
-    writer: Rc<dyn RunLogWriter>,
+    run_log_writer: Rc<dyn RunLogWriter>,
     channels: HashMap<String, Channel>,
     effect_channels: HashMap<String, String>,
     output_rx: Receiver<Output>,
@@ -36,36 +31,12 @@ impl System {
 
             let outputs = channel.target.send(input, formatted_data)?;
             for output in outputs {
-                self.writer.push_output(output);
+                self.run_log_writer.push_output(output);
             }
         };
 
         self.drain_outputs();
         Ok(())
-    }
-
-    pub fn add_metadata(&mut self, metadata: Metadata) {
-        self.writer.push_metadata(metadata);
-    }
-
-    pub fn run(
-        &mut self,
-        simulation_builder: SimulationBuilder,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let mut simulation = simulation_builder
-            .run_log(self.run_log.as_ref())
-            .build()
-            .unwrap(); // TODO: FIX
-
-        for input in &mut simulation {
-            self.send(&input)?;
-        }
-
-        Ok(())
-    }
-
-    pub(crate) fn reader(&self) -> Rc<dyn RunLogReader> {
-        self.run_log.reader()
     }
 
     /// Shuts down every channel's target (e.g. closing a `stream` subprocess's stdin and
@@ -78,13 +49,13 @@ impl System {
 
     fn drain_outputs(&mut self) {
         while let Ok(output) = self.output_rx.try_recv() {
-            self.writer.push_output(output);
+            self.run_log_writer.push_output(output);
         }
     }
 }
 
 pub struct SystemBuilder {
-    run_log: Option<Box<dyn RunLog>>,
+    run_log_writer: Option<Rc<dyn RunLogWriter>>,
     channel_builders: Vec<ChannelBuilder>,
     stdout: bool,
 }
@@ -92,14 +63,14 @@ pub struct SystemBuilder {
 impl SystemBuilder {
     pub fn new() -> Self {
         Self {
-            run_log: None,
+            run_log_writer: None,
             channel_builders: vec![],
             stdout: false,
         }
     }
 
-    pub fn run_log(mut self, run_log: impl RunLog + 'static) -> Self {
-        self.run_log = Some(Box::new(run_log));
+    pub fn run_log(mut self, run_log: &dyn RunLog) -> Self {
+        self.run_log_writer = Some(run_log.writer());
         self
     }
 
@@ -136,9 +107,11 @@ impl SystemBuilder {
         let mut channels = HashMap::new();
         let (output_tx, output_rx) = mpsc::channel::<Output>();
 
-        let run_log = self
-            .run_log
-            .unwrap_or_else(|| Box::new(SimpleEventRunLog::new(12345)));
+        let run_log_writer = self.run_log_writer.unwrap_or_else(|| {
+            //FIX THIS
+            let default_run_log = SimpleEventRunLog::new(12345);
+            default_run_log.writer()
+        });
 
         for mut channel_builder in self.channel_builders {
             if self.stdout {
@@ -158,8 +131,6 @@ impl SystemBuilder {
             return Err(errors);
         }
 
-        let writer = run_log.writer();
-
         let effect_channels = channels
             .values()
             .flat_map(|channel| {
@@ -171,8 +142,7 @@ impl SystemBuilder {
             .collect();
 
         Ok(System {
-            run_log,
-            writer,
+            run_log_writer,
             channels,
             effect_channels,
             output_rx,

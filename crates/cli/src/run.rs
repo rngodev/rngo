@@ -53,17 +53,25 @@ pub fn run(
     );
 
     let mut system = system_builder
-        .run_log(run_log)
+        .run_log(&run_log)
         .build()
         .map_err(join_errors)?;
 
-    system.run(simulation_builder)?;
+    let mut simulation = simulation_builder
+        .run_log(&run_log)
+        .build()
+        .map_err(join_errors)?;
+
+    for input in &mut simulation {
+        system.send(&input)?;
+    }
+
     system.finish();
 
     let mut all_passed = true;
 
     if !spec.signals.is_empty() {
-        let report = audit.run(&mut system);
+        let report = audit.run(&run_log);
 
         println!();
         println!("{}", style("Audit").bold());

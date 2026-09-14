@@ -1,6 +1,6 @@
+use crate::RunLog;
 use crate::run_log::Metadata;
 use crate::signal::{Signal, SignalOutcome};
-use crate::system::System;
 use indexmap::IndexMap;
 
 /// A named list of [`Signal`]s, built by [`crate::parse::Dialect::parse_audit`] from a spec's
@@ -20,8 +20,9 @@ impl Audit {
     /// its own `metadata` row (`data.key` carries the signal's key, since a signal has no
     /// associated input and the table has no `effect` column) - the same log the run itself wrote
     /// its inputs/outputs/metadata to.
-    pub fn run(&self, system: &mut System) -> AuditReport {
-        let reader = system.reader();
+    pub fn run(&self, run_log: &dyn RunLog) -> AuditReport {
+        let reader = run_log.reader();
+        let writer = run_log.writer();
 
         let outcomes: IndexMap<String, SignalOutcome> = self
             .signals
@@ -35,7 +36,7 @@ impl Audit {
                 map.insert("key".to_string(), serde_json::Value::String(key.clone()));
             }
 
-            system.add_metadata(Metadata {
+            writer.push_metadata(Metadata {
                 mtype: "signal".to_string(),
                 input_id: None,
                 output_id: None,
