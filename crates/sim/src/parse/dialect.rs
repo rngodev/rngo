@@ -6,11 +6,11 @@ use crate::channel::{self, Channel, ChannelTargetBuilder};
 use crate::effect::Effect;
 use crate::format::Format;
 use crate::parse::ChannelTargetParser;
+use crate::proxy::{Proxy, ProxyBuilder};
 use crate::schema::custom::CustomParser;
 use crate::signal::Signal;
 use crate::simulation::{Simulation, SimulationBuilder};
 use crate::spec::{self, ParseError, Spec};
-use crate::system::{System, SystemBuilder};
 use crate::util::time::Moment;
 use crate::{format, schema, signal};
 use indexmap::IndexMap;
@@ -175,9 +175,9 @@ impl Dialect {
         }
     }
 
-    pub fn parse_system(&self, spec: Spec) -> Result<SystemBuilder, Vec<ParseError>> {
+    pub fn parse_proxy(&self, spec: Spec) -> Result<ProxyBuilder, Vec<ParseError>> {
         let mut errors = vec![];
-        let mut system_builder = System::builder();
+        let mut proxy_builder = Proxy::builder();
 
         let effect_channels: HashMap<String, String> = spec
             .effects
@@ -222,13 +222,13 @@ impl Dialect {
 
             channel_builder.set_effects(effects);
 
-            system_builder.set_channel(channel_builder);
+            proxy_builder.set_channel(channel_builder);
         }
 
         if !errors.is_empty() {
             Err(errors)
         } else {
-            Ok(system_builder)
+            Ok(proxy_builder)
         }
     }
 

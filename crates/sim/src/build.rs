@@ -63,7 +63,7 @@ pub enum BuildError {
         path: Vec<SchemaEdge>,
         message: String,
     },
-    System {
+    Proxy {
         message: String,
     },
     Channel {

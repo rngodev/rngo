@@ -4,16 +4,16 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver};
 
-pub struct System {
+pub struct Proxy {
     run_log_writer: Rc<dyn RunLogWriter>,
     channels: HashMap<String, Channel>,
     effect_channels: HashMap<String, String>,
     output_rx: Receiver<Output>,
 }
 
-impl System {
-    pub fn builder() -> SystemBuilder {
-        SystemBuilder::new()
+impl Proxy {
+    pub fn builder() -> ProxyBuilder {
+        ProxyBuilder::new()
     }
 
     pub fn send(&mut self, input: &Input) -> Result<(), Box<dyn std::error::Error>> {
@@ -40,7 +40,7 @@ impl System {
     }
 
     /// Shuts down every channel's target (e.g. closing a `stream` subprocess's stdin and
-    /// waiting for it to exit). This can itself produce trailing outputs, so `System` remains
+    /// waiting for it to exit). This can itself produce trailing outputs, so `Proxy` remains
     /// iterable afterward - drain it before dropping to pick those up.
     pub fn finish(&mut self) {
         self.channels.clear();
@@ -54,13 +54,13 @@ impl System {
     }
 }
 
-pub struct SystemBuilder {
+pub struct ProxyBuilder {
     run_log_writer: Option<Rc<dyn RunLogWriter>>,
     channel_builders: Vec<ChannelBuilder>,
     stdout: bool,
 }
 
-impl SystemBuilder {
+impl ProxyBuilder {
     pub fn new() -> Self {
         Self {
             run_log_writer: None,
@@ -102,7 +102,7 @@ impl SystemBuilder {
         self
     }
 
-    pub fn build(self) -> Result<System, Vec<BuildError>> {
+    pub fn build(self) -> Result<Proxy, Vec<BuildError>> {
         let mut errors = vec![];
         let mut channels = HashMap::new();
         let (output_tx, output_rx) = mpsc::channel::<Output>();
@@ -141,7 +141,7 @@ impl SystemBuilder {
             })
             .collect();
 
-        Ok(System {
+        Ok(Proxy {
             run_log_writer,
             channels,
             effect_channels,
@@ -150,7 +150,7 @@ impl SystemBuilder {
     }
 }
 
-impl Default for SystemBuilder {
+impl Default for ProxyBuilder {
     fn default() -> Self {
         Self::new()
     }

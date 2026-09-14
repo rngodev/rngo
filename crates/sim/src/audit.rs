@@ -4,8 +4,7 @@ use crate::signal::{Signal, SignalOutcome};
 use indexmap::IndexMap;
 
 /// A named list of [`Signal`]s, built by [`crate::parse::Dialect::parse_audit`] from a spec's
-/// `signals`. Decoupled from [`System`]: it's evaluated against one on demand via [`Audit::run`]
-/// rather than being carried by the `System` itself.
+/// `signals`.
 #[derive(Debug)]
 pub struct Audit {
     signals: IndexMap<String, Box<dyn Signal>>,

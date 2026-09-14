@@ -71,10 +71,6 @@ impl SimulationBuilder {
         }
     }
 
-    /// Mints an independent reader (for effects' `reference()` lookups) and writer (for logging
-    /// each [`Input`] this simulation produces - see [`Simulation::next`]) off `run_log`, sharing
-    /// its underlying state with any other handles minted from the same store (e.g.
-    /// [`crate::System`]'s own writer).
     pub fn run_log(mut self, run_log: &dyn RunLog) -> Self {
         self.run_log_reader = Some(run_log.reader());
         self.run_log_writer = Some(run_log.writer());

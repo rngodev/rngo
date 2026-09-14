@@ -28,7 +28,7 @@ pub fn run(
         .parse_simulation(spec.clone())
         .map_err(join_errors)?;
 
-    let mut system_builder = dialect.parse_system(spec.clone()).map_err(join_errors)?;
+    let mut proxy_builder = dialect.parse_proxy(spec.clone()).map_err(join_errors)?;
 
     let audit = dialect.parse_audit(spec.clone()).map_err(join_errors)?;
 
@@ -37,7 +37,7 @@ pub fn run(
     }
 
     if stdout {
-        system_builder.set_stdout(true);
+        proxy_builder.set_stdout(true);
     }
 
     if dry_run {
@@ -52,7 +52,7 @@ pub fn run(
         &spec,
     );
 
-    let mut system = system_builder
+    let mut proxy = proxy_builder
         .run_log(&run_log)
         .build()
         .map_err(join_errors)?;
@@ -63,10 +63,10 @@ pub fn run(
         .map_err(join_errors)?;
 
     for input in &mut simulation {
-        system.send(&input)?;
+        proxy.send(&input)?;
     }
 
-    system.finish();
+    proxy.finish();
 
     let mut all_passed = true;
 
