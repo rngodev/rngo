@@ -154,6 +154,10 @@ mod tests {
             None
         }
 
+        fn last_for_effect(&self, _key: &str) -> Option<Rc<Input>> {
+            None
+        }
+
         fn query(&self, _query: &str) -> Option<serde_json::Value> {
             None
         }

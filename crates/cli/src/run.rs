@@ -47,10 +47,7 @@ pub fn run(
 
     let run_dir = prepare_run_dir(base, &spec)?;
 
-    let run_log = StatusRunLog::new(
-        Box::new(SqliteRunLog::new(run_dir.clone(), simulation_builder.seed)),
-        &spec,
-    );
+    let run_log = StatusRunLog::new(Box::new(SqliteRunLog::new(run_dir.clone())), &spec);
 
     let mut proxy = proxy_builder
         .run_log(&run_log)

@@ -3,6 +3,7 @@ mod sqlite;
 
 use crate::Output;
 use crate::effect::Input;
+use rand_pcg::Pcg32;
 use serde_json::Value;
 use std::rc::Rc;
 
@@ -28,6 +29,12 @@ pub trait RunLogWriter: std::fmt::Debug {
 pub trait RunLogReader: std::fmt::Debug {
     fn last(&self) -> Option<Rc<Input>>;
 
+    /// The most recent input for a single effect - the read-only lookup `Trigger::Effect`
+    /// polls to fire a trigger-by-effect, so it's a plain query rather than something minted via
+    /// [`RunLogReader::index`]: there's no per-caller state (rng, dedup bookkeeping) to persist
+    /// between calls.
+    fn last_for_effect(&self, key: &str) -> Option<Rc<Input>>;
+
     /// Runs a backend-specific query string against the log, returning the single scalar column
     /// of its first row - or `None` if this backend can't answer it (e.g. [`SimpleEventRunLog`],
     /// which has no query engine behind it) or the query itself produced no result.
@@ -37,7 +44,7 @@ pub trait RunLogReader: std::fmt::Debug {
 }
 
 pub trait RunLogIndex: std::fmt::Debug {
-    fn sample(&self) -> Option<Rc<Input>>;
+    fn sample(&mut self, rng: &mut Pcg32) -> Option<Rc<Input>>;
 }
 
 #[derive(Clone, Debug)]
@@ -47,7 +54,6 @@ pub enum RunLogIndexConfig {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Cursor {
-    Last,
     Random,
     Unique,
 }

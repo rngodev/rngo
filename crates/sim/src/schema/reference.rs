@@ -4,10 +4,12 @@ use crate::parse::{SchemaParseVisitor, SchemaParser};
 use crate::run_log::{Cursor, RunLogIndex, RunLogIndexConfig};
 use crate::schema::Metadata;
 use crate::spec::ParseError as Error;
+use rand_pcg::Pcg32;
 
 #[derive(Debug)]
 pub struct Reference {
     index: Box<dyn RunLogIndex>,
+    rng: Pcg32,
 }
 
 impl Reference {
@@ -25,7 +27,7 @@ impl Reference {
 
 impl Schema for Reference {
     fn next(&mut self, _context: &SchemaContext) -> SchemaResult {
-        match self.index.sample() {
+        match self.index.sample(&mut self.rng) {
             Some(input_event) => SchemaResult {
                 value: Some(input_event.data.clone()),
                 metadata: input_event.metadata.clone(),
@@ -78,6 +80,7 @@ impl SchemaBuilder for ReferenceBuilder {
                     key: key.clone(),
                     cursor: self.cursor,
                 }),
+                rng: visitor.rng(),
             }))
         } else {
             Err(vec![visitor.error("config was not set")])

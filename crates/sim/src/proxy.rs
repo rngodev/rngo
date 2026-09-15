@@ -108,8 +108,7 @@ impl ProxyBuilder {
         let (output_tx, output_rx) = mpsc::channel::<Output>();
 
         let run_log_writer = self.run_log_writer.unwrap_or_else(|| {
-            //FIX THIS
-            let default_run_log = SimpleEventRunLog::new(12345);
+            let default_run_log = SimpleEventRunLog::new();
             default_run_log.writer()
         });
 

@@ -6,7 +6,7 @@ use tempfile::TempDir;
 #[test]
 fn reference_with_no_prior_events_is_skipped_not_logged() {
     let tmp = TempDir::new().unwrap();
-    let run_log = SqliteRunLog::new(tmp.path().to_path_buf(), 1);
+    let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
 
     let mut simulation_builder = Simulation::builder();
     simulation_builder.with_effect("derived", |e| {
@@ -53,7 +53,7 @@ fn reference_with_no_prior_events_is_skipped_not_logged() {
 
 #[test]
 fn object_with_a_skipped_property_is_itself_skipped() {
-    let run_log = SimpleEventRunLog::new(1);
+    let run_log = SimpleEventRunLog::new();
 
     let mut simulation_builder = Simulation::builder();
     simulation_builder.with_effect("derived", |e| {
@@ -83,7 +83,7 @@ fn object_with_a_skipped_property_is_itself_skipped() {
 
 #[test]
 fn array_with_a_skipped_item_is_itself_skipped() {
-    let run_log = SimpleEventRunLog::new(1);
+    let run_log = SimpleEventRunLog::new();
 
     let mut simulation_builder = Simulation::builder();
     simulation_builder.with_effect("derived", |e| {

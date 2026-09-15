@@ -1,6 +1,6 @@
 use super::clock::Clock;
 use crate::effect::Input;
-use crate::run_log::RunLogIndex;
+use crate::run_log::RunLogReader;
 use std::rc::Rc;
 
 #[derive(Clone, Debug)]
@@ -18,7 +18,8 @@ pub struct TriggerEvent {
 #[derive(Debug)]
 pub enum Trigger {
     Effect {
-        index: Box<dyn RunLogIndex>,
+        run_log_reader: Rc<dyn RunLogReader>,
+        key: String,
         last_offset: u64,
     },
     Clock {
@@ -32,9 +33,11 @@ impl Trigger {
         match &self {
             Trigger::Clock { next_offset, .. } => *next_offset,
             Trigger::Effect {
-                index, last_offset, ..
+                run_log_reader: event_run_log,
+                key,
+                last_offset,
             } => {
-                if let Some(input_event) = index.sample() {
+                if let Some(input_event) = event_run_log.last_for_effect(key) {
                     if &input_event.offset > last_offset {
                         Some(input_event.offset)
                     } else {
@@ -50,9 +53,11 @@ impl Trigger {
     pub fn pull(&mut self) -> Option<TriggerEvent> {
         match self {
             Trigger::Effect {
-                index, last_offset, ..
+                run_log_reader: event_run_log,
+                key,
+                last_offset,
             } => {
-                if let Some(input_event) = index.sample() {
+                if let Some(input_event) = event_run_log.last_for_effect(key) {
                     *last_offset = input_event.offset;
                     Some(TriggerEvent {
                         sim_offset: input_event.offset,

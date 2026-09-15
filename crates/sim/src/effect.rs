@@ -2,9 +2,7 @@ mod clock;
 mod trigger;
 
 use crate::build::{BuildError, EffectKey};
-use crate::run_log::{
-    Cursor, Metadata, RunLog, RunLogIndexConfig, RunLogReader, SimpleEventRunLog,
-};
+use crate::run_log::{Metadata, RunLog, RunLogReader, SimpleEventRunLog};
 use crate::schema::{
     Metadata as SchemaMetadata, Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext,
 };
@@ -276,9 +274,9 @@ impl EffectBuilder {
             }]);
         };
         let seed = self.seed.unwrap_or(1);
-        let event_run_log: Rc<dyn RunLogReader> = self
+        let run_log_reader: Rc<dyn RunLogReader> = self
             .event_run_log
-            .unwrap_or_else(|| SimpleEventRunLog::new(seed).reader());
+            .unwrap_or_else(|| SimpleEventRunLog::new().reader());
         let sim_start = self.sim_start.unwrap_or_else(|| now + TimeDelta::days(-30));
         let sim_end = self.sim_end.unwrap_or(now);
         let effect_end = self.end.map(|m| m.resolve(now)).unwrap_or(sim_end);
@@ -305,7 +303,7 @@ impl EffectBuilder {
 
         let schema_result = if let Some(schema_builder) = self.schema_builder {
             let visitor = SchemaBuildVisitor {
-                event_run_log: event_run_log.clone(),
+                event_run_log: run_log_reader.clone(),
                 simulation_seed: seed,
                 effect_key: self.key.clone(),
                 path: vec![],
@@ -321,16 +319,11 @@ impl EffectBuilder {
         };
 
         let trigger_result = match self.trigger {
-            TriggerConfig::Effect { key } => {
-                let index = event_run_log.index(RunLogIndexConfig::ByEffect {
-                    key: key.clone(),
-                    cursor: Cursor::Last,
-                });
-                Ok(Trigger::Effect {
-                    index,
-                    last_offset: 0,
-                })
-            }
+            TriggerConfig::Effect { key } => Ok(Trigger::Effect {
+                run_log_reader: run_log_reader.clone(),
+                key,
+                last_offset: 0,
+            }),
             TriggerConfig::ClockHertz(hertz) => Clock::builder()
                 .key(self.key.clone())
                 .seed(seed)
@@ -356,7 +349,7 @@ impl EffectBuilder {
         match schema_result.and_try(trigger_result).flatten_err() {
             Ok((schema, trigger)) if errors.is_empty() => Ok(Effect {
                 key: self.key,
-                run_log_reader: event_run_log.clone(),
+                run_log_reader: run_log_reader.clone(),
                 trigger,
                 schema,
                 end_offset,

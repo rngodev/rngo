@@ -145,7 +145,7 @@ impl SimulationBuilder {
         let (run_log_reader, run_log_writer) = match (self.run_log_reader, self.run_log_writer) {
             (Some(reader), Some(writer)) => (reader, writer),
             _ => {
-                let default_run_log = SimpleEventRunLog::new(self.seed);
+                let default_run_log = SimpleEventRunLog::new();
                 (default_run_log.reader(), default_run_log.writer())
             }
         };
