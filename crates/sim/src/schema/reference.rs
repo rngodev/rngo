@@ -1,14 +1,27 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::build::BuildError;
 use crate::parse::{SchemaParseVisitor, SchemaParser};
-use crate::run_log::{Cursor, RunLogIndex, RunLogIndexConfig};
+use crate::run_log::RunLogReader;
 use crate::schema::Metadata;
 use crate::spec::ParseError as Error;
 use rand_pcg::Pcg32;
+use std::rc::Rc;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Cursor {
+    Random,
+    Unique,
+}
 
 #[derive(Debug)]
 pub struct Reference {
-    index: Box<dyn RunLogIndex>,
+    event_run_log: Rc<dyn RunLogReader>,
+    key: String,
+    cursor: Cursor,
+    /// Reserved once at build time via [`crate::run_log::RunLogReader::new_unique_segment`] -
+    /// `Some` only under [`Cursor::Unique`], which needs a persistent scope to avoid ever
+    /// repeating a value; unused under [`Cursor::Random`].
+    segment: Option<u64>,
     rng: Pcg32,
 }
 
@@ -27,7 +40,18 @@ impl Reference {
 
 impl Schema for Reference {
     fn next(&mut self, _context: &SchemaContext) -> SchemaResult {
-        match self.index.sample(&mut self.rng) {
+        let sampled = match self.cursor {
+            Cursor::Random => self
+                .event_run_log
+                .random_for_effect(&self.key, &mut self.rng),
+            Cursor::Unique => {
+                let segment = self.segment.expect("segment reserved for Cursor::Unique");
+                self.event_run_log
+                    .unique_for_effect(&self.key, segment, &mut self.rng)
+            }
+        };
+
+        match sampled {
             Some(input_event) => SchemaResult {
                 value: Some(input_event.data.clone()),
                 metadata: input_event.metadata.clone(),
@@ -75,11 +99,14 @@ impl ReferenceBuilder {
 impl SchemaBuilder for ReferenceBuilder {
     fn build(&self, visitor: SchemaBuildVisitor) -> Result<Box<dyn Schema>, Vec<BuildError>> {
         if let Some(key) = &self.effect {
+            let segment = matches!(self.cursor, Cursor::Unique)
+                .then(|| visitor.event_run_log.new_unique_segment());
+
             Ok(Box::new(Reference {
-                index: visitor.event_run_log.index(RunLogIndexConfig::ByEffect {
-                    key: key.clone(),
-                    cursor: self.cursor,
-                }),
+                event_run_log: visitor.event_run_log.clone(),
+                key: key.clone(),
+                cursor: self.cursor,
+                segment,
                 rng: visitor.rng(),
             }))
         } else {

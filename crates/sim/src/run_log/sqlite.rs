@@ -1,6 +1,6 @@
 use crate::effect::Input;
 use crate::output::Level;
-use crate::run_log::{Cursor, Metadata, RunLogIndex, RunLogIndexConfig, RunLogReader};
+use crate::run_log::{Metadata, RunLogReader};
 use crate::{Output, RunLog, RunLogWriter};
 use chrono::{DateTime, Utc};
 use rand::RngExt;
@@ -22,7 +22,7 @@ const BATCH_SIZE: usize = 500;
 #[derive(Debug)]
 pub struct SqliteRunLog {
     connection: Rc<RefCell<Connection>>,
-    /// Hands out a distinct id to each `Cursor::Unique` index, so their "already returned"
+    /// Hands out a distinct id to each `unique_for_effect` segment, so their "already returned"
     /// bookkeeping in the `metadata` table doesn't collide.
     next_segment: Rc<Cell<u64>>,
     /// Shared with every writer handle, so any of them batching inserts trips the same commit
@@ -225,8 +225,8 @@ impl RunLogWriter for SqliteRunLogWriter {
 
 /// The `inputs` table has no `timestamp` column, so rows reconstructed into an [`Input`] carry a
 /// placeholder epoch timestamp. This is safe because [`RunLogReader::last`] only reads `.id`
-/// (`effect.rs`) and [`RunLogIndex::sample`] only reads `.data`/`.metadata`
-/// (`schema/reference.rs`) - nothing downstream reads a reconstructed `Input`'s timestamp.
+/// (`effect.rs`) and `Reference` only reads `.data`/`.metadata` (`schema/reference.rs`) - nothing
+/// downstream reads a reconstructed `Input`'s timestamp.
 fn placeholder_timestamp() -> DateTime<chrono::FixedOffset> {
     DateTime::<Utc>::UNIX_EPOCH.fixed_offset()
 }
@@ -304,102 +304,109 @@ fn query_last_for_effect(connection: &Connection, key: &str) -> Option<Rc<Input>
     }))
 }
 
-/// Backs [`RunLogIndex::sample`] - `segment` scopes `Cursor::Unique`'s "already returned"
-/// bookkeeping and must already be reserved by the caller.
-fn query_sample(
+/// Backs [`RunLogReader::random_for_effect`].
+fn query_random_for_effect(
     connection: &Connection,
+    key: &str,
     rng: &mut Pcg32,
-    segment: Option<&str>,
-    config: &RunLogIndexConfig,
 ) -> Option<Rc<Input>> {
-    let RunLogIndexConfig::ByEffect { key, cursor } = config;
+    let count: i64 = connection
+        .prepare_cached("SELECT COUNT(*) FROM inputs WHERE effect = ?1")
+        .unwrap()
+        .query_row(rusqlite::params![key], |row| row.get(0))
+        .unwrap();
 
-    let row = match cursor {
-        Cursor::Random => {
-            let count: i64 = connection
-                .prepare_cached("SELECT COUNT(*) FROM inputs WHERE effect = ?1")
-                .unwrap()
-                .query_row(rusqlite::params![key], |row| row.get(0))
-                .unwrap();
+    if count == 0 {
+        return None;
+    }
 
-            if count == 0 {
-                None
-            } else {
-                let offset_index = rng.random_range(0..count);
-                connection
-                    .prepare_cached(
-                        "SELECT id, offset, data, metadata FROM inputs WHERE effect = ?1 ORDER BY id ASC LIMIT 1 OFFSET ?2",
-                    )
-                    .unwrap()
-                    .query_row(rusqlite::params![key, offset_index], |row| {
-                        let id: i64 = row.get(0)?;
-                        let offset: i64 = row.get(1)?;
-                        let data: String = row.get(2)?;
-                        let metadata: String = row.get(3)?;
-                        Ok((id, offset, data, metadata))
-                    })
-                    .optional()
-                    .unwrap()
-            }
-        }
-        Cursor::Unique => {
-            let segment = segment.expect("segment set for Cursor::Unique");
-
-            let count: i64 = connection
-                .prepare_cached(
-                    "SELECT COUNT(*) FROM inputs i WHERE i.effect = ?1 AND NOT EXISTS (
-                        SELECT 1 FROM metadata m
-                        WHERE m.type = '_unique_reference' AND m.segment = ?2 AND m.input_id = i.id
-                    )",
-                )
-                .unwrap()
-                .query_row(rusqlite::params![key, segment], |row| row.get(0))
-                .unwrap();
-
-            if count == 0 {
-                None
-            } else {
-                let offset_index = rng.random_range(0..count);
-                let row = connection
-                    .prepare_cached(
-                        "SELECT i.id, i.offset, i.data, i.metadata FROM inputs i WHERE i.effect = ?1 AND NOT EXISTS (
-                            SELECT 1 FROM metadata m
-                            WHERE m.type = '_unique_reference' AND m.segment = ?2 AND m.input_id = i.id
-                        ) ORDER BY i.id ASC LIMIT 1 OFFSET ?3",
-                    )
-                    .unwrap()
-                    .query_row(rusqlite::params![key, segment, offset_index], |row| {
-                        let id: i64 = row.get(0)?;
-                        let offset: i64 = row.get(1)?;
-                        let data: String = row.get(2)?;
-                        let metadata: String = row.get(3)?;
-                        Ok((id, offset, data, metadata))
-                    })
-                    .optional()
-                    .unwrap();
-
-                if let Some((id, offset, _, _)) = &row {
-                    insert_metadata_row(
-                        connection,
-                        "_unique_reference",
-                        Some(*id),
-                        None,
-                        Some(*offset as u64),
-                        None,
-                        Some(segment),
-                    );
-                }
-
-                row
-            }
-        }
-    }?;
+    let offset_index = rng.random_range(0..count);
+    let row = connection
+        .prepare_cached(
+            "SELECT id, offset, data, metadata FROM inputs WHERE effect = ?1 ORDER BY id ASC LIMIT 1 OFFSET ?2",
+        )
+        .unwrap()
+        .query_row(rusqlite::params![key, offset_index], |row| {
+            let id: i64 = row.get(0)?;
+            let offset: i64 = row.get(1)?;
+            let data: String = row.get(2)?;
+            let metadata: String = row.get(3)?;
+            Ok((id, offset, data, metadata))
+        })
+        .optional()
+        .unwrap()?;
 
     let (id, offset, data, metadata) = row;
 
     Some(Rc::new(Input {
         id: id as u64,
-        effect: key.clone(),
+        effect: key.to_string(),
+        offset: offset as u64,
+        timestamp: placeholder_timestamp(),
+        data: serde_json::from_str(&data).unwrap(),
+        metadata: serde_json::from_str(&metadata).unwrap(),
+    }))
+}
+
+/// Backs [`RunLogReader::unique_for_effect`] - `segment` scopes this call's "already returned"
+/// bookkeeping and must already be reserved via [`RunLogReader::new_unique_segment`].
+fn query_unique_for_effect(
+    connection: &Connection,
+    key: &str,
+    segment: u64,
+    rng: &mut Pcg32,
+) -> Option<Rc<Input>> {
+    let segment = segment.to_string();
+
+    let count: i64 = connection
+        .prepare_cached(
+            "SELECT COUNT(*) FROM inputs i WHERE i.effect = ?1 AND NOT EXISTS (
+                SELECT 1 FROM metadata m
+                WHERE m.type = '_unique_reference' AND m.segment = ?2 AND m.input_id = i.id
+            )",
+        )
+        .unwrap()
+        .query_row(rusqlite::params![key, segment], |row| row.get(0))
+        .unwrap();
+
+    if count == 0 {
+        return None;
+    }
+
+    let offset_index = rng.random_range(0..count);
+    let row = connection
+        .prepare_cached(
+            "SELECT i.id, i.offset, i.data, i.metadata FROM inputs i WHERE i.effect = ?1 AND NOT EXISTS (
+                SELECT 1 FROM metadata m
+                WHERE m.type = '_unique_reference' AND m.segment = ?2 AND m.input_id = i.id
+            ) ORDER BY i.id ASC LIMIT 1 OFFSET ?3",
+        )
+        .unwrap()
+        .query_row(rusqlite::params![key, segment, offset_index], |row| {
+            let id: i64 = row.get(0)?;
+            let offset: i64 = row.get(1)?;
+            let data: String = row.get(2)?;
+            let metadata: String = row.get(3)?;
+            Ok((id, offset, data, metadata))
+        })
+        .optional()
+        .unwrap()?;
+
+    let (id, offset, data, metadata) = row;
+
+    insert_metadata_row(
+        connection,
+        "_unique_reference",
+        Some(id),
+        None,
+        Some(offset as u64),
+        None,
+        Some(&segment),
+    );
+
+    Some(Rc::new(Input {
+        id: id as u64,
+        effect: key.to_string(),
         offset: offset as u64,
         timestamp: placeholder_timestamp(),
         data: serde_json::from_str(&data).unwrap(),
@@ -434,39 +441,18 @@ impl RunLogReader for SqliteRunLogReader {
             .and_then(sql_value_to_json)
     }
 
-    fn index(&self, config: RunLogIndexConfig) -> Box<dyn RunLogIndex> {
-        let RunLogIndexConfig::ByEffect { cursor, .. } = &config;
-        let segment = matches!(cursor, Cursor::Unique).then(|| {
-            let segment = self.next_segment.get();
-            self.next_segment.set(segment + 1);
-            segment.to_string()
-        });
-
-        Box::new(SqliteRunLogIndex {
-            connection: Rc::clone(&self.connection),
-            segment,
-            config,
-        })
+    fn random_for_effect(&self, key: &str, rng: &mut Pcg32) -> Option<Rc<Input>> {
+        query_random_for_effect(&self.connection.borrow(), key, rng)
     }
-}
 
-#[derive(Debug)]
-struct SqliteRunLogIndex {
-    connection: Rc<RefCell<Connection>>,
-    /// Assigned only under `Cursor::Unique`, to scope this index's "already returned" bookkeeping
-    /// in the `metadata` table apart from any other `Cursor::Unique` index over the same effect.
-    segment: Option<String>,
-    config: RunLogIndexConfig,
-}
+    fn new_unique_segment(&self) -> u64 {
+        let segment = self.next_segment.get();
+        self.next_segment.set(segment + 1);
+        segment
+    }
 
-impl RunLogIndex for SqliteRunLogIndex {
-    fn sample(&mut self, rng: &mut Pcg32) -> Option<Rc<Input>> {
-        query_sample(
-            &self.connection.borrow(),
-            rng,
-            self.segment.as_deref(),
-            &self.config,
-        )
+    fn unique_for_effect(&self, key: &str, segment: u64, rng: &mut Pcg32) -> Option<Rc<Input>> {
+        query_unique_for_effect(&self.connection.borrow(), key, segment, rng)
     }
 }
 
@@ -717,8 +703,9 @@ mod tests {
         rand_seeder::Seeder::from(&format!("{seed}-run_log")).into_rng()
     }
 
-    /// Builds a `SqliteRunLog`, populates it with ten inputs on effect "a", then samples that
-    /// effect's index `draws` times under an rng seeded from `seed`, returning the sampled ids.
+    /// Builds a `SqliteRunLog`, populates it with ten inputs on effect "a", then draws
+    /// `random_for_effect` `draws` times under an rng seeded from `seed`, returning the sampled
+    /// ids.
     fn sampled_ids(seed: u64, draws: usize) -> Vec<u64> {
         let tmp = TempDir::new().unwrap();
         let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
@@ -737,38 +724,29 @@ mod tests {
             });
         }
 
-        let mut index = reader.index(RunLogIndexConfig::ByEffect {
-            key: "a".to_string(),
-            cursor: Cursor::Random,
-        });
-
         (0..draws)
-            .map(|_| index.sample(&mut rng).unwrap().id)
+            .map(|_| reader.random_for_effect("a", &mut rng).unwrap().id)
             .collect()
     }
 
     #[test]
-    fn index_sample_is_deterministic_for_a_fixed_seed() {
+    fn random_for_effect_is_deterministic_for_a_fixed_seed() {
         assert_eq!(sampled_ids(42, 5), sampled_ids(42, 5));
     }
 
     #[test]
-    fn index_sample_differs_across_seeds() {
+    fn random_for_effect_differs_across_seeds() {
         assert_ne!(sampled_ids(1, 5), sampled_ids(2, 5));
     }
 
     #[test]
-    fn index_sample_returns_none_when_no_matching_effect() {
+    fn random_for_effect_returns_none_when_no_matching_effect() {
         let tmp = TempDir::new().unwrap();
         let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
         let reader = run_log.reader();
         let mut rng = rng(1);
 
-        let mut index = reader.index(RunLogIndexConfig::ByEffect {
-            key: "nonexistent".to_string(),
-            cursor: Cursor::Random,
-        });
-        assert!(index.sample(&mut rng).is_none());
+        assert!(reader.random_for_effect("nonexistent", &mut rng).is_none());
     }
 
     fn push_inputs(run_log: &SqliteRunLog, effect: &str, count: u64) {
@@ -786,21 +764,17 @@ mod tests {
     }
 
     #[test]
-    fn unique_cursor_never_repeats_and_exhausts() {
+    fn unique_segment_never_repeats_and_exhausts() {
         let tmp = TempDir::new().unwrap();
         let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
         let reader = run_log.reader();
         push_inputs(&run_log, "a", 5);
         let mut rng = rng(1);
-
-        let mut index = reader.index(RunLogIndexConfig::ByEffect {
-            key: "a".to_string(),
-            cursor: Cursor::Unique,
-        });
+        let segment = reader.new_unique_segment();
 
         let mut seen = std::collections::HashSet::new();
         for _ in 0..5 {
-            let sampled = index.sample(&mut rng).unwrap();
+            let sampled = reader.unique_for_effect("a", segment, &mut rng).unwrap();
             assert!(
                 seen.insert(sampled.id),
                 "id {} returned more than once",
@@ -808,64 +782,69 @@ mod tests {
             );
         }
 
-        assert!(index.sample(&mut rng).is_none());
+        assert!(reader.unique_for_effect("a", segment, &mut rng).is_none());
     }
 
     #[test]
-    fn unique_cursor_is_deterministic_for_a_fixed_seed() {
+    fn unique_segment_is_deterministic_for_a_fixed_seed() {
         fn draw_all(seed: u64) -> Vec<u64> {
             let tmp = TempDir::new().unwrap();
             let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
             let reader = run_log.reader();
             push_inputs(&run_log, "a", 10);
             let mut rng = rng(seed);
+            let segment = reader.new_unique_segment();
 
-            let mut index = reader.index(RunLogIndexConfig::ByEffect {
-                key: "a".to_string(),
-                cursor: Cursor::Unique,
-            });
-
-            std::iter::from_fn(|| index.sample(&mut rng).map(|e| e.id)).collect()
+            std::iter::from_fn(|| {
+                reader
+                    .unique_for_effect("a", segment, &mut rng)
+                    .map(|e| e.id)
+            })
+            .collect()
         }
 
         assert_eq!(draw_all(42), draw_all(42));
     }
 
     #[test]
-    fn unique_cursor_state_is_independent_per_index() {
+    fn unique_segment_state_is_independent_per_segment() {
         let tmp = TempDir::new().unwrap();
         let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
         let reader = run_log.reader();
         push_inputs(&run_log, "a", 1);
         let mut rng = rng(1);
 
-        let mut index_a = reader.index(RunLogIndexConfig::ByEffect {
-            key: "a".to_string(),
-            cursor: Cursor::Unique,
-        });
-        let mut index_b = reader.index(RunLogIndexConfig::ByEffect {
-            key: "a".to_string(),
-            cursor: Cursor::Unique,
-        });
+        let segment_a = reader.new_unique_segment();
+        let segment_b = reader.new_unique_segment();
+        assert_ne!(segment_a, segment_b);
 
-        assert_eq!(index_a.sample(&mut rng).unwrap().id, 1);
-        // A second, independent unique index over the same effect can still draw the same input.
-        assert_eq!(index_b.sample(&mut rng).unwrap().id, 1);
+        assert_eq!(
+            reader
+                .unique_for_effect("a", segment_a, &mut rng)
+                .unwrap()
+                .id,
+            1
+        );
+        // A second, independent segment over the same effect can still draw the same input.
+        assert_eq!(
+            reader
+                .unique_for_effect("a", segment_b, &mut rng)
+                .unwrap()
+                .id,
+            1
+        );
     }
 
     #[test]
-    fn unique_cursor_consumed_markers_do_not_leak_into_input_metadata() {
+    fn unique_segment_consumed_markers_do_not_leak_into_input_metadata() {
         let tmp = TempDir::new().unwrap();
         let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
         let reader = run_log.reader();
         push_inputs(&run_log, "a", 1);
         let mut rng = rng(1);
+        let segment = reader.new_unique_segment();
 
-        let mut index = reader.index(RunLogIndexConfig::ByEffect {
-            key: "a".to_string(),
-            cursor: Cursor::Unique,
-        });
-        index.sample(&mut rng).unwrap();
+        reader.unique_for_effect("a", segment, &mut rng).unwrap();
 
         let last = reader.last().unwrap();
         assert!(last.metadata.is_empty());

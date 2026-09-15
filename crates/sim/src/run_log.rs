@@ -29,10 +29,8 @@ pub trait RunLogWriter: std::fmt::Debug {
 pub trait RunLogReader: std::fmt::Debug {
     fn last(&self) -> Option<Rc<Input>>;
 
-    /// The most recent input for a single effect - the read-only lookup `Trigger::Effect`
-    /// polls to fire a trigger-by-effect, so it's a plain query rather than something minted via
-    /// [`RunLogReader::index`]: there's no per-caller state (rng, dedup bookkeeping) to persist
-    /// between calls.
+    /// The most recent input for a single effect - the read-only lookup `Trigger::Effect` polls
+    /// to fire a trigger-by-effect.
     fn last_for_effect(&self, key: &str) -> Option<Rc<Input>>;
 
     /// Runs a backend-specific query string against the log, returning the single scalar column
@@ -40,22 +38,18 @@ pub trait RunLogReader: std::fmt::Debug {
     /// which has no query engine behind it) or the query itself produced no result.
     fn query(&self, query: &str) -> Option<Value>;
 
-    fn index(&self, config: RunLogIndexConfig) -> Box<dyn RunLogIndex>;
-}
+    /// A uniformly-random input for a single effect, backing `Reference`'s `cursor: random`.
+    fn random_for_effect(&self, key: &str, rng: &mut Pcg32) -> Option<Rc<Input>>;
 
-pub trait RunLogIndex: std::fmt::Debug {
-    fn sample(&mut self, rng: &mut Pcg32) -> Option<Rc<Input>>;
-}
+    /// Reserves a fresh scope for `Reference`'s `cursor: unique` to draw from without ever
+    /// repeating a value, so two independent `unique` references over the same effect don't
+    /// share "already returned" bookkeeping. Called once, at build time, by whichever `Reference`
+    /// owns the resulting segment - see [`RunLogReader::unique_for_effect`].
+    fn new_unique_segment(&self) -> u64;
 
-#[derive(Clone, Debug)]
-pub enum RunLogIndexConfig {
-    ByEffect { key: String, cursor: Cursor },
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Cursor {
-    Random,
-    Unique,
+    /// A uniformly-random input for a single effect, excluding any previously returned within
+    /// `segment` - or `None` once every matching input has been returned.
+    fn unique_for_effect(&self, key: &str, segment: u64, rng: &mut Pcg32) -> Option<Rc<Input>>;
 }
 
 /// One row of the standalone `metadata` table (see `run_log/sqlite.rs`) - for metadata with no

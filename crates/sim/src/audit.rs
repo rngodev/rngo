@@ -113,7 +113,6 @@ impl AuditReport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::run_log::{RunLogIndex, RunLogIndexConfig};
     use crate::signal::SignalEval;
     use crate::{Input, RunLog, RunLogReader, RunLogWriter};
     use std::cell::RefCell;
@@ -162,8 +161,21 @@ mod tests {
             None
         }
 
-        fn index(&self, config: RunLogIndexConfig) -> Box<dyn RunLogIndex> {
-            unimplemented!("not exercised by these tests: {config:?}")
+        fn random_for_effect(&self, _key: &str, _rng: &mut rand_pcg::Pcg32) -> Option<Rc<Input>> {
+            unimplemented!("not exercised by these tests")
+        }
+
+        fn new_unique_segment(&self) -> u64 {
+            unimplemented!("not exercised by these tests")
+        }
+
+        fn unique_for_effect(
+            &self,
+            _key: &str,
+            _segment: u64,
+            _rng: &mut rand_pcg::Pcg32,
+        ) -> Option<Rc<Input>> {
+            unimplemented!("not exercised by these tests")
         }
     }
 
