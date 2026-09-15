@@ -83,9 +83,9 @@ impl FormatParser for SqlFormatParser {
     fn parse(
         &self,
         _format: &spec::Format,
-        simulation: &spec::Spec,
+        spec: &spec::Spec,
     ) -> Result<Box<dyn Format>, Vec<ParseError>> {
-        let effect_tables = simulation
+        let effect_tables = spec
             .effects
             .iter()
             .filter_map(|(key, effect)| {

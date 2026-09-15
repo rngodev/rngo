@@ -1,6 +1,7 @@
 use super::{Signal, SignalOutcome};
 use crate::RunLogReader;
 use crate::parse::SignalParser;
+use crate::signal::{CelExpectation, SignalEval};
 use crate::spec::{self, ParseError};
 use crate::util::cel::json_to_cel;
 use cel::{Context, Program};
@@ -9,7 +10,7 @@ use cel::{Context, Program};
 pub struct SqlSignal {
     key: String,
     query: String,
-    expect: Option<Program>,
+    expectation: Option<super::CelExpectation>,
 }
 
 impl SqlSignal {
@@ -21,7 +22,7 @@ impl SqlSignal {
 impl Signal for SqlSignal {
     fn evaluate(&self, run_log: &dyn RunLogReader) -> SignalOutcome {
         let value = run_log.query(&self.query);
-        evaluate_expect(&self.key, self.expect.as_ref(), value)
+        evaluate_expect(&self.key, self.expectation.as_ref(), value)
     }
 }
 
@@ -31,7 +32,7 @@ impl Signal for SqlSignal {
 /// rejected before a signal ever runs rather than on every evaluation.
 fn evaluate_expect(
     key: &str,
-    expect: Option<&Program>,
+    expectation: Option<&CelExpectation>,
     value: Option<serde_json::Value>,
 ) -> SignalOutcome {
     let Some(value) = value else {
@@ -40,17 +41,14 @@ fn evaluate_expect(
         };
     };
 
-    let Some(program) = expect else {
-        return SignalOutcome::Success {
-            value,
-            passed: None,
-        };
+    let Some(expectation) = expectation else {
+        return SignalOutcome::Success { value, eval: None };
     };
 
     let mut ctx = Context::default();
     ctx.add_variable_from_value("result", json_to_cel(value.clone()));
 
-    let result = match program.execute(&ctx) {
+    let result = match expectation.program.execute(&ctx) {
         Ok(r) => r,
         Err(e) => {
             return SignalOutcome::Error {
@@ -72,7 +70,10 @@ fn evaluate_expect(
 
     SignalOutcome::Success {
         value,
-        passed: Some(passed),
+        eval: Some(SignalEval {
+            expectation: expectation.source.clone(),
+            passed,
+        }),
     }
 }
 
@@ -102,23 +103,26 @@ impl SignalParser for SqlSignalParser {
             }
         };
 
-        let expect = match signal.fields.get("expect") {
+        let expectation = match signal.fields.get("expect") {
             Some(value) => {
-                let Some(expression) = value.as_str() else {
+                let Some(source) = value.as_str() else {
                     return Err(vec![ParseError::SchemaError {
                         path: Some(vec!["signals".into(), key.into(), "expect".into()]),
                         message: "expect must be a string".into(),
                     }]);
                 };
 
-                let program = Program::compile(expression).map_err(|e| {
+                let program = Program::compile(source).map_err(|e| {
                     vec![ParseError::SchemaError {
                         path: Some(vec!["signals".into(), key.into(), "expect".into()]),
                         message: format!("expect expression failed to compile: {e}"),
                     }]
                 })?;
 
-                Some(program)
+                Some(CelExpectation {
+                    source: source.into(),
+                    program,
+                })
             }
             None => None,
         };
@@ -126,7 +130,7 @@ impl SignalParser for SqlSignalParser {
         Ok(Box::new(SqlSignal {
             key: key.to_string(),
             query,
-            expect,
+            expectation,
         }))
     }
 }
@@ -139,8 +143,11 @@ mod tests {
         serde_json::from_value(fields).unwrap()
     }
 
-    fn program(expression: &str) -> Program {
-        Program::compile(expression).unwrap()
+    fn expectation(expression: &str) -> CelExpectation {
+        CelExpectation {
+            source: expression.into(),
+            program: Program::compile(expression).unwrap(),
+        }
     }
 
     #[test]
@@ -186,12 +193,12 @@ mod tests {
 
     #[test]
     fn passing_signal() {
-        let expect = program("result == 2");
+        let expect = expectation("result == 2");
         let outcome = evaluate_expect("check", Some(&expect), Some(serde_json::json!(2)));
         match outcome {
-            SignalOutcome::Success { value, passed } => {
+            SignalOutcome::Success { value, eval } => {
                 assert_eq!(value, serde_json::json!(2));
-                assert_eq!(passed, Some(true));
+                assert!(eval.unwrap().passed);
             }
             SignalOutcome::Error { error } => panic!("expected success, got error: {error}"),
         }
@@ -199,12 +206,12 @@ mod tests {
 
     #[test]
     fn failing_signal() {
-        let expect = program("result == 0");
+        let expect = expectation("result == 0");
         let outcome = evaluate_expect("check", Some(&expect), Some(serde_json::json!(1)));
         match outcome {
-            SignalOutcome::Success { value, passed } => {
+            SignalOutcome::Success { value, eval } => {
                 assert_eq!(value, serde_json::json!(1));
-                assert_eq!(passed, Some(false));
+                assert!(!eval.unwrap().passed);
             }
             SignalOutcome::Error { error } => panic!("expected success, got error: {error}"),
         }
@@ -214,9 +221,9 @@ mod tests {
     fn missing_expect_has_a_value_but_no_result() {
         let outcome = evaluate_expect("check", None, Some(serde_json::json!(1)));
         match outcome {
-            SignalOutcome::Success { value, passed } => {
+            SignalOutcome::Success { value, eval } => {
                 assert_eq!(value, serde_json::json!(1));
-                assert_eq!(passed, None);
+                assert!(eval.is_none());
             }
             SignalOutcome::Error { error } => panic!("expected success, got error: {error}"),
         }
@@ -224,17 +231,17 @@ mod tests {
 
     #[test]
     fn range_expression() {
-        let expect = program("result >= 2 && result <= 5");
+        let expect = expectation("result >= 2 && result <= 5");
         let outcome = evaluate_expect("check", Some(&expect), Some(serde_json::json!(3)));
         match outcome {
-            SignalOutcome::Success { passed, .. } => assert_eq!(passed, Some(true)),
+            SignalOutcome::Success { eval, .. } => assert!(eval.unwrap().passed),
             SignalOutcome::Error { error } => panic!("expected success, got error: {error}"),
         }
     }
 
     #[test]
     fn missing_value_is_reported_as_unsupported() {
-        let expect = program("result == 0");
+        let expect = expectation("result == 0");
         let outcome = evaluate_expect("check", Some(&expect), None);
         match outcome {
             SignalOutcome::Error { error } => {
@@ -246,7 +253,7 @@ mod tests {
 
     #[test]
     fn non_bool_expect_error_is_captured_in_outcome() {
-        let expect = program("result");
+        let expect = expectation("result");
         let outcome = evaluate_expect("check", Some(&expect), Some(serde_json::json!(3)));
         match outcome {
             SignalOutcome::Error { error } => assert!(error.contains("must evaluate to a bool")),

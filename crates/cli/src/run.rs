@@ -68,43 +68,24 @@ pub fn run(
 
     proxy.finish();
 
-    let mut all_passed = true;
+    let audit_report = audit.run(&run_log);
 
-    if !spec.signals.is_empty() {
-        let report = audit.run(&run_log);
-
+    if !audit_report.outcomes.is_empty() {
         println!();
         println!("{}", style("Audit").bold());
 
-        let mut checked = 0;
-        let mut passed = 0;
-
-        for (key, outcome) in &report.outcomes {
-            let expect = spec.signals[key]
-                .fields
-                .get("expect")
-                .and_then(|v| v.as_str());
-
+        for (key, outcome) in &audit_report.outcomes {
             match outcome {
                 SignalOutcome::Error { error } => {
-                    all_passed = false;
-                    if expect.is_some() {
-                        checked += 1;
-                    }
                     println!("{key}: error - {error}");
                 }
-                SignalOutcome::Success {
-                    value,
-                    passed: verdict,
-                } => match expect {
-                    Some(expect) => {
-                        checked += 1;
-                        if verdict.unwrap() {
-                            passed += 1;
+                SignalOutcome::Success { value, eval } => match eval {
+                    Some(eval) => {
+                        if eval.passed {
                             println!("{key}: {value} (passed)");
                         } else {
-                            all_passed = false;
-                            println!("{key}: {value} (failed - expected '{expect}')");
+                            let expectation = eval.expectation.clone();
+                            println!("{key}: {value} (failed - expected '{expectation}')");
                         }
                     }
                     None => println!("{key}: {value}"),
@@ -112,13 +93,17 @@ pub fn run(
             }
         }
 
-        if checked > 0 {
-            println!("{passed} passed");
-            println!("{} failed", checked - passed);
+        if audit_report.eval_count() > 0 {
+            println!("{} passed", audit_report.pass_count());
+            println!("{} failed", audit_report.fail_count());
+        }
+
+        if audit_report.error_count() > 0 {
+            println!("{} errored", audit_report.error_count());
         }
     }
 
-    Ok(all_passed)
+    Ok(audit_report.passed())
 }
 
 fn load_spec_file(path: &Path) -> Result<spec::Spec, Box<dyn Error>> {
@@ -296,7 +281,7 @@ mod tests {
             .find(|outcome| outcome["key"] == key)
             .unwrap_or_else(|| panic!("no signal metadata found for key {key}"));
 
-        let passed = outcome["passed"].as_bool().unwrap_or(false);
+        let passed = outcome["eval"]["passed"].as_bool().unwrap_or(false);
         (outcome["value"].clone(), passed)
     }
 
@@ -786,6 +771,88 @@ mod tests {
 
         let (_, passed) = signal_outcome(base, "has-events");
         assert!(passed);
+    }
+
+    #[test]
+    fn run_returns_false_when_a_signal_fails() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+
+        fs::create_dir_all(base.join(".rngo/effects")).unwrap();
+
+        write_yaml(
+            base.join(".rngo/spec.yml"),
+            &json!({
+                "seed": 1,
+                "start": "2024-01-01",
+                "end": "2024-01-04",
+                "signals": {
+                    "tooMany": {
+                        "type": "sql",
+                        "query": "SELECT COUNT(*) FROM inputs",
+                        "expect": "result > 1000"
+                    }
+                }
+            }),
+        );
+
+        write_yaml(
+            base.join(".rngo/effects/ping.yml"),
+            &json!({
+                "trigger": "hz(1, day)",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
+                    }
+                }
+            }),
+        );
+
+        let passed = run(base, false, None, false, None).unwrap();
+        assert!(!passed, "run should fail when a signal's expect fails");
+    }
+
+    #[test]
+    fn run_returns_false_when_a_signal_errors() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+
+        fs::create_dir_all(base.join(".rngo/effects")).unwrap();
+
+        write_yaml(
+            base.join(".rngo/spec.yml"),
+            &json!({
+                "seed": 1,
+                "start": "2024-01-01",
+                "end": "2024-01-04",
+                "signals": {
+                    "notABool": {
+                        "type": "sql",
+                        "query": "SELECT COUNT(*) FROM inputs",
+                        // `expect` compiles fine but evaluates to a number, not a bool, so this
+                        // signal errors at evaluation time rather than failing an assertion.
+                        "expect": "result"
+                    }
+                }
+            }),
+        );
+
+        write_yaml(
+            base.join(".rngo/effects/ping.yml"),
+            &json!({
+                "trigger": "hz(1, day)",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
+                    }
+                }
+            }),
+        );
+
+        let passed = run(base, false, None, false, None).unwrap();
+        assert!(!passed, "run should fail when a signal errors");
     }
 
     #[test]

@@ -1,5 +1,6 @@
 pub(crate) mod sql;
 
+use cel::Program;
 pub use sql::SqlSignal;
 
 use crate::RunLogReader;
@@ -19,9 +20,21 @@ pub trait Signal: std::fmt::Debug {
 pub enum SignalOutcome {
     Success {
         value: serde_json::Value,
-        passed: Option<bool>,
+        eval: Option<SignalEval>,
     },
     Error {
         error: String,
     },
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SignalEval {
+    pub expectation: String,
+    pub passed: bool,
+}
+
+#[derive(Debug)]
+pub struct CelExpectation {
+    source: String,
+    program: Program,
 }
