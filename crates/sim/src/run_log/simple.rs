@@ -2,17 +2,16 @@ use crate::run_log::{Metadata, RunLogReader};
 use crate::{Input, Output, RunLog, RunLogWriter};
 use rand::RngExt;
 use rand_pcg::Pcg32;
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 #[derive(Debug, Default)]
 pub struct SimpleEventRunLogReader {
     inputs: Rc<RefCell<Vec<Rc<Input>>>>,
-    next_segment: Cell<u64>,
-    /// Ids already handed out per `unique_for_effect` segment; empty until that segment's first
+    /// Ids already handed out per `unique_for_effect` cursor; empty until that cursor's first
     /// draw.
-    returned: RefCell<HashMap<u64, HashSet<u64>>>,
+    returned: RefCell<HashMap<String, HashSet<u64>>>,
 }
 
 impl RunLogReader for SimpleEventRunLogReader {
@@ -47,16 +46,10 @@ impl RunLogReader for SimpleEventRunLogReader {
         }
     }
 
-    fn new_unique_segment(&self) -> u64 {
-        let segment = self.next_segment.get();
-        self.next_segment.set(segment + 1);
-        segment
-    }
-
-    fn unique_for_effect(&self, key: &str, segment: u64, rng: &mut Pcg32) -> Option<Rc<Input>> {
+    fn unique_for_effect(&self, key: &str, cursor: &str, rng: &mut Pcg32) -> Option<Rc<Input>> {
         let inputs = self.inputs.borrow();
         let mut returned = self.returned.borrow_mut();
-        let returned = returned.entry(segment).or_default();
+        let returned = returned.entry(cursor.to_string()).or_default();
 
         let candidates = inputs
             .iter()
@@ -202,16 +195,15 @@ mod tests {
     }
 
     #[test]
-    fn unique_segment_never_repeats_and_exhausts() {
+    fn unique_cursor_never_repeats_and_exhausts() {
         let run_log = SimpleEventRunLog::new();
         let reader = run_log.reader();
         push_inputs(&run_log, "a", 5);
         let mut rng = rng(1);
-        let segment = reader.new_unique_segment();
 
         let mut seen = HashSet::new();
         for _ in 0..5 {
-            let sampled = reader.unique_for_effect("a", segment, &mut rng).unwrap();
+            let sampled = reader.unique_for_effect("a", "cursor", &mut rng).unwrap();
             assert!(
                 seen.insert(sampled.id),
                 "id {} returned more than once",
@@ -219,21 +211,20 @@ mod tests {
             );
         }
 
-        assert!(reader.unique_for_effect("a", segment, &mut rng).is_none());
+        assert!(reader.unique_for_effect("a", "cursor", &mut rng).is_none());
     }
 
     #[test]
-    fn unique_segment_is_deterministic_for_a_fixed_seed() {
+    fn unique_cursor_is_deterministic_for_a_fixed_seed() {
         fn draw_all(seed: u64) -> Vec<u64> {
             let run_log = SimpleEventRunLog::new();
             let reader = run_log.reader();
             push_inputs(&run_log, "a", 10);
             let mut rng = rng(seed);
-            let segment = reader.new_unique_segment();
 
             std::iter::from_fn(|| {
                 reader
-                    .unique_for_effect("a", segment, &mut rng)
+                    .unique_for_effect("a", "cursor", &mut rng)
                     .map(|e| e.id)
             })
             .collect()
@@ -243,27 +234,23 @@ mod tests {
     }
 
     #[test]
-    fn unique_segment_state_is_independent_per_segment() {
+    fn unique_cursor_state_is_independent_per_cursor() {
         let run_log = SimpleEventRunLog::new();
         let reader = run_log.reader();
         push_inputs(&run_log, "a", 1);
         let mut rng = rng(1);
 
-        let segment_a = reader.new_unique_segment();
-        let segment_b = reader.new_unique_segment();
-        assert_ne!(segment_a, segment_b);
-
         assert_eq!(
             reader
-                .unique_for_effect("a", segment_a, &mut rng)
+                .unique_for_effect("a", "cursor-a", &mut rng)
                 .unwrap()
                 .id,
             1
         );
-        // A second, independent segment over the same effect can still draw the same input.
+        // A second, independent cursor over the same effect can still draw the same input.
         assert_eq!(
             reader
-                .unique_for_effect("a", segment_b, &mut rng)
+                .unique_for_effect("a", "cursor-b", &mut rng)
                 .unwrap()
                 .id,
             1

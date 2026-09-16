@@ -18,10 +18,12 @@ pub struct Reference {
     event_run_log: Rc<dyn RunLogReader>,
     key: String,
     cursor: Cursor,
-    /// Reserved once at build time via [`crate::run_log::RunLogReader::new_unique_segment`] -
-    /// `Some` only under [`Cursor::Unique`], which needs a persistent scope to avoid ever
-    /// repeating a value; unused under [`Cursor::Random`].
-    segment: Option<u64>,
+    /// This node's [`SchemaBuildVisitor::path_id`], captured once at build time - `Some` only
+    /// under [`Cursor::Unique`], which needs a scope for
+    /// [`crate::run_log::RunLogReader::unique_for_effect`] that's stable across this `Reference`'s
+    /// own repeated draws but distinct from any other `Reference`'s; unused under
+    /// [`Cursor::Random`].
+    unique_cursor: Option<String>,
     rng: Pcg32,
 }
 
@@ -45,9 +47,12 @@ impl Schema for Reference {
                 .event_run_log
                 .random_for_effect(&self.key, &mut self.rng),
             Cursor::Unique => {
-                let segment = self.segment.expect("segment reserved for Cursor::Unique");
+                let cursor = self
+                    .unique_cursor
+                    .as_deref()
+                    .expect("unique_cursor set for Cursor::Unique");
                 self.event_run_log
-                    .unique_for_effect(&self.key, segment, &mut self.rng)
+                    .unique_for_effect(&self.key, cursor, &mut self.rng)
             }
         };
 
@@ -99,14 +104,13 @@ impl ReferenceBuilder {
 impl SchemaBuilder for ReferenceBuilder {
     fn build(&self, visitor: SchemaBuildVisitor) -> Result<Box<dyn Schema>, Vec<BuildError>> {
         if let Some(key) = &self.effect {
-            let segment = matches!(self.cursor, Cursor::Unique)
-                .then(|| visitor.event_run_log.new_unique_segment());
+            let unique_cursor = matches!(self.cursor, Cursor::Unique).then(|| visitor.path_id());
 
             Ok(Box::new(Reference {
                 event_run_log: visitor.event_run_log.clone(),
                 key: key.clone(),
                 cursor: self.cursor,
-                segment,
+                unique_cursor,
                 rng: visitor.rng(),
             }))
         } else {

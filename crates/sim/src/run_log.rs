@@ -41,15 +41,12 @@ pub trait RunLogReader: std::fmt::Debug {
     /// A uniformly-random input for a single effect, backing `Reference`'s `cursor: random`.
     fn random_for_effect(&self, key: &str, rng: &mut Pcg32) -> Option<Rc<Input>>;
 
-    /// Reserves a fresh scope for `Reference`'s `cursor: unique` to draw from without ever
-    /// repeating a value, so two independent `unique` references over the same effect don't
-    /// share "already returned" bookkeeping. Called once, at build time, by whichever `Reference`
-    /// owns the resulting segment - see [`RunLogReader::unique_for_effect`].
-    fn new_unique_segment(&self) -> u64;
-
-    /// A uniformly-random input for a single effect, excluding any previously returned within
-    /// `segment` - or `None` once every matching input has been returned.
-    fn unique_for_effect(&self, key: &str, segment: u64, rng: &mut Pcg32) -> Option<Rc<Input>>;
+    /// A uniformly-random input for a single effect, excluding any previously returned under
+    /// `cursor` - or `None` once every matching input has been returned. `cursor` scopes this
+    /// "already returned" bookkeeping, so two independent `unique` references over the same
+    /// effect don't share it; the caller picks one that's stable across its own repeated calls
+    /// but distinct from any other caller's (e.g. `SchemaBuildVisitor::path_id`).
+    fn unique_for_effect(&self, key: &str, cursor: &str, rng: &mut Pcg32) -> Option<Rc<Input>>;
 }
 
 /// One row of the standalone `metadata` table (see `run_log/sqlite.rs`) - for metadata with no

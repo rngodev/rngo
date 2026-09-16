@@ -165,14 +165,10 @@ mod tests {
             unimplemented!("not exercised by these tests")
         }
 
-        fn new_unique_segment(&self) -> u64 {
-            unimplemented!("not exercised by these tests")
-        }
-
         fn unique_for_effect(
             &self,
             _key: &str,
-            _segment: u64,
+            _cursor: &str,
             _rng: &mut rand_pcg::Pcg32,
         ) -> Option<Rc<Input>> {
             unimplemented!("not exercised by these tests")
