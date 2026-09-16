@@ -1,3 +1,4 @@
+use crate::schema::Metadata;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
@@ -16,4 +17,5 @@ pub struct Output {
     pub channel: String,
     pub level: Level,
     pub data: String,
+    pub metadata: Vec<Metadata>,
 }

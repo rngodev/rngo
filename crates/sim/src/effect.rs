@@ -2,8 +2,10 @@ mod clock;
 mod trigger;
 
 use crate::build::{BuildError, EffectKey};
-use crate::run_log::{Cursor, RunLog, RunLogIndexConfig, RunLogReader, SimpleEventRunLog};
-use crate::schema::{Metadata, Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext};
+use crate::run_log::{Metadata, RunLogReader, SimpleEventRunLog};
+use crate::schema::{
+    Metadata as SchemaMetadata, Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext,
+};
 use crate::util::ext::FlattenErr;
 use crate::util::time::Moment;
 use chrono::{DateTime, FixedOffset, TimeDelta};
@@ -19,7 +21,7 @@ pub use trigger::TriggerEvent;
 #[derive(Debug)]
 pub struct Effect {
     pub key: String,
-    event_run_log: Rc<dyn RunLogReader>,
+    run_log_reader: Rc<dyn RunLogReader>,
     trigger: Trigger,
     schema: Box<dyn Schema>,
     end_offset: u64,
@@ -60,7 +62,7 @@ impl Iterator for Effect {
         let result = self.schema.next(&context);
 
         if let Some(data) = result.value {
-            let last_id = self.event_run_log.last().map(|e| e.id).unwrap_or(0);
+            let last_id = self.run_log_reader.last().map(|e| e.id).unwrap_or(0);
 
             Some(Ok(Input {
                 id: last_id + 1,
@@ -88,7 +90,7 @@ pub struct Input {
     pub offset: u64,
     pub timestamp: DateTime<FixedOffset>,
     pub data: Value,
-    pub metadata: Vec<Metadata>,
+    pub metadata: Vec<SchemaMetadata>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -96,7 +98,31 @@ pub struct SkippedInput {
     pub effect: String,
     pub offset: u64,
     pub timestamp: DateTime<FixedOffset>,
-    pub metadata: Vec<Metadata>,
+    pub metadata: Vec<SchemaMetadata>,
+}
+
+/// A skipped occurrence never produces a stored input, so it logs as its own standalone
+/// [`Metadata`] row with no `input_id` to attach to (see `run_log/sqlite.rs`) - the effect key
+/// and the full list of [`SchemaMetadata`] entries it carried both fold into `data`, since the
+/// `metadata` table has no `effect` column and this is a single row, not one per entry.
+impl From<SkippedInput> for Metadata {
+    fn from(skipped: SkippedInput) -> Self {
+        let SkippedInput {
+            effect,
+            offset,
+            metadata,
+            ..
+        } = skipped;
+
+        Metadata {
+            mtype: "skipped".to_string(),
+            input_id: None,
+            output_id: None,
+            offset: Some(offset),
+            data: Some(serde_json::json!({ "effect": effect, "metadata": metadata })),
+            segment: None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -248,9 +274,9 @@ impl EffectBuilder {
             }]);
         };
         let seed = self.seed.unwrap_or(1);
-        let event_run_log: Rc<dyn RunLogReader> = self
+        let run_log_reader: Rc<dyn RunLogReader> = self
             .event_run_log
-            .unwrap_or_else(|| SimpleEventRunLog::new(seed).reader());
+            .unwrap_or_else(|| SimpleEventRunLog::new());
         let sim_start = self.sim_start.unwrap_or_else(|| now + TimeDelta::days(-30));
         let sim_end = self.sim_end.unwrap_or(now);
         let effect_end = self.end.map(|m| m.resolve(now)).unwrap_or(sim_end);
@@ -277,7 +303,7 @@ impl EffectBuilder {
 
         let schema_result = if let Some(schema_builder) = self.schema_builder {
             let visitor = SchemaBuildVisitor {
-                event_run_log: event_run_log.clone(),
+                event_run_log: run_log_reader.clone(),
                 simulation_seed: seed,
                 effect_key: self.key.clone(),
                 path: vec![],
@@ -293,16 +319,11 @@ impl EffectBuilder {
         };
 
         let trigger_result = match self.trigger {
-            TriggerConfig::Effect { key } => {
-                let index = event_run_log.index(RunLogIndexConfig::ByEffect {
-                    key: key.clone(),
-                    cursor: Cursor::Last,
-                });
-                Ok(Trigger::Effect {
-                    index,
-                    last_offset: 0,
-                })
-            }
+            TriggerConfig::Effect { key } => Ok(Trigger::Effect {
+                run_log_reader: run_log_reader.clone(),
+                key,
+                last_offset: 0,
+            }),
             TriggerConfig::ClockHertz(hertz) => Clock::builder()
                 .key(self.key.clone())
                 .seed(seed)
@@ -328,7 +349,7 @@ impl EffectBuilder {
         match schema_result.and_try(trigger_result).flatten_err() {
             Ok((schema, trigger)) if errors.is_empty() => Ok(Effect {
                 key: self.key,
-                event_run_log: event_run_log.clone(),
+                run_log_reader: run_log_reader.clone(),
                 trigger,
                 schema,
                 end_offset,

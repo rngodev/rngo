@@ -4,6 +4,11 @@ use rngo_sim::build::*;
 use rngo_sim::{Dialect, Simulation};
 use serde_json::Value;
 
+/// `Simulation` writes each input it produces back into its run log as it's yielded (see
+/// `SimulationBuilder::run_log`), so "post" - which references "user" - sees prior "user" data as
+/// soon as it's emitted instead of every attempt being skipped for lack of anything to resolve. A
+/// "post" fired before any "user" exists is skipped rather than yielded (its metadata just goes to
+/// the run log - see `Simulation::next`), so plain `take(60)` is enough to get 60 real inputs.
 fn assert_simulation(simulation: Simulation) {
     let events: Vec<_> = simulation.take(60).collect();
 

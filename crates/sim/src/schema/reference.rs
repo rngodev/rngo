@@ -1,13 +1,30 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::build::BuildError;
 use crate::parse::{SchemaParseVisitor, SchemaParser};
-use crate::run_log::{Cursor, RunLogIndex, RunLogIndexConfig};
+use crate::run_log::RunLogReader;
 use crate::schema::Metadata;
 use crate::spec::ParseError as Error;
+use rand_pcg::Pcg32;
+use std::rc::Rc;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Cursor {
+    Random,
+    Unique,
+}
 
 #[derive(Debug)]
 pub struct Reference {
-    index: Box<dyn RunLogIndex>,
+    event_run_log: Rc<dyn RunLogReader>,
+    key: String,
+    cursor: Cursor,
+    /// This node's [`SchemaBuildVisitor::path_id`], captured once at build time - `Some` only
+    /// under [`Cursor::Unique`], which needs a scope for
+    /// [`crate::run_log::RunLogReader::unique_for_effect`] that's stable across this `Reference`'s
+    /// own repeated draws but distinct from any other `Reference`'s; unused under
+    /// [`Cursor::Random`].
+    unique_cursor: Option<String>,
+    rng: Pcg32,
 }
 
 impl Reference {
@@ -25,7 +42,21 @@ impl Reference {
 
 impl Schema for Reference {
     fn next(&mut self, _context: &SchemaContext) -> SchemaResult {
-        match self.index.sample() {
+        let sampled = match self.cursor {
+            Cursor::Random => self
+                .event_run_log
+                .random_for_effect(&self.key, &mut self.rng),
+            Cursor::Unique => {
+                let cursor = self
+                    .unique_cursor
+                    .as_deref()
+                    .expect("unique_cursor set for Cursor::Unique");
+                self.event_run_log
+                    .unique_for_effect(&self.key, cursor, &mut self.rng)
+            }
+        };
+
+        match sampled {
             Some(input_event) => SchemaResult {
                 value: Some(input_event.data.clone()),
                 metadata: input_event.metadata.clone(),
@@ -73,11 +104,14 @@ impl ReferenceBuilder {
 impl SchemaBuilder for ReferenceBuilder {
     fn build(&self, visitor: SchemaBuildVisitor) -> Result<Box<dyn Schema>, Vec<BuildError>> {
         if let Some(key) = &self.effect {
+            let unique_cursor = matches!(self.cursor, Cursor::Unique).then(|| visitor.path_id());
+
             Ok(Box::new(Reference {
-                index: visitor.event_run_log.index(RunLogIndexConfig::ByEffect {
-                    key: key.clone(),
-                    cursor: self.cursor,
-                }),
+                event_run_log: visitor.event_run_log.clone(),
+                key: key.clone(),
+                cursor: self.cursor,
+                unique_cursor,
+                rng: visitor.rng(),
             }))
         } else {
             Err(vec![visitor.error("config was not set")])
