@@ -28,6 +28,9 @@ pub struct StatusWriter {
     last_timestamp: Cell<Option<DateTime<FixedOffset>>>,
     rendered_lines: Cell<usize>,
     last_render: Cell<Option<Instant>>,
+    /// Set whenever stats/timestamp change, cleared once those changes are actually drawn - so
+    /// `Drop`'s forced render can skip redrawing a block that's already up to date on screen.
+    dirty: Cell<bool>,
 }
 
 impl StatusWriter {
@@ -48,11 +51,18 @@ impl StatusWriter {
             last_timestamp: Cell::new(None),
             rendered_lines: Cell::new(0),
             last_render: Cell::new(None),
+            dirty: Cell::new(false),
         })
     }
 
     fn render(&self, force: bool) {
         if !self.term.is_term() {
+            return;
+        }
+
+        // Nothing has changed since the last draw, so a forced (`Drop`) redraw would just repaint
+        // an identical block - skip it rather than emit a redundant, possibly-visible duplicate.
+        if force && !self.dirty.get() {
             return;
         }
 
@@ -64,6 +74,7 @@ impl StatusWriter {
             return;
         }
         self.last_render.set(Some(now));
+        self.dirty.set(false);
 
         let time = match self.last_timestamp.get() {
             Some(timestamp) => timestamp.format("%Y-%m-%d %H:%M:%S").to_string(),
@@ -107,6 +118,7 @@ impl RunLogWriter for StatusWriter {
                 .effects += 1;
         }
 
+        self.dirty.set(true);
         self.render(false);
         self.child.push_input(input);
     }
@@ -118,6 +130,7 @@ impl RunLogWriter for StatusWriter {
             .or_default()
             .outputs += 1;
 
+        self.dirty.set(true);
         self.render(false);
         self.child.push_output(output);
     }
