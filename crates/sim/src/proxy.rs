@@ -1,4 +1,5 @@
-use crate::channel::{ChannelBuilder, Stdout};
+use crate::channel::ChannelBuilder;
+use crate::channel::target::Stdout;
 use crate::{BuildError, Channel, Input, Output, RunLogWriter, SimpleEventRunLog};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -43,7 +44,9 @@ impl Proxy {
     /// waiting for it to exit). This can itself produce trailing outputs, so `Proxy` remains
     /// iterable afterward - drain it before dropping to pick those up.
     pub fn finish(&mut self) {
-        self.channels.clear();
+        for channel in self.channels.values_mut() {
+            channel.target.finish();
+        }
         self.drain_outputs();
     }
 

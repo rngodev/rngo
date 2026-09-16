@@ -1,15 +1,9 @@
-mod exec;
-mod stdout;
-mod stream;
+pub mod target;
 
 use crate::format::Format;
 use crate::{BuildError, Input, Output};
 use std::error::Error;
 use std::sync::mpsc::Sender;
-
-pub use exec::Exec;
-pub use stdout::Stdout;
-pub use stream::Stream;
 
 #[derive(Debug)]
 pub struct Channel {
@@ -27,6 +21,11 @@ impl Channel {
 
 pub trait ChannelTarget: std::fmt::Debug {
     fn send(&mut self, input: &Input, data: Option<String>) -> Result<Vec<Output>, Box<dyn Error>>;
+
+    /// Shuts down the target (e.g. closing a `stream` subprocess's stdin and waiting for it to
+    /// exit). Called explicitly by `Proxy::finish` for every channel; targets with nothing to
+    /// shut down can rely on the default no-op.
+    fn finish(&mut self) {}
 }
 
 pub trait ChannelTargetBuilder {

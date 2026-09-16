@@ -55,15 +55,14 @@ impl ChannelTarget for Stream {
         // threads below, not synchronously here.
         Ok(vec![])
     }
-}
 
-impl Drop for Stream {
     /// Closes stdin, which triggers exit for subprocesses that react to EOF (e.g. `cat`), then
     /// gives the child a grace period before killing it - covering output-source subprocesses
     /// (e.g. `tail -F`) that never exit on their own. Reader threads are joined last so trailing
     /// output has already become an `Output` before this returns - bounded by `READER_JOIN_GRACE`
     /// so a reader thread stuck on a pipe the kill above didn't actually close can't hang the run.
-    fn drop(&mut self) {
+    /// Idempotent, since it also runs from `Drop` as a safety net if `finish` wasn't called.
+    fn finish(&mut self) {
         self.stdin.take();
 
         let deadline = Instant::now() + SHUTDOWN_GRACE;
@@ -88,6 +87,14 @@ impl Drop for Stream {
             // Still running past the deadline: abandon it rather than block forever - it's
             // leaked, but that's a far better failure mode for a CLI than hanging indefinitely.
         }
+    }
+}
+
+impl Drop for Stream {
+    /// Safety net in case `ChannelTarget::finish` wasn't called explicitly before this was
+    /// dropped.
+    fn drop(&mut self) {
+        self.finish();
     }
 }
 

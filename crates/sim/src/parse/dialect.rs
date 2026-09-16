@@ -2,7 +2,7 @@ use super::format::FormatParser;
 use super::schema::{SchemaParseVisitor, SchemaParser};
 use super::signal::SignalParser;
 use crate::audit::Audit;
-use crate::channel::{self, Channel, ChannelTargetBuilder};
+use crate::channel::{Channel, ChannelTargetBuilder, target};
 use crate::effect::Effect;
 use crate::format::Format;
 use crate::parse::ChannelTargetParser;
@@ -54,8 +54,8 @@ impl Dialect {
             ],
             vec![Box::new(format::SqlFormat::parser())],
             vec![
-                Box::new(channel::Exec::parser()),
-                Box::new(channel::Stream::parser()),
+                Box::new(target::Exec::parser()),
+                Box::new(target::Stream::parser()),
             ],
             vec![Box::new(signal::SqlSignal::parser())],
         )
