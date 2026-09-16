@@ -21,7 +21,7 @@ pub use format::Format;
 pub use output::{Level, Output};
 pub use parse::Dialect;
 pub use proxy::Proxy;
-pub use run_log::{Metadata, RunLog, RunLogReader, RunLogWriter, SimpleEventRunLog, SqliteRunLog};
+pub use run_log::{Metadata, RunLogReader, RunLogWriter, SimpleEventRunLog, SqliteRunLog};
 pub use signal::{Signal, SignalOutcome};
 pub use simulation::Simulation;
 pub use spec::ParseError;

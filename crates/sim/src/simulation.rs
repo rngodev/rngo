@@ -2,7 +2,7 @@ use crate::build::{BuildError, SimulationKey};
 use crate::effect::{Effect, EffectBuilder, Input};
 use crate::run_log::SimpleEventRunLog;
 use crate::util::time::Moment;
-use crate::{RunLog, RunLogReader, RunLogWriter};
+use crate::{RunLogReader, RunLogWriter};
 use chrono::{TimeDelta, Utc};
 use std::rc::Rc;
 
@@ -71,9 +71,13 @@ impl SimulationBuilder {
         }
     }
 
-    pub fn run_log(mut self, run_log: &dyn RunLog) -> Self {
-        self.run_log_reader = Some(run_log.reader());
-        self.run_log_writer = Some(run_log.writer());
+    pub fn run_log_reader<T: RunLogReader + 'static>(mut self, reader: Rc<T>) -> Self {
+        self.run_log_reader = Some(reader as Rc<dyn RunLogReader>);
+        self
+    }
+
+    pub fn run_log_writer<T: RunLogWriter + 'static>(mut self, writer: Rc<T>) -> Self {
+        self.run_log_writer = Some(writer as Rc<dyn RunLogWriter>);
         self
     }
 
@@ -146,7 +150,10 @@ impl SimulationBuilder {
             (Some(reader), Some(writer)) => (reader, writer),
             _ => {
                 let default_run_log = SimpleEventRunLog::new();
-                (default_run_log.reader(), default_run_log.writer())
+                (
+                    default_run_log.clone() as Rc<dyn RunLogReader>,
+                    default_run_log as Rc<dyn RunLogWriter>,
+                )
             }
         };
 

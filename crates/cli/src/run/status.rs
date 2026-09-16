@@ -1,7 +1,7 @@
 use chrono::{DateTime, FixedOffset};
 use console::{Term, style};
 use rngo_sim::spec::Spec;
-use rngo_sim::{Input, Metadata, Output, RunLog, RunLogReader, RunLogWriter};
+use rngo_sim::{Input, Metadata, Output, RunLogWriter};
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
@@ -17,55 +17,10 @@ struct ChannelStats {
     outputs: u64,
 }
 
-/// A [`RunLog`] proxy that, on [`RunLog::writer`], hands out a [`RunLogWriter`] that renders a
-/// live-updating status block to stderr - the current simulated time and, per channel, how many
-/// effects and outputs it has produced - leaving stdout free for `--stdout` event output. Forwards
-/// every event to `child`'s own writer unchanged.
-pub struct StatusRunLog {
-    child: Box<dyn RunLog>,
-    effect_channels: Rc<HashMap<String, String>>,
-}
-
-impl StatusRunLog {
-    pub fn new(child: Box<dyn RunLog>, spec: &Spec) -> Self {
-        let effect_channels = spec
-            .effects
-            .iter()
-            .filter_map(|(k, v)| v.channel.as_ref().map(|s| (k.clone(), s.clone())))
-            .collect();
-
-        StatusRunLog {
-            child,
-            effect_channels: Rc::new(effect_channels),
-        }
-    }
-}
-
-impl std::fmt::Debug for StatusRunLog {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("StatusRunLog").finish_non_exhaustive()
-    }
-}
-
-impl RunLog for StatusRunLog {
-    fn reader(&self) -> Rc<dyn RunLogReader> {
-        self.child.reader()
-    }
-
-    fn writer(&self) -> Rc<dyn RunLogWriter> {
-        Rc::new(StatusRunLogWriter {
-            child: self.child.writer(),
-            effect_channels: Rc::clone(&self.effect_channels),
-            term: Term::stderr(),
-            stats: RefCell::new(BTreeMap::new()),
-            last_timestamp: Cell::new(None),
-            rendered_lines: Cell::new(0),
-            last_render: Cell::new(None),
-        })
-    }
-}
-
-struct StatusRunLogWriter {
+/// A [`RunLogWriter`] decorator that renders a live-updating status block to stderr - the
+/// current simulated time and, per channel, how many effects and outputs it has produced -
+/// leaving stdout free for `--stdout` event output. Forwards every event to `child` unchanged.
+pub struct StatusWriter {
     child: Rc<dyn RunLogWriter>,
     effect_channels: Rc<HashMap<String, String>>,
     term: Term,
@@ -75,7 +30,27 @@ struct StatusRunLogWriter {
     last_render: Cell<Option<Instant>>,
 }
 
-impl StatusRunLogWriter {
+impl StatusWriter {
+    /// Returns an `Rc` since the only real consumer immediately wraps this to hand to both a
+    /// [`rngo_sim::Simulation`] and a [`rngo_sim::Proxy`] as their shared writer.
+    pub fn new<T: RunLogWriter + 'static>(child: Rc<T>, spec: &Spec) -> Rc<Self> {
+        let effect_channels = spec
+            .effects
+            .iter()
+            .filter_map(|(k, v)| v.channel.as_ref().map(|s| (k.clone(), s.clone())))
+            .collect();
+
+        Rc::new(StatusWriter {
+            child: child as Rc<dyn RunLogWriter>,
+            effect_channels: Rc::new(effect_channels),
+            term: Term::stderr(),
+            stats: RefCell::new(BTreeMap::new()),
+            last_timestamp: Cell::new(None),
+            rendered_lines: Cell::new(0),
+            last_render: Cell::new(None),
+        })
+    }
+
     fn render(&self, force: bool) {
         if !self.term.is_term() {
             return;
@@ -115,13 +90,13 @@ impl StatusRunLogWriter {
     }
 }
 
-impl std::fmt::Debug for StatusRunLogWriter {
+impl std::fmt::Debug for StatusWriter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("StatusRunLogWriter").finish_non_exhaustive()
+        f.debug_struct("StatusWriter").finish_non_exhaustive()
     }
 }
 
-impl RunLogWriter for StatusRunLogWriter {
+impl RunLogWriter for StatusWriter {
     fn push_input(&self, input: Input) {
         self.last_timestamp.set(Some(input.timestamp));
         if let Some(channel) = self.effect_channels.get(&input.effect) {
@@ -153,7 +128,7 @@ impl RunLogWriter for StatusRunLogWriter {
     }
 }
 
-impl Drop for StatusRunLogWriter {
+impl Drop for StatusWriter {
     fn drop(&mut self) {
         // Guarantees the block reflects final counts even if the last update landed inside the
         // render throttle window.

@@ -1,6 +1,6 @@
-use crate::RunLog;
 use crate::run_log::Metadata;
 use crate::signal::{Signal, SignalOutcome};
+use crate::{RunLogReader, RunLogWriter};
 use indexmap::IndexMap;
 
 /// A named list of [`Signal`]s, built by [`crate::parse::Dialect::parse_audit`] from a spec's
@@ -19,14 +19,11 @@ impl Audit {
     /// its own `metadata` row (`data.key` carries the signal's key, since a signal has no
     /// associated input and the table has no `effect` column) - the same log the run itself wrote
     /// its inputs/outputs/metadata to.
-    pub fn run(&self, run_log: &dyn RunLog) -> AuditReport {
-        let reader = run_log.reader();
-        let writer = run_log.writer();
-
+    pub fn run(&self, reader: &dyn RunLogReader, writer: &dyn RunLogWriter) -> AuditReport {
         let outcomes: IndexMap<String, SignalOutcome> = self
             .signals
             .iter()
-            .map(|(key, signal)| (key.clone(), signal.evaluate(reader.as_ref())))
+            .map(|(key, signal)| (key.clone(), signal.evaluate(reader)))
             .collect();
 
         for (key, outcome) in &outcomes {
@@ -114,7 +111,7 @@ impl AuditReport {
 mod tests {
     use super::*;
     use crate::signal::SignalEval;
-    use crate::{Input, RunLog, RunLogReader, RunLogWriter};
+    use crate::{Input, RunLogReader, RunLogWriter};
     use std::cell::RefCell;
     use std::rc::Rc;
 
@@ -127,28 +124,15 @@ mod tests {
         }
     }
 
-    /// A `RunLog` whose only job is to capture every `Metadata` row pushed to it, so a test can
+    /// A run log whose only job is to capture every `Metadata` row pushed to it, so a test can
     /// assert on exactly what `Audit::run` writes back - `SimpleEventRunLog` has no way to read
     /// its metadata back out, and `SqliteRunLog` needs a real directory on disk.
     #[derive(Debug, Default)]
     struct MockRunLog {
-        metadata: Rc<RefCell<Vec<Metadata>>>,
+        metadata: RefCell<Vec<Metadata>>,
     }
 
-    #[derive(Debug)]
-    struct MockRunLogHandle(Rc<RefCell<Vec<Metadata>>>);
-
-    impl RunLog for MockRunLog {
-        fn reader(&self) -> Rc<dyn RunLogReader> {
-            Rc::new(MockRunLogHandle(Rc::clone(&self.metadata)))
-        }
-
-        fn writer(&self) -> Rc<dyn RunLogWriter> {
-            Rc::new(MockRunLogHandle(Rc::clone(&self.metadata)))
-        }
-    }
-
-    impl RunLogReader for MockRunLogHandle {
+    impl RunLogReader for MockRunLog {
         fn last(&self) -> Option<Rc<Input>> {
             None
         }
@@ -175,7 +159,7 @@ mod tests {
         }
     }
 
-    impl RunLogWriter for MockRunLogHandle {
+    impl RunLogWriter for MockRunLog {
         fn push_input(&self, _input: Input) {
             unimplemented!("not exercised by these tests")
         }
@@ -185,7 +169,7 @@ mod tests {
         }
 
         fn push_metadata(&self, metadata: Metadata) {
-            self.0.borrow_mut().push(metadata);
+            self.metadata.borrow_mut().push(metadata);
         }
     }
 
@@ -229,7 +213,7 @@ mod tests {
         let audit = Audit::new(signals);
 
         let run_log = MockRunLog::default();
-        let audit_report = audit.run(&run_log);
+        let audit_report = audit.run(&run_log, &run_log);
 
         let keys: Vec<_> = audit_report.outcomes.keys().collect();
         assert_eq!(keys, vec!["b", "a"]);
@@ -246,7 +230,7 @@ mod tests {
         let audit = Audit::new(signals);
 
         let run_log = MockRunLog::default();
-        audit.run(&run_log);
+        audit.run(&run_log, &run_log);
 
         let written = run_log.metadata.borrow();
         assert_eq!(written.len(), 2);

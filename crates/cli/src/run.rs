@@ -2,7 +2,7 @@ mod status;
 
 use console::style;
 use rngo_sim::{Dialect, SignalOutcome, SqliteRunLog, spec};
-use status::StatusRunLog;
+use status::StatusWriter;
 use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::{fmt, fs};
@@ -47,15 +47,18 @@ pub fn run(
 
     let run_dir = prepare_run_dir(base, &spec)?;
 
-    let run_log = StatusRunLog::new(Box::new(SqliteRunLog::new(run_dir.clone())), &spec);
+    let sqlite_run_log = SqliteRunLog::new(run_dir.clone());
+    let reader = sqlite_run_log.clone();
+    let writer = StatusWriter::new(sqlite_run_log, &spec);
 
     let mut proxy = proxy_builder
-        .run_log(&run_log)
+        .run_log_writer(writer.clone())
         .build()
         .map_err(join_errors)?;
 
     let mut simulation = simulation_builder
-        .run_log(&run_log)
+        .run_log_reader(reader.clone())
+        .run_log_writer(writer.clone())
         .build()
         .map_err(join_errors)?;
 
@@ -65,7 +68,7 @@ pub fn run(
 
     proxy.finish();
 
-    let audit_report = audit.run(&run_log);
+    let audit_report = audit.run(reader.as_ref(), writer.as_ref());
 
     if !audit_report.outcomes.is_empty() {
         println!();

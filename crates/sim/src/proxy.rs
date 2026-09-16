@@ -1,5 +1,5 @@
 use crate::channel::{ChannelBuilder, Stdout};
-use crate::{BuildError, Channel, Input, Output, RunLog, RunLogWriter, SimpleEventRunLog};
+use crate::{BuildError, Channel, Input, Output, RunLogWriter, SimpleEventRunLog};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver};
@@ -69,8 +69,8 @@ impl ProxyBuilder {
         }
     }
 
-    pub fn run_log(mut self, run_log: &dyn RunLog) -> Self {
-        self.run_log_writer = Some(run_log.writer());
+    pub fn run_log_writer<T: RunLogWriter + 'static>(mut self, writer: Rc<T>) -> Self {
+        self.run_log_writer = Some(writer as Rc<dyn RunLogWriter>);
         self
     }
 
@@ -107,10 +107,9 @@ impl ProxyBuilder {
         let mut channels = HashMap::new();
         let (output_tx, output_rx) = mpsc::channel::<Output>();
 
-        let run_log_writer = self.run_log_writer.unwrap_or_else(|| {
-            let default_run_log = SimpleEventRunLog::new();
-            default_run_log.writer()
-        });
+        let run_log_writer = self
+            .run_log_writer
+            .unwrap_or_else(|| SimpleEventRunLog::new());
 
         for mut channel_builder in self.channel_builders {
             if self.stdout {

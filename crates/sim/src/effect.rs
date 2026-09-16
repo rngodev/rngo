@@ -2,7 +2,7 @@ mod clock;
 mod trigger;
 
 use crate::build::{BuildError, EffectKey};
-use crate::run_log::{Metadata, RunLog, RunLogReader, SimpleEventRunLog};
+use crate::run_log::{Metadata, RunLogReader, SimpleEventRunLog};
 use crate::schema::{
     Metadata as SchemaMetadata, Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext,
 };
@@ -276,7 +276,7 @@ impl EffectBuilder {
         let seed = self.seed.unwrap_or(1);
         let run_log_reader: Rc<dyn RunLogReader> = self
             .event_run_log
-            .unwrap_or_else(|| SimpleEventRunLog::new().reader());
+            .unwrap_or_else(|| SimpleEventRunLog::new());
         let sim_start = self.sim_start.unwrap_or_else(|| now + TimeDelta::days(-30));
         let sim_end = self.sim_end.unwrap_or(now);
         let effect_end = self.end.map(|m| m.resolve(now)).unwrap_or(sim_end);

@@ -1,20 +1,33 @@
-use crate::run_log::{Metadata, RunLogReader};
-use crate::{Input, Output, RunLog, RunLogWriter};
+use crate::run_log::{Metadata, RunLogReader, RunLogWriter};
+use crate::{Input, Output};
 use rand::RngExt;
 use rand_pcg::Pcg32;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
+/// An in-memory run log, used as the default when a [`crate::Simulation`] isn't given an on-disk
+/// one.
 #[derive(Debug, Default)]
-pub struct SimpleEventRunLogReader {
-    inputs: Rc<RefCell<Vec<Rc<Input>>>>,
+pub struct SimpleEventRunLog {
+    inputs: RefCell<Vec<Rc<Input>>>,
+    outputs: RefCell<Vec<Output>>,
+    metadata: RefCell<Vec<Metadata>>,
     /// Ids already handed out per `unique_for_effect` cursor; empty until that cursor's first
     /// draw.
     returned: RefCell<HashMap<String, HashSet<u64>>>,
 }
 
-impl RunLogReader for SimpleEventRunLogReader {
+impl SimpleEventRunLog {
+    /// Returns an `Rc` since every real consumer needs a shared handle to hand to both a
+    /// [`crate::Simulation`] and (for the same run) an [`crate::Audit`] - constructing a bare
+    /// value only to immediately wrap it is the common case, not the exception.
+    pub fn new() -> Rc<Self> {
+        Rc::new(Self::default())
+    }
+}
+
+impl RunLogReader for SimpleEventRunLog {
     fn last(&self) -> Option<Rc<Input>> {
         self.inputs.borrow().last().cloned()
     }
@@ -69,50 +82,7 @@ impl RunLogReader for SimpleEventRunLogReader {
     }
 }
 
-/// An in-memory [`RunLog`], used as the default when a [`crate::Simulation`] isn't given an
-/// on-disk one.
-#[derive(Debug, Default)]
-pub struct SimpleEventRunLog {
-    inputs: Rc<RefCell<Vec<Rc<Input>>>>,
-    outputs: Rc<RefCell<Vec<Output>>>,
-    metadata: Rc<RefCell<Vec<Metadata>>>,
-}
-
-impl SimpleEventRunLog {
-    pub fn new() -> Self {
-        SimpleEventRunLog {
-            inputs: Rc::new(RefCell::new(Vec::new())),
-            outputs: Rc::new(RefCell::new(Vec::new())),
-            metadata: Rc::new(RefCell::new(Vec::new())),
-        }
-    }
-}
-
-impl RunLog for SimpleEventRunLog {
-    fn reader(&self) -> Rc<dyn RunLogReader> {
-        Rc::new(SimpleEventRunLogReader {
-            inputs: Rc::clone(&self.inputs),
-            ..Default::default()
-        })
-    }
-
-    fn writer(&self) -> Rc<dyn RunLogWriter> {
-        Rc::new(SimpleEventRunLogWriter {
-            inputs: Rc::clone(&self.inputs),
-            outputs: Rc::clone(&self.outputs),
-            metadata: Rc::clone(&self.metadata),
-        })
-    }
-}
-
-#[derive(Debug)]
-struct SimpleEventRunLogWriter {
-    inputs: Rc<RefCell<Vec<Rc<Input>>>>,
-    outputs: Rc<RefCell<Vec<Output>>>,
-    metadata: Rc<RefCell<Vec<Metadata>>>,
-}
-
-impl RunLogWriter for SimpleEventRunLogWriter {
+impl RunLogWriter for SimpleEventRunLog {
     fn push_input(&self, input: Input) {
         self.inputs.borrow_mut().push(Rc::new(input));
     }
@@ -141,12 +111,10 @@ mod tests {
     /// ids.
     fn sampled_ids(seed: u64, draws: usize) -> Vec<u64> {
         let run_log = SimpleEventRunLog::new();
-        let reader = run_log.reader();
-        let writer = run_log.writer();
         let mut rng = rng(seed);
 
         for i in 1..=10u64 {
-            writer.push_input(Input {
+            run_log.push_input(Input {
                 id: i,
                 effect: "a".to_string(),
                 offset: i,
@@ -157,7 +125,7 @@ mod tests {
         }
 
         (0..draws)
-            .map(|_| reader.random_for_effect("a", &mut rng).unwrap().id)
+            .map(|_| run_log.random_for_effect("a", &mut rng).unwrap().id)
             .collect()
     }
 
@@ -174,16 +142,14 @@ mod tests {
     #[test]
     fn random_for_effect_returns_none_when_no_matching_effect() {
         let run_log = SimpleEventRunLog::new();
-        let reader = run_log.reader();
         let mut rng = rng(1);
 
-        assert!(reader.random_for_effect("nonexistent", &mut rng).is_none());
+        assert!(run_log.random_for_effect("nonexistent", &mut rng).is_none());
     }
 
     fn push_inputs(run_log: &SimpleEventRunLog, effect: &str, count: u64) {
-        let writer = run_log.writer();
         for i in 1..=count {
-            writer.push_input(Input {
+            run_log.push_input(Input {
                 id: i,
                 effect: effect.to_string(),
                 offset: i,
@@ -197,13 +163,12 @@ mod tests {
     #[test]
     fn unique_cursor_never_repeats_and_exhausts() {
         let run_log = SimpleEventRunLog::new();
-        let reader = run_log.reader();
         push_inputs(&run_log, "a", 5);
         let mut rng = rng(1);
 
         let mut seen = HashSet::new();
         for _ in 0..5 {
-            let sampled = reader.unique_for_effect("a", "cursor", &mut rng).unwrap();
+            let sampled = run_log.unique_for_effect("a", "cursor", &mut rng).unwrap();
             assert!(
                 seen.insert(sampled.id),
                 "id {} returned more than once",
@@ -211,19 +176,18 @@ mod tests {
             );
         }
 
-        assert!(reader.unique_for_effect("a", "cursor", &mut rng).is_none());
+        assert!(run_log.unique_for_effect("a", "cursor", &mut rng).is_none());
     }
 
     #[test]
     fn unique_cursor_is_deterministic_for_a_fixed_seed() {
         fn draw_all(seed: u64) -> Vec<u64> {
             let run_log = SimpleEventRunLog::new();
-            let reader = run_log.reader();
             push_inputs(&run_log, "a", 10);
             let mut rng = rng(seed);
 
             std::iter::from_fn(|| {
-                reader
+                run_log
                     .unique_for_effect("a", "cursor", &mut rng)
                     .map(|e| e.id)
             })
@@ -236,12 +200,11 @@ mod tests {
     #[test]
     fn unique_cursor_state_is_independent_per_cursor() {
         let run_log = SimpleEventRunLog::new();
-        let reader = run_log.reader();
         push_inputs(&run_log, "a", 1);
         let mut rng = rng(1);
 
         assert_eq!(
-            reader
+            run_log
                 .unique_for_effect("a", "cursor-a", &mut rng)
                 .unwrap()
                 .id,
@@ -249,7 +212,7 @@ mod tests {
         );
         // A second, independent cursor over the same effect can still draw the same input.
         assert_eq!(
-            reader
+            run_log
                 .unique_for_effect("a", "cursor-b", &mut rng)
                 .unwrap()
                 .id,
@@ -258,25 +221,22 @@ mod tests {
     }
 
     #[test]
-    fn reader_reflects_inputs_pushed_after_it_was_created() {
+    fn reflects_inputs_pushed_after_construction() {
         let run_log = SimpleEventRunLog::new();
-        let reader = run_log.reader();
 
-        assert!(reader.last().is_none());
+        assert!(run_log.last().is_none());
 
         push_inputs(&run_log, "a", 1);
 
-        assert_eq!(reader.last().unwrap().id, 1);
+        assert_eq!(run_log.last().unwrap().id, 1);
     }
 
     #[test]
     fn last_for_effect_returns_most_recent_matching_effect() {
         let run_log = SimpleEventRunLog::new();
-        let reader = run_log.reader();
-        let writer = run_log.writer();
 
         for (i, effect) in [(1, "a"), (2, "b"), (3, "a")] {
-            writer.push_input(Input {
+            run_log.push_input(Input {
                 id: i,
                 effect: effect.to_string(),
                 offset: i,
@@ -286,8 +246,8 @@ mod tests {
             });
         }
 
-        assert_eq!(reader.last_for_effect("a").unwrap().id, 3);
-        assert_eq!(reader.last_for_effect("b").unwrap().id, 2);
-        assert!(reader.last_for_effect("c").is_none());
+        assert_eq!(run_log.last_for_effect("a").unwrap().id, 3);
+        assert_eq!(run_log.last_for_effect("b").unwrap().id, 2);
+        assert!(run_log.last_for_effect("c").is_none());
     }
 }
