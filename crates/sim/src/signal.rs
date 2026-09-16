@@ -6,7 +6,7 @@ pub use sql::SqlSignal;
 use crate::RunLogReader;
 use serde::Serialize;
 
-/// A built, runtime-evaluable signal - the result of a [`crate::parse::SignalParser`] parsing a
+/// A built, runtime-evaluable signal - the result of a `SignalParser` parsing a
 /// [`crate::spec::Signal`]. Mirrors [`crate::format::Format`]: parsing is a single step directly
 /// to this runtime trait, since (unlike schemas) evaluating a signal needs no persistent
 /// build-time resource beyond the [`RunLogReader`] it's handed on each call.

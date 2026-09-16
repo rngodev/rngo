@@ -81,6 +81,15 @@ impl SimulationBuilder {
         self
     }
 
+    /// Convenience for the common case where a single backend serves as both reader and writer -
+    /// equivalent to calling [`SimulationBuilder::run_log_reader`] and
+    /// [`SimulationBuilder::run_log_writer`] with clones of the same handle. Reach for those
+    /// directly if the reader and writer need to be different objects (e.g. a writer wrapped to
+    /// add its own behavior).
+    pub fn run_log<T: RunLogReader + RunLogWriter + 'static>(self, run_log: Rc<T>) -> Self {
+        self.run_log_reader(run_log.clone()).run_log_writer(run_log)
+    }
+
     /// Caps the total number of events (effects and errors combined) the built [`Simulation`]
     /// will emit before its iterator ends.
     pub fn limit(mut self, limit: u64) -> Self {

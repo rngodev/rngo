@@ -15,8 +15,7 @@ fn reference_with_no_prior_events_is_skipped_not_logged() {
     });
 
     let simulation = simulation_builder
-        .run_log_reader(run_log.clone())
-        .run_log_writer(run_log.clone())
+        .run_log(run_log.clone())
         .limit(5)
         .build()
         .unwrap();
@@ -69,8 +68,7 @@ fn object_with_a_skipped_property_is_itself_skipped() {
     // skips would loop internally until the simulation's time window itself runs out (see
     // `Simulation::next`), rather than stopping quickly.
     let simulation = simulation_builder
-        .run_log_reader(run_log.clone())
-        .run_log_writer(run_log)
+        .run_log(run_log)
         .limit(5)
         .build()
         .unwrap();
@@ -98,8 +96,7 @@ fn array_with_a_skipped_item_is_itself_skipped() {
     });
 
     let simulation = simulation_builder
-        .run_log_reader(run_log.clone())
-        .run_log_writer(run_log)
+        .run_log(run_log)
         .limit(5)
         .build()
         .unwrap();
