@@ -372,11 +372,14 @@ mod tests {
 
     #[test]
     fn builder_wires_signal_builders_into_a_runnable_audit() {
-        use crate::build::sql;
+        use crate::build::sql_signal;
 
         let run_log = Rc::new(MockRunLog::default());
         let audit = Audit::builder()
-            .with_signal("check", sql().query("SELECT 1").expect("result == 1"))
+            .with_signal(
+                "check",
+                sql_signal().query("SELECT 1").expect("result == 1"),
+            )
             .run_log(run_log)
             .build()
             .unwrap();
@@ -388,10 +391,10 @@ mod tests {
 
     #[test]
     fn builder_without_a_run_log_is_an_error() {
-        use crate::build::sql;
+        use crate::build::sql_signal;
 
         let result = Audit::builder()
-            .with_signal("check", sql().query("SELECT 1"))
+            .with_signal("check", sql_signal().query("SELECT 1"))
             .build();
 
         let errors = result.unwrap_err();
@@ -400,12 +403,12 @@ mod tests {
 
     #[test]
     fn builder_collects_errors_from_every_failing_signal_builder() {
-        use crate::build::sql;
+        use crate::build::sql_signal;
 
         let run_log = Rc::new(MockRunLog::default());
         let result = Audit::builder()
-            .with_signal("no-query", sql())
-            .with_signal("also-no-query", sql())
+            .with_signal("no-query", sql_signal())
+            .with_signal("also-no-query", sql_signal())
             .run_log(run_log)
             .build();
 

@@ -1,3 +1,7 @@
+pub use crate::channel::target::exec::ExecBuilder;
+pub use crate::channel::target::stream::StreamBuilder;
+use crate::channel::target::{Exec, Stream};
+pub use crate::format::SqlFormat;
 pub use crate::schema::array::ArrayBuilder;
 pub use crate::schema::constant::ConstantBuilder;
 pub use crate::schema::context::ContextBuilder;
@@ -48,8 +52,26 @@ pub fn string() -> StrBuilder {
     Str::builder()
 }
 
-pub fn sql() -> SqlSignalBuilder {
+/// Builds a `SqlSignal`, for use with [`crate::audit::AuditBuilder::with_signal`]. Named
+/// `sql_signal` (rather than `sql`) to stay distinct from [`sql_format`], which builds the
+/// unrelated `SqlFormat` used with [`crate::channel::ChannelBuilder::format`].
+pub fn sql_signal() -> SqlSignalBuilder {
     SqlSignal::builder()
+}
+
+/// Builds a `SqlFormat`, for use with [`crate::channel::ChannelBuilder::format`]. Named
+/// `sql_format` (rather than `sql`) to stay distinct from [`sql_signal`], which builds the
+/// unrelated `SqlSignal` used with [`crate::audit::AuditBuilder::with_signal`].
+pub fn sql_format() -> SqlFormat {
+    SqlFormat::builder()
+}
+
+pub fn stream() -> StreamBuilder {
+    Stream::builder()
+}
+
+pub fn exec() -> ExecBuilder {
+    Exec::builder()
 }
 
 #[derive(Error, Debug)]

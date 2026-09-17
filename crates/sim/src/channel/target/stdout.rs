@@ -32,7 +32,11 @@ impl ChannelTarget for Stdout {
 pub struct StdoutBuilder {}
 
 impl ChannelTargetBuilder for StdoutBuilder {
-    fn build(&self, _output_tx: Sender<Output>) -> Result<Box<dyn ChannelTarget>, Vec<BuildError>> {
+    fn build(
+        &self,
+        _channel_key: &str,
+        _output_tx: Sender<Output>,
+    ) -> Result<Box<dyn ChannelTarget>, Vec<BuildError>> {
         Ok(Box::new(Stdout::new()))
     }
 }

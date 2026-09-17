@@ -17,6 +17,10 @@ impl Exec {
     pub fn parser() -> ExecParser {
         ExecParser {}
     }
+
+    pub fn builder() -> ExecBuilder {
+        ExecBuilder::default()
+    }
 }
 
 impl ChannelTarget for Exec {
@@ -73,35 +77,32 @@ impl ChannelTarget for Exec {
     }
 }
 
+#[derive(Default)]
 pub struct ExecBuilder {
-    channel_key: String,
     command: Option<String>,
 }
 
 impl ExecBuilder {
-    pub fn new(channel_key: String) -> Self {
-        ExecBuilder {
-            channel_key,
-            command: None,
-        }
-    }
-
-    pub fn command(mut self, value: String) -> Self {
+    pub fn command(mut self, value: impl Into<String>) -> Self {
         self.set_command(value);
         self
     }
 
-    pub fn set_command(&mut self, value: String) -> &mut Self {
-        self.command = Some(value);
+    pub fn set_command(&mut self, value: impl Into<String>) -> &mut Self {
+        self.command = Some(value.into());
         self
     }
 }
 
 impl ChannelTargetBuilder for ExecBuilder {
-    fn build(&self, _output_tx: Sender<Output>) -> Result<Box<dyn ChannelTarget>, Vec<BuildError>> {
+    fn build(
+        &self,
+        channel_key: &str,
+        _output_tx: Sender<Output>,
+    ) -> Result<Box<dyn ChannelTarget>, Vec<BuildError>> {
         let Some(command) = self.command.clone() else {
             return Err(vec![BuildError::ChannelTarget {
-                channel: self.channel_key.clone(),
+                channel: channel_key.to_string(),
                 message: "command not specified".into(),
             }]);
         };
@@ -110,13 +111,13 @@ impl ChannelTargetBuilder for ExecBuilder {
         hbs.register_template_string("command", &command)
             .map_err(|_e| {
                 vec![BuildError::ChannelTarget {
-                    channel: self.channel_key.clone(),
+                    channel: channel_key.to_string(),
                     message: "FIX ME must be a string".into(),
                 }]
             })?;
 
         Ok(Box::new(Exec {
-            channel_key: self.channel_key.clone(),
+            channel_key: channel_key.to_string(),
             hbs,
         }))
     }
@@ -131,7 +132,6 @@ impl ChannelTargetParser for ExecParser {
 
     fn parse(
         &self,
-        channel_key: String,
         channel_target: &spec::ChannelTarget,
     ) -> Result<Box<dyn ChannelTargetBuilder>, Vec<ParseError>> {
         let command = match channel_target.fields.get("command") {
@@ -152,8 +152,26 @@ impl ChannelTargetParser for ExecParser {
             }
         };
 
-        Ok(Box::new(
-            ExecBuilder::new(channel_key).command(command.into()),
-        ))
+        Ok(Box::new(ExecBuilder::default().command(command)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc;
+
+    #[test]
+    fn builder_without_a_command_is_an_error() {
+        let (tx, _rx) = mpsc::channel();
+        let result = ExecBuilder::default().build("logger", tx);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn builder_with_no_channel_key_at_construction_still_builds() {
+        let (tx, _rx) = mpsc::channel();
+        let result = Exec::builder().command("echo hi").build("logger", tx);
+        assert!(result.is_ok());
     }
 }

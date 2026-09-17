@@ -16,7 +16,7 @@ pub trait Signal: std::fmt::Debug {
 }
 
 /// The Rust-DSL counterpart to `SignalParser`: builds a [`Signal`] directly from values set
-/// through a fluent builder (e.g. [`sql`](crate::build::sql)) instead of from a parsed
+/// through a fluent builder (e.g. [`sql_signal`](crate::build::sql_signal)) instead of from a parsed
 /// [`crate::spec::Signal`]. Takes the signal's key at build time, mirroring
 /// [`crate::audit::AuditBuilder::with_signal`], which is where that key comes from. Consumes
 /// itself, like every other builder in the crate besides [`crate::schema::SchemaBuilder`] (which

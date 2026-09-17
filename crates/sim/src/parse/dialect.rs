@@ -206,7 +206,7 @@ impl Dialect {
                 _ => (),
             };
 
-            match self.parse_target(key, &channel.target) {
+            match self.parse_target(&channel.target) {
                 Ok(target_builder) => {
                     channel_builder.set_target(target_builder);
                 }
@@ -301,7 +301,6 @@ impl Dialect {
 
     fn parse_target(
         &self,
-        channel_key: &str,
         channel_target: &spec::ChannelTarget,
     ) -> Result<Box<dyn ChannelTargetBuilder>, Vec<ParseError>> {
         let matching: Vec<_> = self
@@ -311,7 +310,7 @@ impl Dialect {
             .collect();
 
         match matching.as_slice() {
-            [parser] => parser.parse(channel_key.into(), channel_target),
+            [parser] => parser.parse(channel_target),
             [] => Err(vec![ParseError::SchemaError {
                 path: None,
                 message: "unknown target type".to_string(),
