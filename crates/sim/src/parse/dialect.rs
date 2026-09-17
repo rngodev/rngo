@@ -1,7 +1,7 @@
 use super::format::FormatParser;
 use super::schema::{SchemaParseVisitor, SchemaParser};
 use super::signal::SignalParser;
-use crate::audit::Audit;
+use crate::audit::{Audit, AuditBuilder};
 use crate::channel::{Channel, ChannelTargetBuilder, target};
 use crate::effect::Effect;
 use crate::format::Format;
@@ -13,7 +13,6 @@ use crate::simulation::{Simulation, SimulationBuilder};
 use crate::spec::{self, ParseError, Spec};
 use crate::util::time::Moment;
 use crate::{format, schema, signal};
-use indexmap::IndexMap;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -232,14 +231,14 @@ impl Dialect {
         }
     }
 
-    pub fn parse_audit(&self, spec: Spec) -> Result<Audit, Vec<ParseError>> {
+    pub fn parse_audit(&self, spec: Spec) -> Result<AuditBuilder, Vec<ParseError>> {
         let mut errors = vec![];
-        let mut signals = IndexMap::new();
+        let mut audit_builder = Audit::builder();
 
         for (key, signal) in &spec.signals {
             match self.parse_signal(key, signal) {
                 Ok(built) => {
-                    signals.insert(key.clone(), built);
+                    audit_builder.set_signal(key.clone(), built);
                 }
                 Err(mut e) => errors.append(&mut e),
             }
@@ -248,7 +247,7 @@ impl Dialect {
         if !errors.is_empty() {
             Err(errors)
         } else {
-            Ok(Audit::new(signals))
+            Ok(audit_builder)
         }
     }
 

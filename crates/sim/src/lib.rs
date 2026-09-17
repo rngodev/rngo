@@ -13,7 +13,7 @@ mod simulation;
 pub mod spec;
 mod util;
 
-pub use audit::{Audit, AuditReport};
+pub use audit::{Audit, AuditBuilder, AuditReport};
 pub use build::{BuildError, EffectKey, SchemaEdge, SimulationKey};
 pub use channel::Channel;
 pub use effect::{Effect, Input};
@@ -22,7 +22,7 @@ pub use output::{Level, Output};
 pub use parse::Dialect;
 pub use proxy::Proxy;
 pub use run_log::{Metadata, RunLogReader, RunLogWriter, SimpleEventRunLog, SqliteRunLog};
-pub use signal::{Signal, SignalOutcome};
+pub use signal::{Signal, SignalBuilder, SignalOutcome};
 pub use simulation::Simulation;
 pub use spec::ParseError;
 pub use util::time::Moment;

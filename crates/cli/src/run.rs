@@ -30,7 +30,7 @@ pub fn run(
 
     let mut proxy_builder = dialect.parse_proxy(spec.clone()).map_err(join_errors)?;
 
-    let audit = dialect.parse_audit(spec.clone()).map_err(join_errors)?;
+    let audit_builder = dialect.parse_audit(spec.clone()).map_err(join_errors)?;
 
     if let Some(limit) = limit {
         simulation_builder = simulation_builder.limit(limit.get());
@@ -49,7 +49,7 @@ pub fn run(
 
     let sqlite_run_log = SqliteRunLog::new(run_dir.clone());
     let reader = sqlite_run_log.clone();
-    let writer = StatusWriter::new(sqlite_run_log, &spec);
+    let writer = StatusWriter::new(sqlite_run_log.clone(), &spec);
 
     let mut proxy = proxy_builder
         .run_log_writer(writer.clone())
@@ -68,7 +68,12 @@ pub fn run(
 
     proxy.finish();
 
-    let audit_report = audit.run(reader.as_ref(), writer.as_ref());
+    let audit = audit_builder
+        .run_log(sqlite_run_log)
+        .build()
+        .map_err(join_errors)?;
+
+    let audit_report = audit.run();
 
     if !audit_report.outcomes.is_empty() {
         println!();

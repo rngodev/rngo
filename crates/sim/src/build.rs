@@ -8,6 +8,8 @@ pub use crate::schema::reference::ReferenceBuilder;
 pub use crate::schema::select::SelectBuilder;
 pub use crate::schema::string::StrBuilder;
 use crate::schema::{Array, Constant, Context, Function, Number, Object, Reference, Select, Str};
+use crate::signal::SqlSignal;
+pub use crate::signal::sql::SqlSignalBuilder;
 use thiserror::Error;
 
 pub fn array() -> ArrayBuilder {
@@ -46,6 +48,10 @@ pub fn string() -> StrBuilder {
     Str::builder()
 }
 
+pub fn sql() -> SqlSignalBuilder {
+    SqlSignal::builder()
+}
+
 #[derive(Error, Debug)]
 #[error("failed to build: `{message}`")]
 pub enum BuildError {
@@ -72,6 +78,13 @@ pub enum BuildError {
     },
     ChannelTarget {
         channel: String,
+        message: String,
+    },
+    Signal {
+        signal: String,
+        message: String,
+    },
+    Audit {
         message: String,
     },
 }
