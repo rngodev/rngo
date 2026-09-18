@@ -278,7 +278,7 @@ impl Dialect {
     fn parse_format(
         &self,
         format: &spec::Format,
-        simulation: &Spec,
+        spec: &Spec,
     ) -> Result<Box<dyn Format>, Vec<ParseError>> {
         let matching: Vec<_> = self
             .format_parsers
@@ -287,7 +287,7 @@ impl Dialect {
             .collect();
 
         match matching.as_slice() {
-            [parser] => parser.parse(format, simulation),
+            [parser] => parser.parse(format, spec),
             [] => Err(vec![ParseError::SchemaError {
                 path: None,
                 message: "unknown format type".to_string(),

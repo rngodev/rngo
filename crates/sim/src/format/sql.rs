@@ -18,15 +18,15 @@ impl SqlFormat {
 
     /// A `Format` needs no separate build step (unlike a `Schema` or `ChannelTarget`, it holds no
     /// build-time resource beyond its own fields), so this returns a ready-to-use `SqlFormat`
-    /// directly rather than a distinct builder type - chain [`SqlFormat::table`] to override the
-    /// default of using an effect's own key as its table name.
+    /// directly rather than a distinct builder type - chain [`SqlFormat::effect_table`] to
+    /// override the default of using an effect's own key as its table name.
     pub fn builder() -> SqlFormat {
         SqlFormat {
             effect_tables: HashMap::new(),
         }
     }
 
-    pub fn table(mut self, effect_key: impl Into<String>, table: impl Into<String>) -> Self {
+    pub fn effect_table(mut self, effect_key: impl Into<String>, table: impl Into<String>) -> Self {
         self.effect_tables.insert(effect_key.into(), table.into());
         self
     }
@@ -170,8 +170,8 @@ mod tests {
     }
 
     #[test]
-    fn builder_table_overrides_the_effect_key() {
-        let format = SqlFormat::builder().table("user", "accounts");
+    fn builder_effect_table_overrides_the_effect_key() {
+        let format = SqlFormat::builder().effect_table("user", "accounts");
         let event = event(json!({ "id": 1 }));
         let sql = format.format(&event).unwrap();
         assert!(
