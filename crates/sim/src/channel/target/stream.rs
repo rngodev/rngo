@@ -36,6 +36,10 @@ impl Stream {
     pub fn parser() -> StreamParser {
         StreamParser {}
     }
+
+    pub fn builder() -> StreamBuilder {
+        StreamBuilder::default()
+    }
 }
 
 impl ChannelTarget for Stream {
@@ -98,35 +102,32 @@ impl Drop for Stream {
     }
 }
 
+#[derive(Default)]
 pub struct StreamBuilder {
-    channel_key: String,
     command: Option<String>,
 }
 
 impl StreamBuilder {
-    pub fn new(channel_key: String) -> Self {
-        StreamBuilder {
-            channel_key,
-            command: None,
-        }
-    }
-
-    pub fn command(mut self, value: String) -> Self {
+    pub fn command(mut self, value: impl Into<String>) -> Self {
         self.set_command(value);
         self
     }
 
-    pub fn set_command(&mut self, value: String) -> &mut Self {
-        self.command = Some(value);
+    pub fn set_command(&mut self, value: impl Into<String>) -> &mut Self {
+        self.command = Some(value.into());
         self
     }
 }
 
 impl ChannelTargetBuilder for StreamBuilder {
-    fn build(&self, output_tx: Sender<Output>) -> Result<Box<dyn ChannelTarget>, Vec<BuildError>> {
+    fn build(
+        &self,
+        channel_key: &str,
+        output_tx: Sender<Output>,
+    ) -> Result<Box<dyn ChannelTarget>, Vec<BuildError>> {
         let Some(command) = self.command.clone() else {
             return Err(vec![BuildError::ChannelTarget {
-                channel: self.channel_key.clone(),
+                channel: channel_key.to_string(),
                 message: "command not specified".into(),
             }]);
         };
@@ -140,7 +141,7 @@ impl ChannelTargetBuilder for StreamBuilder {
             .spawn()
             .map_err(|e| {
                 vec![BuildError::ChannelTarget {
-                    channel: self.channel_key.clone(),
+                    channel: channel_key.to_string(),
                     message: format!("failed to spawn command: {e}"),
                 }]
             })?;
@@ -151,7 +152,7 @@ impl ChannelTargetBuilder for StreamBuilder {
 
         if let Some(stdout) = child.stdout.take() {
             let tx = output_tx.clone();
-            let channel_key = self.channel_key.clone();
+            let channel_key = channel_key.to_string();
             reader_threads.push(thread::spawn(move || {
                 for line in BufReader::new(stdout).lines().map_while(Result::ok) {
                     if !line.is_empty() {
@@ -170,7 +171,7 @@ impl ChannelTargetBuilder for StreamBuilder {
 
         if let Some(stderr) = child.stderr.take() {
             let tx = output_tx.clone();
-            let channel_key = self.channel_key.clone();
+            let channel_key = channel_key.to_string();
             reader_threads.push(thread::spawn(move || {
                 for line in BufReader::new(stderr).lines().map_while(Result::ok) {
                     if !line.is_empty() {
@@ -188,7 +189,7 @@ impl ChannelTargetBuilder for StreamBuilder {
         }
 
         Ok(Box::new(Stream {
-            channel_key: self.channel_key.clone(),
+            channel_key: channel_key.to_string(),
             child,
             stdin,
             reader_threads,
@@ -205,7 +206,6 @@ impl ChannelTargetParser for StreamParser {
 
     fn parse(
         &self,
-        channel_key: String,
         channel_target: &spec::ChannelTarget,
     ) -> Result<Box<dyn ChannelTargetBuilder>, Vec<ParseError>> {
         let command = match channel_target.fields.get("command") {
@@ -226,9 +226,7 @@ impl ChannelTargetParser for StreamParser {
             }
         };
 
-        Ok(Box::new(
-            StreamBuilder::new(channel_key).command(command.into()),
-        ))
+        Ok(Box::new(StreamBuilder::default().command(command)))
     }
 }
 
@@ -238,14 +236,28 @@ mod tests {
     use std::sync::mpsc;
 
     #[test]
+    fn builder_without_a_command_is_an_error() {
+        let (tx, _rx) = mpsc::channel();
+        let result = StreamBuilder::default().build("logger", tx);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn builder_with_no_channel_key_at_construction_still_builds() {
+        let (tx, _rx) = mpsc::channel();
+        let result = Stream::builder().command("cat").build("logger", tx);
+        assert!(result.is_ok());
+    }
+
+    #[test]
     fn drop_abandons_a_reader_thread_stuck_on_an_orphaned_grandchild() {
         let (tx, _rx) = mpsc::channel();
-        let stream = StreamBuilder::new("test".into())
+        let stream = StreamBuilder::default()
             // Backgrounds `sleep 5` without redirecting it, so it inherits this shell's stdout
             // pipe and keeps it open (reparented, once this shell exits) well past both grace
             // periods below - simulating a command whose kill doesn't actually close its pipe.
             .command("sleep 5 & echo done".to_string())
-            .build(tx)
+            .build("test", tx)
             .unwrap();
 
         let start = Instant::now();

@@ -1,10 +1,10 @@
 # rngo
 
-rngo helps you understand what your code does by simulating usage and recording everything.
+rngo helps you learn what your code does by simulating usage and recording everything.
 
 In particular, rngo is:
-- a [library](https://crates.io/crates/rngo) which implements a simulation specification language and runtime
-- a [CLI](https://rngo.dev/docs/cli) which runs simulations, routes events and captures responses / logs / telemetry
+- a [library](https://crates.io/crates/rngo) which implements a specification language, a DSL and a runtime
+- a [CLI](https://rngo.dev/docs/cli) which generates and routes inputs and captures outputs
 
 ## CLI
 

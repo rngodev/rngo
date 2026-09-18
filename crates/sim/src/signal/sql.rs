@@ -1,5 +1,6 @@
-use super::{Signal, SignalOutcome};
+use super::{Signal, SignalBuilder, SignalOutcome};
 use crate::RunLogReader;
+use crate::build::BuildError;
 use crate::parse::SignalParser;
 use crate::signal::{CelExpectation, SignalEval};
 use crate::spec::{self, ParseError};
@@ -17,6 +18,23 @@ impl SqlSignal {
     pub fn parser() -> SqlSignalParser {
         SqlSignalParser {}
     }
+
+    pub fn builder() -> SqlSignalBuilder {
+        SqlSignalBuilder::default()
+    }
+}
+
+/// Compiles an `expect` source string into a [`CelExpectation`] once, up front - shared by
+/// [`SqlSignalParser::parse`] and [`SqlSignalBuilder::build`] so a bad expression is rejected at
+/// build time rather than on every evaluation, regardless of which path constructed the signal.
+fn compile_expectation(source: &str) -> Result<CelExpectation, String> {
+    let program = Program::compile(source)
+        .map_err(|e| format!("expect expression failed to compile: {e}"))?;
+
+    Ok(CelExpectation {
+        source: source.to_string(),
+        program,
+    })
 }
 
 impl Signal for SqlSignal {
@@ -112,18 +130,70 @@ impl SignalParser for SqlSignalParser {
                     }]);
                 };
 
-                let program = Program::compile(source).map_err(|e| {
+                let expectation = compile_expectation(source).map_err(|message| {
                     vec![ParseError::SchemaError {
                         path: Some(vec!["signals".into(), key.into(), "expect".into()]),
-                        message: format!("expect expression failed to compile: {e}"),
+                        message,
                     }]
                 })?;
 
-                Some(CelExpectation {
-                    source: source.into(),
-                    program,
-                })
+                Some(expectation)
             }
+            None => None,
+        };
+
+        Ok(Box::new(SqlSignal {
+            key: key.to_string(),
+            query,
+            expectation,
+        }))
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct SqlSignalBuilder {
+    query: Option<String>,
+    expect: Option<String>,
+}
+
+impl SqlSignalBuilder {
+    pub fn query(mut self, query: impl Into<String>) -> Self {
+        self.set_query(query);
+        self
+    }
+
+    pub fn set_query(&mut self, query: impl Into<String>) -> &mut Self {
+        self.query = Some(query.into());
+        self
+    }
+
+    pub fn expect(mut self, expect: impl Into<String>) -> Self {
+        self.set_expect(expect);
+        self
+    }
+
+    pub fn set_expect(&mut self, expect: impl Into<String>) -> &mut Self {
+        self.expect = Some(expect.into());
+        self
+    }
+}
+
+impl SignalBuilder for SqlSignalBuilder {
+    fn build(self: Box<Self>, key: &str) -> Result<Box<dyn Signal>, Vec<BuildError>> {
+        let Some(query) = self.query else {
+            return Err(vec![BuildError::Signal {
+                signal: key.to_string(),
+                message: "query is required".into(),
+            }]);
+        };
+
+        let expectation = match self.expect {
+            Some(source) => Some(compile_expectation(&source).map_err(|message| {
+                vec![BuildError::Signal {
+                    signal: key.to_string(),
+                    message,
+                }]
+            })?),
             None => None,
         };
 
@@ -166,6 +236,28 @@ mod tests {
     fn missing_query_is_an_error() {
         let signal = spec_signal(serde_json::json!({ "type": "sql" }));
         let result = SqlSignal::parser().parse("check", &signal);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn builder_builds_signal_with_query_and_expect() {
+        let builder = SqlSignal::builder().query("SELECT 1").expect("result == 1");
+        let result = Box::new(builder).build("check");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn builder_without_query_is_an_error() {
+        let result = Box::new(SqlSignal::builder()).build("check");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn builder_rejects_expect_that_fails_to_compile() {
+        let builder = SqlSignal::builder()
+            .query("SELECT 1")
+            .expect("not ( valid cel");
+        let result = Box::new(builder).build("check");
         assert!(result.is_err());
     }
 

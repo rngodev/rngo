@@ -16,6 +16,8 @@ impl BuildErrorTestExt for BuildError {
             BuildError::Proxy { message } => message,
             BuildError::Channel { message, .. } => message,
             BuildError::ChannelTarget { message, .. } => message,
+            BuildError::Signal { message, .. } => message,
+            BuildError::Audit { message } => message,
         }
     }
 

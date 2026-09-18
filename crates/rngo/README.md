@@ -1,6 +1,23 @@
 # rngo
 
-The `rngo` library lets you define and run simulations in Rust code. You can define a simulation with a builder DSL:
+The `rngo` library lets you assemble **cells** and define **audits** in Rust.
+
+A **cell** is responsible for sending inputs to and capturing outputs from the system under test (SUT). Its components include:
+- a `RunLog` that records inputs, outputs and metadata (and may be shared by other cells)
+- one or more `Simulation`s that generate and log inputs
+- a single `Proxy` that routes the inputs and logs the outputs
+
+An **audit** surfaces patterns in the `RunLog` and usually sets expectations of those patterns.
+
+## DSL
+
+You can define a cell using a builder DSL. First we'll define a `SqliteRunLog`:
+
+```rust
+let run_log = rngo::SqliteRunLog::new(".")
+```
+
+Next a `Simulation`:
 
 ```rust
 let mut simulation = rngo::Simulation.builder()
@@ -48,10 +65,77 @@ let mut simulation = rngo::Simulation.builder()
                     .property("created_at", context().path(["clock", "now"])),
             )
     })
+    .run_log(run_log.clone())
     .build()?;
 ```
 
-You can also build a simulation from JSON. You'd express the above like this in JSON:
+And then the `Proxy`:
+
+```rust
+let proxy = rngo::Proxy::builder()
+    .with_channel("db", |channel| {
+        channel
+            .effects("user", "post")
+            .format(
+                sql_format()
+                    .effect_table("user", "USERS")
+                    .effect_table("post", "POSTS")
+            )
+            .target(
+                stream().command("psql -q $DATABASE_URL")
+            )
+            
+    })
+    .with_channel("log", |channel| {
+        channel
+            .target(
+                stream().command("tail -F logs/app.log")
+            )
+            
+    })
+    .run_log(run_log.clone())
+    .build()?
+```
+
+Now we can run the `Simulation` against the `Proxy` (and exit the sub-shells): 
+
+```rust
+for input in &mut simulation {
+    proxy.send(&input)?;
+}
+
+proxy.finish();
+```
+
+Finally, we can build an `Audit` and set some expectations for the inputs and ouputs
+
+```rust
+let audit = rngo::Audit::builder()
+    .with_signal("some-inputs",
+        sql_signal()
+            .query("SELECT count(*) FROM inputs;")
+            .expect("result > 0")
+    )
+    .with_signal("no-psql-errors",
+        sql_signal()
+            .query("SELECT count(*) FROM outputs WHERE channel = 'db'")
+            .expect("result == 0")
+    )
+    .with_signal("minimal-log-errors",
+        sql_signal()
+            .query("SELECT count(*) FROM outputs WHERE channel = 'log' AND data LIKE 'ERROR%'")
+            .expect("result < 20")
+    )
+    .run_log(run_log)
+    .build()?;
+
+let audit_report = audit.run();
+assert!(audit_report.passed())
+```
+
+## Spec
+
+You can also define the above in JSON (or YAML) spec - it would look like this:
 
 ```json
 {
@@ -60,6 +144,9 @@ You can also build a simulation from JSON. You'd express the above like this in 
     "end": "now",
     "effects": {
         "user": {
+            "channel": "db",
+            "metadata": { "table": "USERS" },
+            "trigger": "hz(10, hour) * (offset * 0.0001)",
             "schema": {
                 "type": "object",
                 "properties": {
@@ -72,11 +159,14 @@ You can also build a simulation from JSON. You'd express the above like this in 
                             { "weight": 1, "schema": { "type": "constant", "value": null } }
                         ]
                     },
-                    "created_at": { "type": "context", "path": ["clock", "offset"] }
+                    "created_at": { "type": "context", "path": ["clock", "now"] }
                 }
             }
         },
         "post": {
+            "channel": "db",
+            "metadata": { "table": "POSTS" },
+            "trigger": "hz(100, hour) * (offset * 0.0001)",
             "schema": {
                 "type": "object",
                 "properties": {
@@ -101,35 +191,69 @@ You can also build a simulation from JSON. You'd express the above like this in 
                             ]
                         }
                     },
-                    "created_at": { "type": "context", "path": ["sim", "offset"] }
+                    "created_at": { "type": "context", "path": ["clock", "now"] }
                 }
             }
+        }
+    },
+    "channels": {
+        "db": {
+            "format": { "type": "sql" },
+            "target": { "type": "stream", "command": "psql -q $DATABASE_URL" }
+        },
+        "log": {
+            "target": { "type": "stream", "command": "tail -F logs/app.log" }
+        }
+    },
+    "signals": {
+        "some-inputs": {
+            "type": "sql",
+            "query": "SELECT count(*) FROM inputs;",
+            "expect": "result > 0"
+        },
+        "no-psql-errors": {
+            "type": "sql",
+            "query": "SELECT count(*) FROM outputs WHERE channel = 'db'",
+            "expect": "result == 0"
+        },
+        "minimal-log-errors": {
+            "type": "sql",
+            "query": "SELECT count(*) FROM outputs WHERE channel = 'log' AND data LIKE 'ERROR%'",
+            "expect": "result < 20"
         }
     }
 }
 ```
 
-You can parse it like this:
+You can parse and run like this:
 
 ```rust
 let value: serde_json::Value = serde_json::from_str(raw).unwrap();
-let builder = rngo::Dialect::primitive().parse_simulation_json(value)?;
-let mut simulation = simulation.build()?;
-```
+let spec = rngo::spec::from_value(value)?;
+let dialect = rngo::Dialect::primitive();
+let run_log = rngo::SqliteRunLog::new(".")
 
-Both produce a `Simulation` which is an iterator over effects:
+let mut simulation = dialect
+    .parse_simulation(spec.clone())?
+    .run_log(run_log.clone())
+    .build()?;
 
-```rust
-for event in simulation {
-    println!("{}", serde_json::to_string(&event).unwrap());
+let mut proxy = dialect
+    .parse_proxy(spec.clone())?
+    .run_log_writer(run_log.clone())
+    .build()?;
+
+let audit = dialect
+    .parse_audit(spec)?
+    .run_log(run_log)
+    .build()?;
+
+for input in &mut simulation {
+    proxy.send(&input)?;
 }
-```
 
-Which outputs JSON lines like:
+proxy.finish();
 
-```json
-{"type":"effect","id":1,"key":"user","offset":0,"value":{"id":1,"name":"Gvtlzqnbhf","age":42,"created_at":0}}
-{"type":"effect","id":2,"key":"post","offset":36,"value":{"id":1,"user_id":1,"title":"Post: Abcdefghijklmno","tags":["a","b","a"],"created_at":36}}
-{"type":"effect","id":3,"key":"user","offset":371,"value":{"id":2,"name":"Rqmzwlxpjt","age":null,"created_at":371}}
-...
+let audit_report = audit.run();
+assert!(audit_report.passed())
 ```

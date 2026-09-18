@@ -1,7 +1,7 @@
 use super::format::FormatParser;
 use super::schema::{SchemaParseVisitor, SchemaParser};
 use super::signal::SignalParser;
-use crate::audit::Audit;
+use crate::audit::{Audit, AuditBuilder};
 use crate::channel::{Channel, ChannelTargetBuilder, target};
 use crate::effect::Effect;
 use crate::format::Format;
@@ -13,7 +13,6 @@ use crate::simulation::{Simulation, SimulationBuilder};
 use crate::spec::{self, ParseError, Spec};
 use crate::util::time::Moment;
 use crate::{format, schema, signal};
-use indexmap::IndexMap;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -207,7 +206,7 @@ impl Dialect {
                 _ => (),
             };
 
-            match self.parse_target(key, &channel.target) {
+            match self.parse_target(&channel.target) {
                 Ok(target_builder) => {
                     channel_builder.set_target(target_builder);
                 }
@@ -232,14 +231,14 @@ impl Dialect {
         }
     }
 
-    pub fn parse_audit(&self, spec: Spec) -> Result<Audit, Vec<ParseError>> {
+    pub fn parse_audit(&self, spec: Spec) -> Result<AuditBuilder, Vec<ParseError>> {
         let mut errors = vec![];
-        let mut signals = IndexMap::new();
+        let mut audit_builder = Audit::builder();
 
         for (key, signal) in &spec.signals {
             match self.parse_signal(key, signal) {
                 Ok(built) => {
-                    signals.insert(key.clone(), built);
+                    audit_builder.set_signal(key.clone(), built);
                 }
                 Err(mut e) => errors.append(&mut e),
             }
@@ -248,7 +247,7 @@ impl Dialect {
         if !errors.is_empty() {
             Err(errors)
         } else {
-            Ok(Audit::new(signals))
+            Ok(audit_builder)
         }
     }
 
@@ -279,7 +278,7 @@ impl Dialect {
     fn parse_format(
         &self,
         format: &spec::Format,
-        simulation: &Spec,
+        spec: &Spec,
     ) -> Result<Box<dyn Format>, Vec<ParseError>> {
         let matching: Vec<_> = self
             .format_parsers
@@ -288,7 +287,7 @@ impl Dialect {
             .collect();
 
         match matching.as_slice() {
-            [parser] => parser.parse(format, simulation),
+            [parser] => parser.parse(format, spec),
             [] => Err(vec![ParseError::SchemaError {
                 path: None,
                 message: "unknown format type".to_string(),
@@ -302,7 +301,6 @@ impl Dialect {
 
     fn parse_target(
         &self,
-        channel_key: &str,
         channel_target: &spec::ChannelTarget,
     ) -> Result<Box<dyn ChannelTargetBuilder>, Vec<ParseError>> {
         let matching: Vec<_> = self
@@ -312,7 +310,7 @@ impl Dialect {
             .collect();
 
         match matching.as_slice() {
-            [parser] => parser.parse(channel_key.into(), channel_target),
+            [parser] => parser.parse(channel_target),
             [] => Err(vec![ParseError::SchemaError {
                 path: None,
                 message: "unknown target type".to_string(),
