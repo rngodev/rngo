@@ -2,16 +2,16 @@
 
 The `rngo` library lets you assemble **cells** and define **audits** in Rust.
 
-A cell is responsible for sending inputs to and capturing outputs from the system under test (SUT). Its components include:
+A **cell** is responsible for sending inputs to and capturing outputs from the system under test (SUT). Its components include:
 - a `RunLog` that records inputs, outputs and metadata (and may be shared by other cells)
-- one or more `Simulation`s that generaz`te and log inputs
+- one or more `Simulation`s that generate and log inputs
 - a single `Proxy` that routes the inputs and logs the outputs
 
-An audit surfaces patterns in the `RunLog` and usually sets expectations of those patterns.
+An **audit** surfaces patterns in the `RunLog` and usually sets expectations of those patterns.
 
 ## DSL
 
-You can define a cell using a builder DSL. First we'll define a `SqliteRunLog` implementation:
+You can define a cell using a builder DSL. First we'll define a `SqliteRunLog`:
 
 ```rust
 let run_log = rngo::SqliteRunLog::new(".")
@@ -97,7 +97,7 @@ let proxy = rngo::Proxy::builder()
     .build()?
 ```
 
-Now we can run the simulation against the proxy (and clean it up): 
+Now we can run the `Simulation` against the `Proxy` (and exit the sub-shells): 
 
 ```rust
 for input in &mut simulation {
