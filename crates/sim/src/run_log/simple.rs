@@ -6,22 +6,15 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-/// An in-memory run log, used as the default when a [`crate::Simulation`] isn't given an on-disk
-/// one.
 #[derive(Debug, Default)]
 pub struct SimpleEventRunLog {
     inputs: RefCell<Vec<Rc<Input>>>,
     outputs: RefCell<Vec<Output>>,
     metadata: RefCell<Vec<Metadata>>,
-    /// Ids already handed out per `unique_for_effect` cursor; empty until that cursor's first
-    /// draw.
     returned: RefCell<HashMap<String, HashSet<u64>>>,
 }
 
 impl SimpleEventRunLog {
-    /// Returns an `Rc` since every real consumer needs a shared handle to hand to both a
-    /// [`crate::Simulation`] and (for the same run) an [`crate::Audit`] - constructing a bare
-    /// value only to immediately wrap it is the common case, not the exception.
     pub fn new() -> Rc<Self> {
         Rc::new(Self::default())
     }
@@ -38,11 +31,6 @@ impl RunLogReader for SimpleEventRunLog {
             .iter()
             .rfind(|e| e.effect == key)
             .cloned()
-    }
-
-    // No SQL engine backs an in-memory run log.
-    fn query(&self, _query: &str) -> Option<serde_json::Value> {
-        None
     }
 
     fn random_for_effect(&self, key: &str, rng: &mut Pcg32) -> Option<Rc<Input>> {
@@ -79,6 +67,10 @@ impl RunLogReader for SimpleEventRunLog {
             }
             chosen
         }
+    }
+
+    fn query(&self, _query: &str) -> Option<serde_json::Value> {
+        None
     }
 }
 

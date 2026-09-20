@@ -20,13 +20,6 @@ pub fn init(base: &Path, default: bool) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// Sets up `.rngo` and `.gitignore`, without touching agent skills. Split
-/// out from `init` so tests can exercise it without triggering a network
-/// call and interactive prompt from `skills::offer_install`.
-///
-/// When `default` is set, prompting is skipped entirely: the key and seed
-/// use the same values the prompts would otherwise default to, and
-/// `.gitignore` is always created/updated without confirming.
 fn init_project(
     base: &Path,
     default: bool,
@@ -67,8 +60,6 @@ fn spec_yaml(key: &str, seed: u64) -> String {
     format!("key: {key}\nseed: {seed}\n")
 }
 
-/// Asks for the project's key, defaulting to the directory name. Errors
-/// (e.g. no TTY) fall back to the default.
 fn prompt_key(default: &str) -> String {
     Input::with_theme(&ui::theme())
         .with_prompt("Project key")
@@ -77,8 +68,6 @@ fn prompt_key(default: &str) -> String {
         .unwrap_or_else(|_| default.to_string())
 }
 
-/// Asks for the project's seed, defaulting to 1. Errors (e.g. no TTY) fall
-/// back to the default.
 fn prompt_seed() -> u64 {
     Input::with_theme(&ui::theme())
         .with_prompt("Default seed")
@@ -95,8 +84,6 @@ fn project_name(base: &Path) -> Result<String, Box<dyn Error>> {
         .ok_or_else(|| "could not determine project directory name".into())
 }
 
-/// Asks whether to create a `.gitignore`, defaulting to yes. Errors (e.g.
-/// no TTY) fall back to the default, matching `prompt_key`/`prompt_seed`.
 fn confirm_create_gitignore() -> bool {
     Confirm::with_theme(&ui::theme())
         .with_prompt("No .gitignore found. Create one?")

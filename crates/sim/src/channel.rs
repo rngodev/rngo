@@ -21,10 +21,6 @@ impl Channel {
 
 pub trait ChannelTarget: std::fmt::Debug {
     fn send(&mut self, input: &Input, data: Option<String>) -> Result<Vec<Output>, Box<dyn Error>>;
-
-    /// Shuts down the target (e.g. closing a `stream` subprocess's stdin and waiting for it to
-    /// exit). Called explicitly by `Proxy::finish` for every channel; targets with nothing to
-    /// shut down can rely on the default no-op.
     fn finish(&mut self) {}
 }
 

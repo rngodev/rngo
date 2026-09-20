@@ -16,10 +16,6 @@ impl SqlFormat {
         SqlFormatParser {}
     }
 
-    /// A `Format` needs no separate build step (unlike a `Schema` or `ChannelTarget`, it holds no
-    /// build-time resource beyond its own fields), so this returns a ready-to-use `SqlFormat`
-    /// directly rather than a distinct builder type - chain [`SqlFormat::effect_table`] to
-    /// override the default of using an effect's own key as its table name.
     pub fn builder() -> SqlFormat {
         SqlFormat {
             effect_tables: HashMap::new(),

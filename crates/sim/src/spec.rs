@@ -85,9 +85,6 @@ pub struct SchemaType {
     pub schema: Schema,
 }
 
-/// A `stream` channel with no effects writing to it (no `format`, no `channel: <key>` reference
-/// from any effect) is a non-interactive output source: its subprocess runs for the duration of
-/// the simulation and its stdout/stderr lines become outputs with no associated effect.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Channel {
     pub format: Option<Format>,

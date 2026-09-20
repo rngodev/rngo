@@ -11,10 +11,8 @@ use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
 
-/// Number of pushed events to accumulate in a single transaction before committing.
 const BATCH_SIZE: usize = 500;
 
-/// The sole store of a run's inputs, outputs, and metadata, on disk at `<run_dir>/log.sqlite`.
 #[derive(Debug)]
 pub struct SqliteRunLog {
     connection: RefCell<Connection>,
@@ -22,9 +20,6 @@ pub struct SqliteRunLog {
 }
 
 impl SqliteRunLog {
-    /// Returns an `Rc` since every real consumer needs a shared handle to hand to both a
-    /// [`crate::Simulation`] and (for the same run) an [`crate::Audit`] - constructing a bare
-    /// value only to immediately wrap it is the common case, not the exception.
     pub fn new(directory: PathBuf) -> Rc<Self> {
         let connection = Connection::open(directory.join("log.sqlite")).unwrap();
 
@@ -77,8 +72,6 @@ impl SqliteRunLog {
         })
     }
 
-    /// Force-commits any pending batch, so subsequent reads on a fresh connection (e.g. a test
-    /// opening the file directly) see rows that haven't hit the `BATCH_SIZE` threshold.
     pub fn commit(&self) {
         commit(&self.connection, &self.pending);
     }
@@ -129,8 +122,6 @@ fn insert_metadata_row(
         .unwrap();
 }
 
-/// Inserts the single row a standalone [`Metadata`] describes (e.g. a skipped occurrence's entry,
-/// logged with no `input_id`).
 fn insert_metadata(connection: &Connection, metadata: &Metadata) {
     insert_metadata_row(
         connection,
@@ -192,10 +183,6 @@ impl RunLogWriter for SqliteRunLog {
     }
 }
 
-/// The `inputs` table has no `timestamp` column, so rows reconstructed into an [`Input`] carry a
-/// placeholder epoch timestamp. This is safe because [`RunLogReader::last`] only reads `.id`
-/// (`effect.rs`) and `Reference` only reads `.data`/`.metadata` (`schema/reference.rs`) - nothing
-/// downstream reads a reconstructed `Input`'s timestamp.
 fn placeholder_timestamp() -> DateTime<chrono::FixedOffset> {
     DateTime::<Utc>::UNIX_EPOCH.fixed_offset()
 }
@@ -212,8 +199,6 @@ fn sql_value_to_json(value: SqlValue) -> Option<serde_json::Value> {
     })
 }
 
-/// Backs [`RunLogReader::last`] - the most recently inserted input, visible to any pending,
-/// uncommitted rows since it's the shared connection.
 fn query_last(connection: &Connection) -> Option<Rc<Input>> {
     let row = connection
         .prepare_cached(
@@ -243,8 +228,6 @@ fn query_last(connection: &Connection) -> Option<Rc<Input>> {
     }))
 }
 
-/// Backs [`RunLogReader::last_for_effect`] - the most recently inserted input for a single
-/// effect, visible to any pending, uncommitted rows since it's the shared connection.
 fn query_last_for_effect(connection: &Connection, key: &str) -> Option<Rc<Input>> {
     let row = connection
         .prepare_cached(
@@ -273,7 +256,6 @@ fn query_last_for_effect(connection: &Connection, key: &str) -> Option<Rc<Input>
     }))
 }
 
-/// Backs [`RunLogReader::random_for_effect`].
 fn query_random_for_effect(
     connection: &Connection,
     key: &str,
@@ -317,9 +299,6 @@ fn query_random_for_effect(
     }))
 }
 
-/// Backs [`RunLogReader::unique_for_effect`] - `cursor` scopes this call's "already returned"
-/// bookkeeping and is the caller's responsibility to keep stable across its own repeated calls
-/// but distinct from any other caller's.
 fn query_unique_for_effect(
     connection: &Connection,
     key: &str,
@@ -391,24 +370,20 @@ impl RunLogReader for SqliteRunLog {
         query_last_for_effect(&self.connection.borrow(), key)
     }
 
-    /// Queries the shared connection, so pending, uncommitted events from this run are visible
-    /// without needing a prior commit (see the struct docs). Only the raw query result is
-    /// returned here - compiling/evaluating a signal's `expect` expression against it is
-    /// backend-agnostic and lives in `signal/sql.rs`.
-    fn query(&self, query: &str) -> Option<serde_json::Value> {
-        self.connection
-            .borrow()
-            .query_row(query, [], |row| row.get::<_, rusqlite::types::Value>(0))
-            .ok()
-            .and_then(sql_value_to_json)
-    }
-
     fn random_for_effect(&self, key: &str, rng: &mut Pcg32) -> Option<Rc<Input>> {
         query_random_for_effect(&self.connection.borrow(), key, rng)
     }
 
     fn unique_for_effect(&self, key: &str, cursor: &str, rng: &mut Pcg32) -> Option<Rc<Input>> {
         query_unique_for_effect(&self.connection.borrow(), key, cursor, rng)
+    }
+
+    fn query(&self, query: &str) -> Option<serde_json::Value> {
+        self.connection
+            .borrow()
+            .query_row(query, [], |row| row.get::<_, rusqlite::types::Value>(0))
+            .ok()
+            .and_then(sql_value_to_json)
     }
 }
 

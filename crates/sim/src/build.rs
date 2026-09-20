@@ -52,16 +52,10 @@ pub fn string() -> StrBuilder {
     Str::builder()
 }
 
-/// Builds a `SqlSignal`, for use with [`crate::audit::AuditBuilder::with_signal`]. Named
-/// `sql_signal` (rather than `sql`) to stay distinct from [`sql_format`], which builds the
-/// unrelated `SqlFormat` used with [`crate::channel::ChannelBuilder::format`].
 pub fn sql_signal() -> SqlSignalBuilder {
     SqlSignal::builder()
 }
 
-/// Builds a `SqlFormat`, for use with [`crate::channel::ChannelBuilder::format`]. Named
-/// `sql_format` (rather than `sql`) to stay distinct from [`sql_signal`], which builds the
-/// unrelated `SqlSignal` used with [`crate::audit::AuditBuilder::with_signal`].
 pub fn sql_format() -> SqlFormat {
     SqlFormat::builder()
 }
