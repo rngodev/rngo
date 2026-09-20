@@ -2,7 +2,9 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## After editing code
+## Coding
+
+Avoid inline comments. If additional context is needed for a section of code, add it in CLAUDE.md.
 
 Always run `just fmt` and `just clippy` after making code changes. If clippy reports warnings or errors, fix them directly in the code.
 
