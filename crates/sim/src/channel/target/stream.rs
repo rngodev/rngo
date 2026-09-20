@@ -9,19 +9,8 @@ use std::thread;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-/// How long to give the subprocess to exit on its own (e.g. after its stdin is closed) before
-/// it's forcibly killed. Some channels (e.g. a `tail -F` used as an output source) never exit on
-/// their own, so this bounds shutdown; a subprocess that finishes right as the simulation does
-/// can otherwise be killed before the OS has even scheduled it to run, losing its entire output.
 const SHUTDOWN_GRACE: Duration = Duration::from_millis(200);
 const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(5);
-
-/// How long to wait for a reader thread to notice its subprocess's stdout/stderr pipe has closed
-/// and exit, after the subprocess itself has already been killed and reaped above. Normally
-/// near-instant, since killing the child closes its pipes - but if the command forked a
-/// grandchild that inherited a pipe and outlived the kill, the reader thread's blocking read
-/// never returns. Rather than hang the whole run on that, the thread is abandoned once this
-/// deadline passes instead of joined.
 const READER_JOIN_GRACE: Duration = Duration::from_millis(200);
 
 #[derive(Debug)]
@@ -55,17 +44,9 @@ impl ChannelTarget for Stream {
         let data = data.unwrap_or_else(|| serde_json::to_string(&input.data).unwrap());
         writeln!(stdin, "{data}").map_err(|e| format!("channel '{}': {e}", self.channel_key))?;
 
-        // The subprocess's reaction, if any, arrives later on its own schedule via the reader
-        // threads below, not synchronously here.
         Ok(vec![])
     }
 
-    /// Closes stdin, which triggers exit for subprocesses that react to EOF (e.g. `cat`), then
-    /// gives the child a grace period before killing it - covering output-source subprocesses
-    /// (e.g. `tail -F`) that never exit on their own. Reader threads are joined last so trailing
-    /// output has already become an `Output` before this returns - bounded by `READER_JOIN_GRACE`
-    /// so a reader thread stuck on a pipe the kill above didn't actually close can't hang the run.
-    /// Idempotent, since it also runs from `Drop` as a safety net if `finish` wasn't called.
     fn finish(&mut self) {
         self.stdin.take();
 
@@ -88,15 +69,11 @@ impl ChannelTarget for Stream {
             if handle.is_finished() {
                 let _ = handle.join();
             }
-            // Still running past the deadline: abandon it rather than block forever - it's
-            // leaked, but that's a far better failure mode for a CLI than hanging indefinitely.
         }
     }
 }
 
 impl Drop for Stream {
-    /// Safety net in case `ChannelTarget::finish` wasn't called explicitly before this was
-    /// dropped.
     fn drop(&mut self) {
         self.finish();
     }

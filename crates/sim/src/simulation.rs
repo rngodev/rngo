@@ -81,17 +81,10 @@ impl SimulationBuilder {
         self
     }
 
-    /// Convenience for the common case where a single backend serves as both reader and writer -
-    /// equivalent to calling [`SimulationBuilder::run_log_reader`] and
-    /// [`SimulationBuilder::run_log_writer`] with clones of the same handle. Reach for those
-    /// directly if the reader and writer need to be different objects (e.g. a writer wrapped to
-    /// add its own behavior).
     pub fn run_log<T: RunLogReader + RunLogWriter + 'static>(self, run_log: Rc<T>) -> Self {
         self.run_log_reader(run_log.clone()).run_log_writer(run_log)
     }
 
-    /// Caps the total number of events (effects and errors combined) the built [`Simulation`]
-    /// will emit before its iterator ends.
     pub fn limit(mut self, limit: u64) -> Self {
         self.limit = Some(limit);
         self
@@ -202,9 +195,6 @@ mod tests {
         Metadata, Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult,
     };
 
-    /// A schema that deterministically alternates between succeeding and failing on
-    /// every other call, so a test can know exactly how many `Ok`s and `Err`s a fixed
-    /// number of calls produces without depending on any effect's trigger timing.
     #[derive(Debug, Default)]
     struct AlternatingSchema {
         calls: u32,
@@ -250,10 +240,6 @@ mod tests {
 
         let inputs: Vec<_> = simulation_builder.limit(5).build().unwrap().collect();
 
-        // The limit caps total attempts, not just real inputs - a skipped occurrence no longer
-        // appears in the iterator at all (it's written to the run log's metadata instead, see
-        // `Simulation::next`), so alternating Ok, Err, Ok, Err, Ok across a 5-attempt budget
-        // yields exactly the 3 real inputs, not 5.
         assert_eq!(
             inputs.len(),
             3,

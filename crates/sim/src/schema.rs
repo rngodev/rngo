@@ -106,10 +106,6 @@ impl SchemaBuildVisitor {
         Seeder::from(&hash).into_rng()
     }
 
-    /// A string that uniquely identifies this schema node's position in its effect's schema
-    /// tree, stable across runs of the same spec unlike [`SchemaBuildVisitor::rng`] since it
-    /// doesn't fold in `simulation_seed`. Suitable as a persistent scoping key (e.g. `Reference`'s
-    /// `cursor: unique` dedup bookkeeping) rather than something that must be reproducibly random.
     pub fn path_id(&self) -> String {
         let path_str: String = self
             .path

@@ -5,9 +5,6 @@ use crate::{RunLogReader, RunLogWriter};
 use indexmap::IndexMap;
 use std::rc::Rc;
 
-/// A named list of [`Signal`]s bound to the run log they audit, built by
-/// [`crate::parse::Dialect::parse_audit`] from a spec's `signals`, or in Rust via
-/// [`Audit::builder`].
 #[derive(Debug)]
 pub struct Audit {
     signals: IndexMap<String, Box<dyn Signal>>,
@@ -32,10 +29,6 @@ impl Audit {
         AuditBuilder::new()
     }
 
-    /// Evaluates every signal against the run log this `Audit` was built with, then logs each
-    /// outcome back into it as its own `metadata` row (`data.key` carries the signal's key, since
-    /// a signal has no associated input and the table has no `effect` column) - the same log the
-    /// run itself wrote its inputs/outputs/metadata to.
     pub fn run(&self) -> AuditReport {
         let outcomes: IndexMap<String, SignalOutcome> = self
             .signals

@@ -13,12 +13,8 @@ const RELEASES_URL: &str = "https://api.github.com/repos/rngodev/agent/releases/
 const USER_AGENT: &str = "rngo-cli";
 const VERSION_FILE: &str = ".version";
 
-/// A skill directory found inside the extracted release archive, keyed by
-/// its directory name (e.g. `rngo-system-inference`).
 type Skill = (String, PathBuf);
 
-/// Offers to install rngo agent skills, printing a warning instead of
-/// failing `rngo init` if anything (network, prompts) goes wrong.
 pub fn offer_install(base: &Path) {
     if let Err(e) = try_offer_install(base) {
         eprintln!("warning: could not check rngo agent skills: {e}");
@@ -39,10 +35,6 @@ fn try_offer_install(base: &Path) -> Result<(), Box<dyn Error>> {
     do_install(&dir)
 }
 
-/// Downloads the latest rngo agent skills and installs them into `path`,
-/// replacing any previously installed `rngo-` skills there. Prompts for a
-/// location (from a set of common presets, or a custom one) when `path`
-/// isn't given.
 pub fn install(base: &Path, path: Option<PathBuf>) -> Result<(), Box<dyn Error>> {
     let dir = match path {
         Some(path) => path,
@@ -63,8 +55,6 @@ fn do_install(dir: &Path) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// Asks where to install skills: a set of common local/global presets, or a
-/// custom path.
 fn prompt_location(base: &Path) -> Result<PathBuf, Box<dyn Error>> {
     let home = home_dir()?;
     let presets: [(&str, PathBuf); 4] = [
@@ -97,7 +87,6 @@ fn prompt_location(base: &Path) -> Result<PathBuf, Box<dyn Error>> {
     }
 }
 
-/// Expands a leading `~` in a user-entered path to the home directory.
 fn expand_tilde(path: &str) -> PathBuf {
     if let Some(rest) = path.strip_prefix("~/") {
         if let Ok(home) = home_dir() {
@@ -111,8 +100,6 @@ fn expand_tilde(path: &str) -> PathBuf {
     PathBuf::from(path)
 }
 
-/// Renders `path` with the user's home directory abbreviated to `~`, for
-/// display in prompts (e.g. `~/.claude` instead of `/Users/name/.claude`).
 fn display_path(path: &Path) -> String {
     if let Ok(home) = home_dir()
         && let Ok(rest) = path.strip_prefix(&home)
@@ -122,10 +109,6 @@ fn display_path(path: &Path) -> String {
     path.display().to_string()
 }
 
-/// Removes any `rngo-`-prefixed skill directory that isn't in the latest
-/// release, so a fresh install can't leave behind skills that were renamed
-/// or removed upstream. Skills still present in `skills` are left in place
-/// here; `install_skills` handles updating those in place.
 fn remove_stale_skills(skills_dir: &Path, skills: &[Skill]) -> Result<(), Box<dyn Error>> {
     if !skills_dir.exists() {
         return Ok(());
@@ -144,8 +127,6 @@ fn remove_stale_skills(skills_dir: &Path, skills: &[Skill]) -> Result<(), Box<dy
     Ok(())
 }
 
-/// Installs each skill, printing its previous and new version. Skills whose
-/// installed version already matches the latest release are left untouched.
 fn install_skills(skills_dir: &Path, skills: &[Skill]) -> Result<(), Box<dyn Error>> {
     for (name, src) in skills {
         let dest = skills_dir.join(name);

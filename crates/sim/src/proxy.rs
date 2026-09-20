@@ -40,9 +40,6 @@ impl Proxy {
         Ok(())
     }
 
-    /// Shuts down every channel's target (e.g. closing a `stream` subprocess's stdin and
-    /// waiting for it to exit). This can itself produce trailing outputs, so `Proxy` remains
-    /// iterable afterward - drain it before dropping to pick those up.
     pub fn finish(&mut self) {
         for channel in self.channels.values_mut() {
             channel.target.finish();
@@ -77,9 +74,6 @@ impl ProxyBuilder {
         self
     }
 
-    /// Routes every channel's events to stdout instead of its configured target (e.g. a `stream`
-    /// subprocess never gets spawned). Each channel's `format`, if any, still applies, so stdout
-    /// output looks like what the channel would have actually sent.
     pub fn stdout(mut self, value: bool) -> Self {
         self.set_stdout(value);
         self

@@ -101,10 +101,6 @@ pub struct SkippedInput {
     pub metadata: Vec<SchemaMetadata>,
 }
 
-/// A skipped occurrence never produces a stored input, so it logs as its own standalone
-/// [`Metadata`] row with no `input_id` to attach to (see `run_log/sqlite.rs`) - the effect key
-/// and the full list of [`SchemaMetadata`] entries it carried both fold into `data`, since the
-/// `metadata` table has no `effect` column and this is a single row, not one per entry.
 impl From<SkippedInput> for Metadata {
     fn from(skipped: SkippedInput) -> Self {
         let SkippedInput {

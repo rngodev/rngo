@@ -18,11 +18,6 @@ pub struct Reference {
     event_run_log: Rc<dyn RunLogReader>,
     key: String,
     cursor: Cursor,
-    /// This node's [`SchemaBuildVisitor::path_id`], captured once at build time - `Some` only
-    /// under [`Cursor::Unique`], which needs a scope for
-    /// [`crate::run_log::RunLogReader::unique_for_effect`] that's stable across this `Reference`'s
-    /// own repeated draws but distinct from any other `Reference`'s; unused under
-    /// [`Cursor::Random`].
     unique_cursor: Option<String>,
     rng: Pcg32,
 }

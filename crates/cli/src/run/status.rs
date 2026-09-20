@@ -7,8 +7,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-/// Minimum real time between redraws, so a fast-running simulation doesn't spend its time
-/// repainting the terminal instead of processing events.
 const RENDER_INTERVAL: Duration = Duration::from_millis(50);
 
 #[derive(Default)]
@@ -17,9 +15,6 @@ struct ChannelStats {
     outputs: u64,
 }
 
-/// A [`RunLogWriter`] decorator that renders a live-updating status block to stderr - the
-/// current simulated time and, per channel, how many effects and outputs it has produced -
-/// leaving stdout free for `--stdout` event output. Forwards every event to `child` unchanged.
 pub struct StatusWriter {
     child: Rc<dyn RunLogWriter>,
     effect_channels: Rc<HashMap<String, String>>,
@@ -28,14 +23,10 @@ pub struct StatusWriter {
     last_timestamp: Cell<Option<DateTime<FixedOffset>>>,
     rendered_lines: Cell<usize>,
     last_render: Cell<Option<Instant>>,
-    /// Set whenever stats/timestamp change, cleared once those changes are actually drawn - so
-    /// `Drop`'s forced render can skip redrawing a block that's already up to date on screen.
     dirty: Cell<bool>,
 }
 
 impl StatusWriter {
-    /// Returns an `Rc` since the only real consumer immediately wraps this to hand to both a
-    /// [`rngo_sim::Simulation`] and a [`rngo_sim::Proxy`] as their shared writer.
     pub fn new<T: RunLogWriter + 'static>(child: Rc<T>, spec: &Spec) -> Rc<Self> {
         let effect_channels = spec
             .effects
@@ -60,8 +51,6 @@ impl StatusWriter {
             return;
         }
 
-        // Nothing has changed since the last draw, so a forced (`Drop`) redraw would just repaint
-        // an identical block - skip it rather than emit a redundant, possibly-visible duplicate.
         if force && !self.dirty.get() {
             return;
         }
@@ -143,8 +132,6 @@ impl RunLogWriter for StatusWriter {
 
 impl Drop for StatusWriter {
     fn drop(&mut self) {
-        // Guarantees the block reflects final counts even if the last update landed inside the
-        // render throttle window.
         self.render(true);
     }
 }

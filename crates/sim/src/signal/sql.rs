@@ -24,9 +24,6 @@ impl SqlSignal {
     }
 }
 
-/// Compiles an `expect` source string into a [`CelExpectation`] once, up front - shared by
-/// [`SqlSignalParser::parse`] and [`SqlSignalBuilder::build`] so a bad expression is rejected at
-/// build time rather than on every evaluation, regardless of which path constructed the signal.
 fn compile_expectation(source: &str) -> Result<CelExpectation, String> {
     let program = Program::compile(source)
         .map_err(|e| format!("expect expression failed to compile: {e}"))?;
@@ -44,10 +41,6 @@ impl Signal for SqlSignal {
     }
 }
 
-/// Runs an already-compiled `expect` program against `value` - the raw result of running the
-/// signal's query against a [`RunLogReader`], or `None` if the run log couldn't produce one. Compiling
-/// `expect` happens once, at parse time (see [`SqlSignalParser::parse`]), so a bad expression is
-/// rejected before a signal ever runs rather than on every evaluation.
 fn evaluate_expect(
     key: &str,
     expectation: Option<&CelExpectation>,
