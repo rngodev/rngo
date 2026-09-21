@@ -1,7 +1,7 @@
 mod common;
 
 use common::ParseErrorTestExt;
-use rngo_sim::{Dialect, ParseError, Simulation};
+use rngo::{Dialect, ParseError, Simulation};
 use std::fmt;
 
 fn build(json: &str) -> Result<Simulation, String> {

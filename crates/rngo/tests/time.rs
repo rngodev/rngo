@@ -1,8 +1,8 @@
 mod common;
 
 use common::BuildErrorTestExt;
-use rngo_sim::build::*;
-use rngo_sim::{BuildError, Dialect, EffectKey, Simulation};
+use rngo::build::*;
+use rngo::{BuildError, Dialect, EffectKey, Simulation};
 use serde_json::Value;
 
 fn effect_offsets(sim: Simulation, take: usize) -> Vec<u64> {
@@ -41,7 +41,7 @@ fn simulation_respects_end_time() {
 #[test]
 fn effect_respects_start_time() {
     use chrono::TimeDelta;
-    use rngo_sim::Moment;
+    use rngo::Moment;
 
     let mut builder = Simulation::builder();
     // Simulation: -30d to now. Effect starts at -15d (halfway through).
@@ -181,7 +181,7 @@ fn effect_respects_both_start_and_end() {
 #[test]
 fn effect_start_before_simulation_start_is_error() {
     use chrono::TimeDelta;
-    use rngo_sim::Moment;
+    use rngo::Moment;
 
     let mut builder = Simulation::builder();
     // Simulation: -30d to now. Effect tries to start before the simulation at -60d.
@@ -209,7 +209,7 @@ fn effect_start_before_simulation_start_is_error() {
 #[test]
 fn effect_end_after_simulation_end_is_error() {
     use chrono::TimeDelta;
-    use rngo_sim::Moment;
+    use rngo::Moment;
 
     let mut builder = Simulation::builder();
     // Simulation: -30d to now. Effect tries to end after the simulation at +1d.
