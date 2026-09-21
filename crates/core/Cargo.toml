@@ -1,0 +1,19 @@
+[package]
+name = "rngo-core"
+version = "0.36.0"
+edition = "2024"
+description = "Core primitives shared across rngo simulation crates"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/rngodev/rngo-rs"
+homepage = "https://rngo.dev"
+keywords = ["simulation", "testing", "data", "codegen"]
+categories = ["development-tools::testing", "simulation"]
+
+[dependencies]
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0.138"
+cel = { version = "0.14.0", features = ["chrono"] }
+indexmap = { version = "2.14.0", features = ["serde"] }
+chrono = "0.4.44"
+thiserror = "2.0.18"
+serde_path_to_error = "0.1.20"

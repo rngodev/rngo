@@ -1207,7 +1207,28 @@ dependencies = [
 name = "rngo"
 version = "0.36.0"
 dependencies = [
- "rngo-sim",
+ "chrono",
+ "rngo-audit",
+ "rngo-core",
+ "rngo-effect",
+ "rngo-log",
+ "rngo-proxy",
+ "rusqlite",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "rngo-audit"
+version = "0.36.0"
+dependencies = [
+ "cel",
+ "indexmap",
+ "rand_pcg",
+ "rngo-core",
+ "rngo-log",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1222,7 +1243,7 @@ dependencies = [
  "dotenvy",
  "handlebars",
  "indexmap",
- "rngo-sim",
+ "rngo",
  "rusqlite",
  "semver",
  "serde_json",
@@ -1234,25 +1255,61 @@ dependencies = [
 ]
 
 [[package]]
-name = "rngo-sim"
+name = "rngo-core"
 version = "0.36.0"
 dependencies = [
  "cel",
  "chrono",
- "handlebars",
+ "indexmap",
+ "serde",
+ "serde_json",
+ "serde_path_to_error",
+ "thiserror",
+]
+
+[[package]]
+name = "rngo-effect"
+version = "0.36.0"
+dependencies = [
+ "cel",
+ "chrono",
  "indexmap",
  "multi_try",
- "pastey",
  "rand",
  "rand_pcg",
  "rand_regex",
  "rand_seeder",
- "rusqlite",
+ "rngo-core",
+ "rngo-log",
  "serde",
  "serde_json",
- "serde_path_to_error",
  "tempfile",
- "thiserror",
+]
+
+[[package]]
+name = "rngo-log"
+version = "0.36.0"
+dependencies = [
+ "chrono",
+ "rand",
+ "rand_pcg",
+ "rand_seeder",
+ "rngo-core",
+ "rusqlite",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "rngo-proxy"
+version = "0.36.0"
+dependencies = [
+ "chrono",
+ "handlebars",
+ "rngo-core",
+ "rngo-log",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

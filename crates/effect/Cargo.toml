@@ -1,8 +1,8 @@
 [package]
-name = "rngo"
+name = "rngo-effect"
 version = "0.36.0"
 edition = "2024"
-description = "Rust library for rngo simulations"
+description = "Simulation, effect, and schema engine for rngo"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/rngodev/rngo-rs"
 homepage = "https://rngo.dev"
@@ -12,12 +12,16 @@ categories = ["development-tools::testing", "simulation"]
 [dependencies]
 rngo-core = { version = "0.36.0", path = "../core" }
 rngo-log = { version = "0.36.0", path = "../log" }
-rngo-effect = { version = "0.36.0", path = "../effect" }
-rngo-proxy = { version = "0.36.0", path = "../proxy" }
-rngo-audit = { version = "0.36.0", path = "../audit" }
+rand = { version = "0.10.1", features = ["serde"] }
+rand_pcg = { version = "0.10.2", features = ["serde"] }
+rand_regex = "0.19.0"
+rand_seeder = "0.5.0"
+serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.138"
+cel = { version = "0.14.0", features = ["chrono"] }
+indexmap = { version = "2.14.0", features = ["serde"] }
+chrono = "0.4.44"
+multi_try = "0.3.0"
 
 [dev-dependencies]
-chrono = "0.4.44"
-rusqlite = { version = "0.40.1", features = ["bundled"] }
 tempfile = "3"

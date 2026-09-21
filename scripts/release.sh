@@ -15,7 +15,7 @@ fi
 
 git pull --ff-only
 
-CURRENT=$(grep '^version' crates/sim/Cargo.toml | head -n1 | sed -E 's/version *= *"([^"]+)"/\1/')
+CURRENT=$(grep '^version' crates/core/Cargo.toml | head -n1 | sed -E 's/version *= *"([^"]+)"/\1/')
 MAJOR=$(echo $CURRENT | cut -d. -f1)
 MINOR=$(echo $CURRENT | cut -d. -f2)
 PATCH=$(echo $CURRENT | cut -d. -f3)
@@ -28,16 +28,23 @@ fi
 
 echo "Releasing $CURRENT -> $VERSION"
 
-sed -i.bak -E "s/^version = \"[^\"]+\"/version = \"$VERSION\"/" crates/sim/Cargo.toml
-sed -i.bak -E "s/^version = \"[^\"]+\"/version = \"$VERSION\"/" crates/rngo/Cargo.toml
-sed -i.bak -E "s/^rngo-sim = \{ version = \"[^\"]+\"/rngo-sim = { version = \"$VERSION\"/" crates/rngo/Cargo.toml
-sed -i.bak -E "s/^rngo-sim = \{ version = \"[^\"]+\"/rngo-sim = { version = \"$VERSION\"/" crates/cli/Cargo.toml
-sed -i.bak -E "s/^version = \"[^\"]+\"/version = \"$VERSION\"/" crates/cli/Cargo.toml
+# Every crate in the workspace is versioned in lockstep, and every internal
+# `rngo-* = { version = "...", path = "..." }` dependency between them is bumped
+# alongside it.
+CRATES=(core log effect proxy audit rngo cli)
+
+for crate in "${CRATES[@]}"; do
+  sed -i.bak -E "s/^version = \"[^\"]+\"/version = \"$VERSION\"/" "crates/$crate/Cargo.toml"
+  sed -i.bak -E "s/^(rngo-[a-z]+ = \{ version = \")[^\"]+/\1$VERSION/" "crates/$crate/Cargo.toml"
+done
 find crates -name "*.bak" -delete
 
 cargo generate-lockfile
 
-git add Cargo.lock crates/sim/Cargo.toml crates/rngo/Cargo.toml crates/cli/Cargo.toml
+git add Cargo.lock
+for crate in "${CRATES[@]}"; do
+  git add "crates/$crate/Cargo.toml"
+done
 git commit -m "$VERSION"
 git tag $VERSION
 git push origin main --tags

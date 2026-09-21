@@ -15,7 +15,15 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          cargo publish -p rngo-sim --verbose
+          cargo publish -p rngo-core --verbose
+          sleep 30
+          cargo publish -p rngo-log --verbose
+          sleep 30
+          cargo publish -p rngo-effect --verbose
+          sleep 30
+          cargo publish -p rngo-proxy --verbose
+          sleep 30
+          cargo publish -p rngo-audit --verbose
           sleep 30
           cargo publish -p rngo --verbose
           sleep 30
