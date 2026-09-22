@@ -10,7 +10,7 @@ pub trait BuildErrorTestExt {
 impl BuildErrorTestExt for BuildError {
     fn message(&self) -> &str {
         match self {
-            BuildError::Simulation { message, .. } => message,
+            BuildError::MergeEffect { message, .. } => message,
             BuildError::Effect { message, .. } => message,
             BuildError::Schema { message, .. } => message,
             BuildError::Proxy { message } => message,

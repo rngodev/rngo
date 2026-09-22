@@ -120,7 +120,7 @@ impl AuditBuilder {
             }
         }
 
-        // Unlike `SimulationBuilder`, which writes the run it produces to whatever run log it's
+        // Unlike `MergeEffectBuilder`, which writes the run it produces to whatever run log it's
         // given (or a throwaway default), an `Audit` only ever reads and annotates a run log some
         // other process already populated - defaulting here would silently evaluate every signal
         // against an empty log instead of surfacing the missing wiring.

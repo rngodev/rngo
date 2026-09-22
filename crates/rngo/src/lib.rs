@@ -12,9 +12,9 @@ pub mod spec;
 mod util;
 
 pub use audit::{Audit, AuditBuilder, AuditReport};
-pub use build::{BuildError, EffectKey, SchemaEdge, SimulationKey};
+pub use build::{BuildError, EffectKey, MergeEffectKey, SchemaEdge};
 pub use channel::Channel;
-pub use effect::simulation::Simulation;
+pub use effect::merge::MergeEffect;
 pub use effect::{Effect, Input, schema};
 pub use format::Format;
 pub use output::{Level, Output};

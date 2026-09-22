@@ -73,8 +73,8 @@ pub fn exec() -> ExecBuilder {
 #[derive(Error, Debug)]
 #[error("failed to build: `{message}`")]
 pub enum BuildError {
-    Simulation {
-        key: SimulationKey,
+    MergeEffect {
+        key: MergeEffectKey,
         message: String,
     },
     Effect {
@@ -114,7 +114,7 @@ pub struct SchemaEdge {
 }
 
 #[derive(Debug)]
-pub enum SimulationKey {
+pub enum MergeEffectKey {
     Start,
     End,
 }

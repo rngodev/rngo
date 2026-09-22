@@ -24,8 +24,8 @@ pub fn run(
 
     let dialect = Dialect::primitive();
 
-    let mut simulation_builder = dialect
-        .parse_simulation(spec.clone())
+    let mut merge_effect_builder = dialect
+        .parse_merge_effect(spec.clone())
         .map_err(join_errors)?;
 
     let mut proxy_builder = dialect.parse_proxy(spec.clone()).map_err(join_errors)?;
@@ -33,7 +33,7 @@ pub fn run(
     let audit_builder = dialect.parse_audit(spec.clone()).map_err(join_errors)?;
 
     if let Some(limit) = limit {
-        simulation_builder = simulation_builder.limit(limit.get());
+        merge_effect_builder = merge_effect_builder.limit(limit.get());
     }
 
     if stdout {
@@ -41,7 +41,7 @@ pub fn run(
     }
 
     if dry_run {
-        simulation_builder.build().map_err(join_errors)?;
+        merge_effect_builder.build().map_err(join_errors)?;
         return Ok(true);
     }
 
@@ -56,13 +56,13 @@ pub fn run(
         .build()
         .map_err(join_errors)?;
 
-    let mut simulation = simulation_builder
+    let mut merge_effect = merge_effect_builder
         .run_log_reader(reader.clone())
         .run_log_writer(writer.clone())
         .build()
         .map_err(join_errors)?;
 
-    for input in &mut simulation {
+    for input in &mut merge_effect {
         proxy.send(&input)?;
     }
 

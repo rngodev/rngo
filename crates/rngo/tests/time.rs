@@ -2,10 +2,10 @@ mod common;
 
 use common::BuildErrorTestExt;
 use rngo::build::*;
-use rngo::{BuildError, Dialect, EffectKey, Simulation};
+use rngo::{BuildError, Dialect, EffectKey, MergeEffect};
 use serde_json::Value;
 
-fn effect_offsets(sim: Simulation, take: usize) -> Vec<u64> {
+fn effect_offsets(sim: MergeEffect, take: usize) -> Vec<u64> {
     sim.map(|input| input.offset).take(take).collect()
 }
 
@@ -17,7 +17,7 @@ fn effect_offsets(sim: Simulation, take: usize) -> Vec<u64> {
 /// the simulation ~60 days into the future — well past the end.
 #[test]
 fn simulation_respects_end_time() {
-    let mut builder = Simulation::builder();
+    let mut builder = MergeEffect::builder();
     builder.with_effect("events", |e| e.schema(constant().value(Value::Null)));
 
     let offsets = effect_offsets(builder.build().unwrap(), 60);
@@ -43,8 +43,8 @@ fn effect_respects_start_time() {
     use chrono::TimeDelta;
     use rngo::Moment;
 
-    let mut builder = Simulation::builder();
-    // Simulation: -30d to now. Effect starts at -15d (halfway through).
+    let mut builder = MergeEffect::builder();
+    // MergeEffect: -30d to now. Effect starts at -15d (halfway through).
     builder.with_effect("events", |e| {
         e.start(Moment::Relative(TimeDelta::days(-15)))
             .schema(constant().value(Value::Null))
@@ -69,7 +69,7 @@ fn effect_respects_start_time() {
 }
 
 /// An effect with its own end time (parsed from spec) should emit events before
-/// that end time and nothing after. Goes through Dialect::parse_simulation_json
+/// that end time and nothing after. Goes through Dialect::parse_merge_effect_json
 /// so a copy-paste bug that calls set_start instead of set_end in parse.rs would
 /// cause events to appear in the wrong half of the window and fail this test.
 #[test]
@@ -88,7 +88,7 @@ fn effect_respects_end_time_via_spec() {
     });
 
     let sim = Dialect::primitive()
-        .parse_simulation_json(spec)
+        .parse_merge_effect_json(spec)
         .unwrap()
         .build()
         .unwrap();
@@ -135,7 +135,7 @@ fn effect_respects_both_start_and_end() {
     });
 
     let sim = Dialect::primitive()
-        .parse_simulation_json(spec)
+        .parse_merge_effect_json(spec)
         .unwrap()
         .build()
         .unwrap();
@@ -183,8 +183,8 @@ fn effect_start_before_simulation_start_is_error() {
     use chrono::TimeDelta;
     use rngo::Moment;
 
-    let mut builder = Simulation::builder();
-    // Simulation: -30d to now. Effect tries to start before the simulation at -60d.
+    let mut builder = MergeEffect::builder();
+    // MergeEffect: -30d to now. Effect tries to start before the simulation at -60d.
     builder.with_effect("events", |e| {
         e.start(Moment::Relative(TimeDelta::days(-60)))
             .schema(constant().value(Value::Null))
@@ -211,8 +211,8 @@ fn effect_end_after_simulation_end_is_error() {
     use chrono::TimeDelta;
     use rngo::Moment;
 
-    let mut builder = Simulation::builder();
-    // Simulation: -30d to now. Effect tries to end after the simulation at +1d.
+    let mut builder = MergeEffect::builder();
+    // MergeEffect: -30d to now. Effect tries to end after the simulation at +1d.
     builder.with_effect("events", |e| {
         e.end(Moment::Relative(TimeDelta::days(1)))
             .schema(constant().value(Value::Null))
@@ -252,7 +252,7 @@ fn effect_bounds_outside_simulation_via_spec_are_errors() {
     });
 
     let errors = Dialect::primitive()
-        .parse_simulation_json(spec)
+        .parse_merge_effect_json(spec)
         .unwrap()
         .build()
         .unwrap_err();

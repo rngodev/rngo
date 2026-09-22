@@ -3,8 +3,8 @@ use super::schema::{SchemaParseVisitor, SchemaParser};
 use super::signal::SignalParser;
 use crate::audit::{Audit, AuditBuilder};
 use crate::channel::{Channel, ChannelTargetBuilder, target};
+use crate::effect::merge::{MergeEffect, MergeEffectBuilder};
 use crate::effect::schema::custom::CustomParser;
-use crate::effect::simulation::{Simulation, SimulationBuilder};
 use crate::effect::{Effect, schema};
 use crate::format::Format;
 use crate::parse::ChannelTargetParser;
@@ -60,36 +60,36 @@ impl Dialect {
         )
     }
 
-    pub fn parse_simulation_json(
+    pub fn parse_merge_effect_json(
         &self,
         value: serde_json::Value,
-    ) -> Result<SimulationBuilder, Vec<ParseError>> {
+    ) -> Result<MergeEffectBuilder, Vec<ParseError>> {
         let spec: Spec = spec::from_value(value)?;
-        self.parse_simulation(spec)
+        self.parse_merge_effect(spec)
     }
 
-    pub fn parse_simulation(&self, spec: Spec) -> Result<SimulationBuilder, Vec<ParseError>> {
+    pub fn parse_merge_effect(&self, spec: Spec) -> Result<MergeEffectBuilder, Vec<ParseError>> {
         let mut errors = vec![];
-        let mut simulation_builder = Simulation::builder();
-        let simulation_moment_parser = Moment::parser();
+        let mut merge_effect_builder = MergeEffect::builder();
+        let merge_effect_moment_parser = Moment::parser();
 
         if let Some(seed) = spec.seed {
-            simulation_builder.set_seed(seed);
+            merge_effect_builder.set_seed(seed);
         }
 
         if let Some(start) = &spec.start {
-            match simulation_moment_parser.parse("start", start) {
+            match merge_effect_moment_parser.parse("start", start) {
                 Ok(timestamp) => {
-                    simulation_builder.set_start(timestamp);
+                    merge_effect_builder.set_start(timestamp);
                 }
                 Err(mut e) => errors.append(&mut e),
             };
         };
 
         if let Some(end) = &spec.end {
-            match simulation_moment_parser.parse("end", end) {
+            match merge_effect_moment_parser.parse("end", end) {
                 Ok(timestamp) => {
-                    simulation_builder.set_end(timestamp);
+                    merge_effect_builder.set_end(timestamp);
                 }
                 Err(mut e) => errors.append(&mut e),
             };
@@ -116,7 +116,7 @@ impl Dialect {
         for (key, effect) in &spec.effects {
             let mut effect_builder = Effect::builder(key.clone());
             let effect_moment_parser =
-                Moment::parser().simulation(&simulation_builder.start, &simulation_builder.end);
+                Moment::parser().simulation(&merge_effect_builder.start, &merge_effect_builder.end);
 
             if let Some(start) = &effect.start {
                 match effect_moment_parser.parse("start", start) {
@@ -161,7 +161,7 @@ impl Dialect {
             match visitor.parse() {
                 Ok(schema_builder) => {
                     effect_builder.set_schema(schema_builder);
-                    simulation_builder.set_effect(effect_builder);
+                    merge_effect_builder.set_effect(effect_builder);
                 }
                 Err(mut e) => errors.append(&mut e),
             }
@@ -170,7 +170,7 @@ impl Dialect {
         if !errors.is_empty() {
             Err(errors)
         } else {
-            Ok(simulation_builder)
+            Ok(merge_effect_builder)
         }
     }
 
@@ -328,16 +328,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn spec_seed_is_applied_to_the_simulation_builder() {
+    fn spec_seed_is_applied_to_the_merge_effect_builder() {
         let value = serde_json::json!({ "seed": 42, "effects": {} });
-        let builder = Dialect::primitive().parse_simulation_json(value).unwrap();
+        let builder = Dialect::primitive().parse_merge_effect_json(value).unwrap();
         assert_eq!(builder.seed, 42);
     }
 
     #[test]
     fn missing_spec_seed_defaults_to_one() {
         let value = serde_json::json!({ "effects": {} });
-        let builder = Dialect::primitive().parse_simulation_json(value).unwrap();
+        let builder = Dialect::primitive().parse_merge_effect_json(value).unwrap();
         assert_eq!(builder.seed, 1);
     }
 }

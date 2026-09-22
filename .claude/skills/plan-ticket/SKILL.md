@@ -15,7 +15,7 @@ The ticket's current `description` is the spec written by `spec-ticket` — a li
 
 ## 2. Ground the plan in the actual codebase
 
-Don't write a generic plan from the requirements alone — go look at the code. Find the files, modules, and existing patterns the change will touch (for this repo, start from the architecture notes in CLAUDE.md: `Spec` / `Dialect::parse_simulation` / `Simulation` / `Effect` / `Event` / `EventLog` in `crates/rngo`, the CLI run loop and channel dispatch in `crates/cli`). A plan that could apply to any codebase isn't grounded enough yet.
+Don't write a generic plan from the requirements alone — go look at the code. Find the files, modules, and existing patterns the change will touch (for this repo, start from the architecture notes in CLAUDE.md: `Spec` / `Dialect::parse_merge_effect` / `MergeEffect` / `Effect` / `Event` / `EventLog` in `crates/rngo`, the CLI run loop and channel dispatch in `crates/cli`). A plan that could apply to any codebase isn't grounded enough yet.
 
 While you're in there, note any tech debt that's directly in the way of this change (not tech debt in general) — if fixing it now is cheaper than working around it, say so in the plan; if it's a bigger, separable concern, name it but don't fold it in.
 

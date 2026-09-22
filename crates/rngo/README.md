@@ -4,7 +4,7 @@ The `rngo` library lets you assemble **cells** and define **audits** in Rust.
 
 A **cell** is responsible for sending inputs to and capturing outputs from the system under test (SUT). Its components include:
 - a `RunLog` that records inputs, outputs and metadata (and may be shared by other cells)
-- one or more `Simulation`s that generate and log inputs
+- one or more `MergeEffect`s that generate and log inputs
 - a single `Proxy` that routes the inputs and logs the outputs
 
 An **audit** surfaces patterns in the `RunLog` and usually sets expectations of those patterns.
@@ -17,10 +17,10 @@ You can define a cell using a builder DSL. First we'll define a `SqliteRunLog`:
 let run_log = rngo::SqliteRunLog::new(".")
 ```
 
-Next a `Simulation`:
+Next a `MergeEffect`:
 
 ```rust
-let mut simulation = rngo::Simulation.builder()
+let mut merge_effect = rngo::MergeEffect.builder()
     .seed(41)
     .start(TimeDelta.months(-3))
     .end(TimeDelta.zero())
@@ -97,10 +97,10 @@ let proxy = rngo::Proxy::builder()
     .build()?
 ```
 
-Now we can run the `Simulation` against the `Proxy` (and exit the sub-shells): 
+Now we can run the `MergeEffect` against the `Proxy` (and exit the sub-shells): 
 
 ```rust
-for input in &mut simulation {
+for input in &mut merge_effect {
     proxy.send(&input)?;
 }
 
@@ -233,8 +233,8 @@ let spec = rngo::spec::from_value(value)?;
 let dialect = rngo::Dialect::primitive();
 let run_log = rngo::SqliteRunLog::new(".")
 
-let mut simulation = dialect
-    .parse_simulation(spec.clone())?
+let mut merge_effect = dialect
+    .parse_merge_effect(spec.clone())?
     .run_log(run_log.clone())
     .build()?;
 
@@ -248,7 +248,7 @@ let audit = dialect
     .run_log(run_log)
     .build()?;
 
-for input in &mut simulation {
+for input in &mut merge_effect {
     proxy.send(&input)?;
 }
 

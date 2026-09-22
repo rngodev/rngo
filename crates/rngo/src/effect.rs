@@ -1,6 +1,6 @@
 mod clock;
+pub mod merge;
 pub mod schema;
-pub mod simulation;
 mod trigger;
 
 use crate::build::{BuildError, EffectKey};

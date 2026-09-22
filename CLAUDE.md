@@ -36,11 +36,11 @@ The workspace has two crates:
 1. **Spec** (`spec.rs`): A YAML/JSON document loaded from `.rngo/spec.yml` merged with per-file `effects/*.yml`, `channels/*.yml`, `schemas/*.yml`, and `signals/*.yml` (each merge step lives in `cli/src/run.rs::load_spec`, keyed by file stem). Defines `seed`, `start`, `end`, named `effects`, named `channels`, named custom `schemas`, and named `signals`.
 
 2. **Dialect** (`rngo/src/parse/dialect.rs`): Converts a `spec::Spec` into builders by dispatching each effect's schema to a matching `SchemaParser`, each channel's format to a `FormatParser`, each channel's target to a `ChannelTargetParser`, and each signal to a `SignalParser`. `Dialect::primitive()` registers all built-in parsers. Three entry points, one per builder:
-   - `parse_simulation` → `SimulationBuilder`
+   - `parse_merge_effect` → `MergeEffectBuilder`
    - `parse_proxy` → `ProxyBuilder` (channel dispatch)
    - `parse_audit` → `AuditBuilder` (signal evaluation)
 
-3. **Simulation** (`simulation.rs`): An `Iterator<Item = Input>`. Each call to `next()` sorts all `Effect`s by their next timestamp offset, advances the earliest one, and pushes the resulting `Input` (or `SkippedInput` metadata) to a `RunLogWriter`.
+3. **MergeEffect** (`effect/merge.rs`): An `Iterator<Item = Input>`. Each call to `next()` sorts all `Effect`s by their next timestamp offset, advances the earliest one, and pushes the resulting `Input` (or `SkippedInput` metadata) to a `RunLogWriter`.
 
 4. **Effect** (`effect.rs`): Also an iterator, yielding `Result<Input, SkippedInput>`. Driven by a `Trigger` (either a `Clock` for time-based firing or another `Effect` for dependency-based firing) and a `Schema` for generating values. `Input` (`{ id, effect, offset, timestamp, data, metadata }`) is the event an effect produces each time it fires.
 
@@ -51,10 +51,10 @@ The workspace has two crates:
 ### CLI run loop (`cli/src/run.rs`)
 
 - `load_spec` merges `.rngo/spec.yml` with `.rngo/effects/*.yml`, `channels/*.yml`, `schemas/*.yml`, `signals/*.yml`, or `load_spec_file` loads a single file when `--spec` is passed.
-- `Dialect::primitive()` parses the spec three ways (simulation, proxy, audit builders).
-- `--dry-run`: only builds the `Simulation` (to validate the spec) and returns, without creating a run directory or touching channels.
-- Otherwise: creates a run directory at `.rngo/runs/<UUIDv7>/`, symlinks `.rngo/runs/last` to it, writes a `spec.json` snapshot, and opens a `SqliteRunLog` (backed by `log.sqlite`) as both the simulation's `RunLogReader`/`RunLogWriter` and the proxy's writer — wrapped in `StatusWriter` (`cli/src/run/status.rs`), which renders a live effect/output counter to stderr as it forwards writes through.
-- Drives the `Simulation` iterator, sending each `Input` through the `Proxy`, then calls `proxy.finish()`, then builds and runs the `Audit` against the same `SqliteRunLog` and prints per-signal outcomes.
+- `Dialect::primitive()` parses the spec three ways (merge effect, proxy, audit builders).
+- `--dry-run`: only builds the `MergeEffect` (to validate the spec) and returns, without creating a run directory or touching channels.
+- Otherwise: creates a run directory at `.rngo/runs/<UUIDv7>/`, symlinks `.rngo/runs/last` to it, writes a `spec.json` snapshot, and opens a `SqliteRunLog` (backed by `log.sqlite`) as both the merge effect's `RunLogReader`/`RunLogWriter` and the proxy's writer — wrapped in `StatusWriter` (`cli/src/run/status.rs`), which renders a live effect/output counter to stderr as it forwards writes through.
+- Drives the `MergeEffect` iterator, sending each `Input` through the `Proxy`, then calls `proxy.finish()`, then builds and runs the `Audit` against the same `SqliteRunLog` and prints per-signal outcomes.
 - `--stdout`: builds the `Proxy` with `stdout(true)`, which swaps every channel's target for a `Stdout` target (prints each input's formatted data to stdout) instead of running the real channel targets.
 - `--limit N` caps the total number of effect attempts (successful + skipped) the simulation will produce.
 
@@ -67,7 +67,7 @@ The workspace has two crates:
 
 An effect opts into a channel by setting `channel: <channel-key>`. The format used is resolved by merging the effect-level `format` over the channel-level `format`. A `stream` channel with no effects writing to it is still spawned for the run's duration, but only as an output source (e.g. tailing a log file) - its stdout/stderr lines still become `Output` events, just with no associated effect.
 
-### Schema types (all in `rngo/src/schema/`)
+### Schema types (all in `rngo/src/effect/schema/`)
 
 `Array`, `Constant`, `Context`, `Custom`, `Function`, `Number`, `Object`, `Reference`, `Select`, `Str` (module `string.rs`). Each implements `SchemaBuilder` (parse-time) and `Schema` (run-time). `Custom` backs the spec's `schemas:` section, letting effects reference named custom schema types by name. Builder factory functions are re-exported from `rngo/src/build.rs`.
 

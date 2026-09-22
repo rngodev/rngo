@@ -2,13 +2,13 @@ mod common;
 
 use common::{BuildErrorTestExt, ParseErrorTestExt};
 use rngo::build::*;
-use rngo::{BuildError, Dialect, EffectKey, ParseError, Simulation};
+use rngo::{BuildError, Dialect, EffectKey, MergeEffect, ParseError};
 
 #[test]
 fn builder() {
-    let mut simulation_builder = Simulation::builder();
+    let mut merge_effect_builder = MergeEffect::builder();
 
-    simulation_builder
+    merge_effect_builder
         .with_effect("number", |e| e.schema(number().minimum(100).maximum(18)))
         .with_effect("object", |e| {
             e.schema(
@@ -29,7 +29,7 @@ fn builder() {
             )
         });
 
-    let errors = simulation_builder.build().unwrap_err();
+    let errors = merge_effect_builder.build().unwrap_err();
 
     let number_error = errors
         .iter()
@@ -112,7 +112,7 @@ fn spec() {
 
     let value: serde_json::Value = serde_json::from_str(json).unwrap();
     let errors = Dialect::primitive()
-        .parse_simulation_json(value)
+        .parse_merge_effect_json(value)
         .unwrap_err();
 
     let by_effect = |key: &'static str| {

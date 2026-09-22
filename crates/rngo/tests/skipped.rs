@@ -1,5 +1,5 @@
 use rngo::build::*;
-use rngo::{SimpleEventRunLog, Simulation, SqliteRunLog};
+use rngo::{MergeEffect, SimpleEventRunLog, SqliteRunLog};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
@@ -8,21 +8,21 @@ fn reference_with_no_prior_events_is_skipped_not_logged() {
     let tmp = TempDir::new().unwrap();
     let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
 
-    let mut simulation_builder = Simulation::builder();
-    simulation_builder.with_effect("derived", |e| {
+    let mut merge_effect_builder = MergeEffect::builder();
+    merge_effect_builder.with_effect("derived", |e| {
         e.trigger_hertz(1.0)
             .schema(reference().effect("nonexistent"))
     });
 
-    let simulation = simulation_builder
+    let merge_effect = merge_effect_builder
         .run_log(run_log.clone())
         .limit(5)
         .build()
         .unwrap();
 
-    // `Simulation` now writes every real input, and every skipped occurrence's metadata, to the
-    // run log itself as it iterates (see `Simulation::next`).
-    let input_count = simulation.count();
+    // `MergeEffect` now writes every real input, and every skipped occurrence's metadata, to the
+    // run log itself as it iterates (see `MergeEffect::next`).
+    let input_count = merge_effect.count();
 
     assert_eq!(
         input_count, 0,
@@ -55,8 +55,8 @@ fn reference_with_no_prior_events_is_skipped_not_logged() {
 fn object_with_a_skipped_property_is_itself_skipped() {
     let run_log = SimpleEventRunLog::new();
 
-    let mut simulation_builder = Simulation::builder();
-    simulation_builder.with_effect("derived", |e| {
+    let mut merge_effect_builder = MergeEffect::builder();
+    merge_effect_builder.with_effect("derived", |e| {
         e.trigger_hertz(1.0).schema(
             object()
                 .property("id", constant().value(1))
@@ -66,14 +66,14 @@ fn object_with_a_skipped_property_is_itself_skipped() {
 
     // `.limit(5)` bounds total attempts, not real inputs - without it, an effect that always
     // skips would loop internally until the simulation's time window itself runs out (see
-    // `Simulation::next`), rather than stopping quickly.
-    let simulation = simulation_builder
+    // `MergeEffect::next`), rather than stopping quickly.
+    let merge_effect = merge_effect_builder
         .run_log(run_log)
         .limit(5)
         .build()
         .unwrap();
 
-    let events: Vec<_> = simulation.collect();
+    let events: Vec<_> = merge_effect.collect();
 
     assert!(
         events.is_empty(),
@@ -85,8 +85,8 @@ fn object_with_a_skipped_property_is_itself_skipped() {
 fn array_with_a_skipped_item_is_itself_skipped() {
     let run_log = SimpleEventRunLog::new();
 
-    let mut simulation_builder = Simulation::builder();
-    simulation_builder.with_effect("derived", |e| {
+    let mut merge_effect_builder = MergeEffect::builder();
+    merge_effect_builder.with_effect("derived", |e| {
         e.trigger_hertz(1.0).schema(
             array()
                 .min_items(1)
@@ -95,13 +95,13 @@ fn array_with_a_skipped_item_is_itself_skipped() {
         )
     });
 
-    let simulation = simulation_builder
+    let merge_effect = merge_effect_builder
         .run_log(run_log)
         .limit(5)
         .build()
         .unwrap();
 
-    let events: Vec<_> = simulation.collect();
+    let events: Vec<_> = merge_effect.collect();
 
     assert!(
         events.is_empty(),

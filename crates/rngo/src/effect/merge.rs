@@ -1,4 +1,4 @@
-use crate::build::{BuildError, SimulationKey};
+use crate::build::{BuildError, MergeEffectKey};
 use crate::effect::{Effect, EffectBuilder, Input};
 use crate::run_log::SimpleEventRunLog;
 use crate::util::time::Moment;
@@ -7,20 +7,20 @@ use chrono::{TimeDelta, Utc};
 use std::rc::Rc;
 
 #[derive(Debug)]
-pub struct Simulation {
+pub struct MergeEffect {
     effects: Vec<Effect>,
     writer: Rc<dyn RunLogWriter>,
     limit: Option<u64>,
     emitted: u64,
 }
 
-impl Simulation {
-    pub fn builder() -> SimulationBuilder {
-        SimulationBuilder::new()
+impl MergeEffect {
+    pub fn builder() -> MergeEffectBuilder {
+        MergeEffectBuilder::new()
     }
 }
 
-impl Iterator for Simulation {
+impl Iterator for MergeEffect {
     type Item = Input;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -48,7 +48,7 @@ impl Iterator for Simulation {
 }
 
 #[derive(Debug)]
-pub struct SimulationBuilder {
+pub struct MergeEffectBuilder {
     pub seed: u64,
     pub start: Moment,
     pub end: Moment,
@@ -58,9 +58,9 @@ pub struct SimulationBuilder {
     limit: Option<u64>,
 }
 
-impl SimulationBuilder {
+impl MergeEffectBuilder {
     fn new() -> Self {
-        SimulationBuilder {
+        MergeEffectBuilder {
             seed: 1,
             start: Moment::Relative(TimeDelta::days(-30)),
             end: Moment::Relative(TimeDelta::zero()),
@@ -135,15 +135,15 @@ impl SimulationBuilder {
         self
     }
 
-    pub fn build(self) -> Result<Simulation, Vec<BuildError>> {
+    pub fn build(self) -> Result<MergeEffect, Vec<BuildError>> {
         let mut errors = vec![];
         let now = Utc::now().fixed_offset();
         let start = self.start.resolve(now);
         let end = self.end.resolve(now);
 
         if start >= end {
-            errors.push(BuildError::Simulation {
-                key: SimulationKey::Start,
+            errors.push(BuildError::MergeEffect {
+                key: MergeEffectKey::Start,
                 message: "start must be before end".into(),
             });
         }
@@ -176,7 +176,7 @@ impl SimulationBuilder {
         }
 
         if errors.is_empty() {
-            Ok(Simulation {
+            Ok(MergeEffect {
                 effects,
                 writer: run_log_writer,
                 limit: self.limit,
@@ -232,13 +232,13 @@ mod tests {
 
     #[test]
     fn limit_counts_effects_and_errors_together() {
-        let mut simulation_builder = super::Simulation::builder();
+        let mut merge_effect_builder = super::MergeEffect::builder();
 
-        simulation_builder.with_effect("alternating", |e| {
+        merge_effect_builder.with_effect("alternating", |e| {
             e.trigger_hertz(1000.0).schema(AlternatingSchemaBuilder)
         });
 
-        let inputs: Vec<_> = simulation_builder.limit(5).build().unwrap().collect();
+        let inputs: Vec<_> = merge_effect_builder.limit(5).build().unwrap().collect();
 
         assert_eq!(
             inputs.len(),
