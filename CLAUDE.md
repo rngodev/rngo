@@ -40,9 +40,9 @@ The workspace has two crates:
    - `parse_proxy` → `ProxyBuilder` (channel dispatch)
    - `parse_audit` → `AuditBuilder` (signal evaluation)
 
-3. **MergeEffect** (`effect/merge.rs`): An `Iterator<Item = Input>`. Each call to `next()` sorts all `Effect`s by their next timestamp offset, advances the earliest one, and pushes the resulting `Input` (or `SkippedInput` metadata) to a `RunLogWriter`.
+3. **MergeEffect** (`effect/merge.rs`): An `Iterator<Item = Input>`. Each call to `next()` sorts all `SourceEffect`s by their next timestamp offset, advances the earliest one, and pushes the resulting `Input` (or `SkippedInput` metadata) to a `RunLogWriter`.
 
-4. **Effect** (`effect.rs`): Also an iterator, yielding `Result<Input, SkippedInput>`. Driven by a `Trigger` (either a `Clock` for time-based firing or another `Effect` for dependency-based firing) and a `Schema` for generating values. `Input` (`{ id, effect, offset, timestamp, data, metadata }`) is the event an effect produces each time it fires.
+4. **SourceEffect** (`effect/source.rs`): Also an iterator, yielding `Result<Input, SkippedInput>`. Driven by a `Trigger` (either a `Clock` for time-based firing or another `SourceEffect` for dependency-based firing) and a `Schema` for generating values. `Input` (`{ id, effect, offset, timestamp, data, metadata }`) is the event an effect produces each time it fires.
 
 5. **Proxy** (`rngo/src/proxy.rs`): Channel dispatch. For each `Input`, looks up its effect's assigned channel, formats it via the channel's optional `Format`, and hands it to the channel's `ChannelTarget`, pushing any resulting `Output`s to the `RunLogWriter`.
 

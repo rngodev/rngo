@@ -4,8 +4,9 @@ use super::signal::SignalParser;
 use crate::audit::{Audit, AuditBuilder};
 use crate::channel::{Channel, ChannelTargetBuilder, target};
 use crate::effect::merge::{MergeEffect, MergeEffectBuilder};
+use crate::effect::schema;
 use crate::effect::schema::custom::CustomParser;
-use crate::effect::{Effect, schema};
+use crate::effect::source::SourceEffect;
 use crate::format::Format;
 use crate::parse::ChannelTargetParser;
 use crate::proxy::{Proxy, ProxyBuilder};
@@ -114,7 +115,7 @@ impl Dialect {
         );
 
         for (key, effect) in &spec.effects {
-            let mut effect_builder = Effect::builder(key.clone());
+            let mut effect_builder = SourceEffect::builder(key.clone());
             let effect_moment_parser =
                 Moment::parser().simulation(&merge_effect_builder.start, &merge_effect_builder.end);
 

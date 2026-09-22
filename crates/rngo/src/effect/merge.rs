@@ -1,5 +1,6 @@
 use crate::build::{BuildError, MergeEffectKey};
-use crate::effect::{Effect, EffectBuilder, Input};
+use crate::effect::Input;
+use crate::effect::source::{EffectBuilder, SourceEffect};
 use crate::run_log::SimpleEventRunLog;
 use crate::util::time::Moment;
 use crate::{RunLogReader, RunLogWriter};
@@ -8,7 +9,7 @@ use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct MergeEffect {
-    effects: Vec<Effect>,
+    effects: Vec<SourceEffect>,
     writer: Rc<dyn RunLogWriter>,
     limit: Option<u64>,
     emitted: u64,
@@ -129,7 +130,7 @@ impl MergeEffectBuilder {
         key: &str,
         f: impl FnOnce(EffectBuilder) -> EffectBuilder,
     ) -> &mut Self {
-        let builder = Effect::builder(key.into());
+        let builder = SourceEffect::builder(key.into());
         let builder = f(builder);
         self.effect_builders.push(builder);
         self
