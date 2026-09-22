@@ -1,8 +1,8 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::build::BuildError;
+use crate::effect::schema::Metadata;
 use crate::parse::{SchemaParseVisitor, SchemaParser};
 use crate::run_log::RunLogReader;
-use crate::schema::Metadata;
 use crate::spec::ParseError as Error;
 use rand_pcg::Pcg32;
 use std::rc::Rc;

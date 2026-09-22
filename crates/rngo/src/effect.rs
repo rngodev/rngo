@@ -1,16 +1,18 @@
 mod clock;
+pub mod schema;
+pub mod simulation;
 mod trigger;
 
 use crate::build::{BuildError, EffectKey};
 use crate::run_log::{Metadata, RunLogReader, SimpleEventRunLog};
-use crate::schema::{
-    Metadata as SchemaMetadata, Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext,
-};
 use crate::util::ext::FlattenErr;
 use crate::util::time::Moment;
 use chrono::{DateTime, FixedOffset, TimeDelta};
 use clock::Clock;
 use multi_try::MultiTry;
+use schema::{
+    Metadata as SchemaMetadata, Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::rc::Rc;

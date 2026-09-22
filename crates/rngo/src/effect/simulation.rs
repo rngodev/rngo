@@ -191,7 +191,7 @@ impl SimulationBuilder {
 #[cfg(test)]
 mod tests {
     use crate::build::BuildError;
-    use crate::schema::{
+    use crate::effect::schema::{
         Metadata, Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult,
     };
 

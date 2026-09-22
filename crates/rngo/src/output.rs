@@ -1,4 +1,4 @@
-use crate::schema::Metadata;
+use crate::effect::schema::Metadata;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 

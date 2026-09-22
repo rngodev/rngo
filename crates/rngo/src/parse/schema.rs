@@ -1,5 +1,5 @@
-use crate::schema::SchemaBuilder;
-use crate::schema::custom::CustomParser;
+use crate::effect::schema::SchemaBuilder;
+use crate::effect::schema::custom::CustomParser;
 use crate::spec::{self, ParseError};
 use std::rc::Rc;
 
