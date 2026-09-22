@@ -1,7 +1,7 @@
 mod common;
 
 use common::ParseErrorTestExt;
-use rngo::{Dialect, MergeEffect, ParseError};
+use rngo::{Dialect, EffectBuilder, MergeEffect, ParseError};
 use std::fmt;
 
 fn build(json: &str) -> Result<MergeEffect, String> {

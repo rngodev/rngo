@@ -4,6 +4,7 @@ pub mod schema;
 pub mod source;
 mod trigger;
 
+use crate::build::BuildError;
 use crate::run_log::Metadata;
 use chrono::{DateTime, FixedOffset};
 use schema::Metadata as SchemaMetadata;
@@ -14,6 +15,12 @@ pub use trigger::TriggerEvent;
 
 pub trait Effect: Iterator<Item = Result<Input, SkippedInput>> {
     fn next_offset(&self) -> Option<u64>;
+}
+
+pub trait EffectBuilder {
+    type Effect: Effect;
+
+    fn build(self) -> Result<Self::Effect, Vec<BuildError>>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

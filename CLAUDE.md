@@ -40,7 +40,7 @@ The workspace has two crates:
    - `parse_proxy` → `ProxyBuilder` (channel dispatch)
    - `parse_audit` → `AuditBuilder` (signal evaluation)
 
-3. **Effect** (`effect.rs`): The common interface implemented by both `MergeEffect` and `SourceEffect` — `next_offset() -> Option<u64>` plus `Iterator<Item = Result<Input, SkippedInput>>`, so every call to `next()` yields exactly one attempt (a real `Input` or a `SkippedInput`), never looping internally to skip past failed attempts.
+3. **Effect / EffectBuilder** (`effect.rs`): The common interfaces implemented by both `MergeEffect`/`MergeEffectBuilder` and `SourceEffect`/`SourceEffectBuilder`. `Effect` requires `next_offset() -> Option<u64>` plus `Iterator<Item = Result<Input, SkippedInput>>`, so every call to `next()` yields exactly one attempt (a real `Input` or a `SkippedInput`), never looping internally to skip past failed attempts. `EffectBuilder` requires `fn build(self) -> Result<Self::Effect, Vec<BuildError>>` where `Self::Effect: Effect`. Both traits must be imported (`use rngo::{Effect, EffectBuilder}`) to call their methods from outside the crate.
 
 4. **MergeEffect** (`effect/merge.rs`): Each call to `next()` sorts all `SourceEffect`s by their next timestamp offset, advances the earliest one, and pushes the resulting `Input` (or `SkippedInput` metadata) to a `RunLogWriter` before returning it. Consumers that only want real inputs (e.g. the CLI run loop) filter with `.flatten()` or `.filter_map(Result::ok)`.
 

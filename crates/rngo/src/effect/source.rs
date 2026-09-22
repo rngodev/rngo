@@ -2,7 +2,7 @@ use crate::build::{BuildError, EffectKey};
 use crate::effect::clock::Clock;
 use crate::effect::schema::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext};
 use crate::effect::trigger::{Trigger, TriggerConfig};
-use crate::effect::{Effect, Input, SkippedInput};
+use crate::effect::{Effect, EffectBuilder, Input, SkippedInput};
 use crate::run_log::{RunLogReader, SimpleEventRunLog};
 use crate::util::ext::FlattenErr;
 use crate::util::time::Moment;
@@ -22,8 +22,8 @@ pub struct SourceEffect {
 }
 
 impl SourceEffect {
-    pub fn builder(key: String) -> EffectBuilder {
-        EffectBuilder::new(key)
+    pub fn builder(key: String) -> SourceEffectBuilder {
+        SourceEffectBuilder::new(key)
     }
 }
 
@@ -78,7 +78,7 @@ impl Iterator for SourceEffect {
 }
 
 #[derive(Debug)]
-pub struct EffectBuilder {
+pub struct SourceEffectBuilder {
     pub key: String,
     pub start: Option<Moment>,
     pub end: Option<Moment>,
@@ -91,9 +91,9 @@ pub struct EffectBuilder {
     schema_builder: Option<Box<dyn SchemaBuilder>>,
 }
 
-impl EffectBuilder {
+impl SourceEffectBuilder {
     fn new(key: String) -> Self {
-        EffectBuilder {
+        SourceEffectBuilder {
             key,
             start: None,
             end: None,
@@ -216,8 +216,12 @@ impl EffectBuilder {
         self.schema_builder = Some(Box::new(builder));
         self
     }
+}
 
-    pub fn build(self) -> Result<SourceEffect, Vec<BuildError>> {
+impl EffectBuilder for SourceEffectBuilder {
+    type Effect = SourceEffect;
+
+    fn build(self) -> Result<SourceEffect, Vec<BuildError>> {
         let Some(now) = self.now else {
             return Err(vec![BuildError::Effect {
                 effect: self.key,

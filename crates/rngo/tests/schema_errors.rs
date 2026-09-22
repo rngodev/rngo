@@ -2,7 +2,7 @@ mod common;
 
 use common::{BuildErrorTestExt, ParseErrorTestExt};
 use rngo::build::*;
-use rngo::{BuildError, Dialect, EffectKey, MergeEffect, ParseError};
+use rngo::{BuildError, Dialect, EffectBuilder, EffectKey, MergeEffect, ParseError};
 
 #[test]
 fn builder() {

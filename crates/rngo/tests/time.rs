@@ -2,7 +2,7 @@ mod common;
 
 use common::BuildErrorTestExt;
 use rngo::build::*;
-use rngo::{BuildError, Dialect, EffectKey, MergeEffect};
+use rngo::{BuildError, Dialect, EffectBuilder, EffectKey, MergeEffect};
 use serde_json::Value;
 
 fn effect_offsets(sim: MergeEffect, take: usize) -> Vec<u64> {

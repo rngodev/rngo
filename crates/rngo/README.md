@@ -17,9 +17,11 @@ You can define a cell using a builder DSL. First we'll define a `SqliteRunLog`:
 let run_log = rngo::SqliteRunLog::new(".")
 ```
 
-Next a `MergeEffect`:
+Next a `MergeEffect`. `MergeEffect` and `SourceEffect` are both built via a shared `rngo::EffectBuilder` trait, so it needs to be in scope to call `.build()`:
 
 ```rust
+use rngo::EffectBuilder;
+
 let mut merge_effect = rngo::MergeEffect.builder()
     .seed(41)
     .start(TimeDelta.months(-3))
@@ -228,6 +230,8 @@ You can also define the above in JSON (or YAML) spec - it would look like this:
 You can parse and run like this:
 
 ```rust
+use rngo::EffectBuilder;
+
 let value: serde_json::Value = serde_json::from_str(raw).unwrap();
 let spec = rngo::spec::from_value(value)?;
 let dialect = rngo::Dialect::primitive();

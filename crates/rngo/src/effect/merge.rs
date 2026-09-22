@@ -1,6 +1,6 @@
 use crate::build::{BuildError, MergeEffectKey};
-use crate::effect::source::{EffectBuilder, SourceEffect};
-use crate::effect::{Effect, Input, SkippedInput};
+use crate::effect::source::{SourceEffect, SourceEffectBuilder};
+use crate::effect::{Effect, EffectBuilder, Input, SkippedInput};
 use crate::run_log::SimpleEventRunLog;
 use crate::util::time::Moment;
 use crate::{RunLogReader, RunLogWriter};
@@ -57,7 +57,7 @@ pub struct MergeEffectBuilder {
     pub end: Moment,
     run_log_reader: Option<Rc<dyn RunLogReader>>,
     run_log_writer: Option<Rc<dyn RunLogWriter>>,
-    effect_builders: Vec<EffectBuilder>,
+    effect_builders: Vec<SourceEffectBuilder>,
     limit: Option<u64>,
 }
 
@@ -123,22 +123,26 @@ impl MergeEffectBuilder {
         self
     }
 
-    pub fn set_effect(&mut self, effect: EffectBuilder) {
+    pub fn set_effect(&mut self, effect: SourceEffectBuilder) {
         self.effect_builders.push(effect)
     }
 
     pub fn with_effect(
         &mut self,
         key: &str,
-        f: impl FnOnce(EffectBuilder) -> EffectBuilder,
+        f: impl FnOnce(SourceEffectBuilder) -> SourceEffectBuilder,
     ) -> &mut Self {
         let builder = SourceEffect::builder(key.into());
         let builder = f(builder);
         self.effect_builders.push(builder);
         self
     }
+}
 
-    pub fn build(self) -> Result<MergeEffect, Vec<BuildError>> {
+impl EffectBuilder for MergeEffectBuilder {
+    type Effect = MergeEffect;
+
+    fn build(self) -> Result<MergeEffect, Vec<BuildError>> {
         let mut errors = vec![];
         let now = Utc::now().fixed_offset();
         let start = self.start.resolve(now);
@@ -194,6 +198,7 @@ impl MergeEffectBuilder {
 #[cfg(test)]
 mod tests {
     use crate::build::BuildError;
+    use crate::effect::EffectBuilder;
     use crate::effect::schema::{
         Metadata, Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult,
     };

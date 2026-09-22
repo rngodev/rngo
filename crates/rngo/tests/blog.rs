@@ -1,7 +1,7 @@
 mod common;
 
 use rngo::build::*;
-use rngo::{Dialect, MergeEffect};
+use rngo::{Dialect, EffectBuilder, MergeEffect};
 use serde_json::Value;
 
 /// `MergeEffect` writes each input it produces back into its run log as it's yielded (see

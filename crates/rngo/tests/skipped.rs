@@ -1,5 +1,5 @@
 use rngo::build::*;
-use rngo::{MergeEffect, SimpleEventRunLog, SqliteRunLog};
+use rngo::{EffectBuilder, MergeEffect, SimpleEventRunLog, SqliteRunLog};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
