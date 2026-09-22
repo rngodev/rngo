@@ -100,7 +100,7 @@ let proxy = rngo::Proxy::builder()
 Now we can run the `MergeEffect` against the `Proxy` (and exit the sub-shells): 
 
 ```rust
-for input in &mut merge_effect {
+for input in (&mut merge_effect).flatten() {
     proxy.send(&input)?;
 }
 
@@ -248,7 +248,7 @@ let audit = dialect
     .run_log(run_log)
     .build()?;
 
-for input in &mut merge_effect {
+for input in (&mut merge_effect).flatten() {
     proxy.send(&input)?;
 }
 

@@ -22,7 +22,7 @@ fn reference_with_no_prior_events_is_skipped_not_logged() {
 
     // `MergeEffect` now writes every real input, and every skipped occurrence's metadata, to the
     // run log itself as it iterates (see `MergeEffect::next`).
-    let input_count = merge_effect.count();
+    let input_count = merge_effect.filter(|r| r.is_ok()).count();
 
     assert_eq!(
         input_count, 0,
@@ -65,15 +65,15 @@ fn object_with_a_skipped_property_is_itself_skipped() {
     });
 
     // `.limit(5)` bounds total attempts, not real inputs - without it, an effect that always
-    // skips would loop internally until the simulation's time window itself runs out (see
-    // `MergeEffect::next`), rather than stopping quickly.
+    // skips would keep yielding skipped attempts until the simulation's time window itself runs
+    // out, rather than stopping quickly.
     let merge_effect = merge_effect_builder
         .run_log(run_log)
         .limit(5)
         .build()
         .unwrap();
 
-    let events: Vec<_> = merge_effect.collect();
+    let events: Vec<_> = merge_effect.filter_map(Result::ok).collect();
 
     assert!(
         events.is_empty(),
@@ -101,7 +101,7 @@ fn array_with_a_skipped_item_is_itself_skipped() {
         .build()
         .unwrap();
 
-    let events: Vec<_> = merge_effect.collect();
+    let events: Vec<_> = merge_effect.filter_map(Result::ok).collect();
 
     assert!(
         events.is_empty(),

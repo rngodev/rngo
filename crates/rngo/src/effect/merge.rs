@@ -1,6 +1,6 @@
 use crate::build::{BuildError, MergeEffectKey};
-use crate::effect::Input;
 use crate::effect::source::{EffectBuilder, SourceEffect};
+use crate::effect::{Effect, Input, SkippedInput};
 use crate::run_log::SimpleEventRunLog;
 use crate::util::time::Moment;
 use crate::{RunLogReader, RunLogWriter};
@@ -21,30 +21,32 @@ impl MergeEffect {
     }
 }
 
+impl Effect for MergeEffect {
+    fn next_offset(&self) -> Option<u64> {
+        self.effects.iter().filter_map(Effect::next_offset).min()
+    }
+}
+
 impl Iterator for MergeEffect {
-    type Item = Input;
+    type Item = Result<Input, SkippedInput>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if self.limit.is_some_and(|limit| self.emitted >= limit) {
-                return None;
-            }
-
-            self.effects
-                .sort_unstable_by_key(|e| e.next_offset().unwrap_or(u64::MAX));
-
-            match self.effects.first_mut()?.next()? {
-                Ok(input) => {
-                    self.emitted += 1;
-                    self.writer.push_input(input.clone());
-                    return Some(input);
-                }
-                Err(skipped_input) => {
-                    self.emitted += 1;
-                    self.writer.push_metadata(skipped_input.into());
-                }
-            }
+        if self.limit.is_some_and(|limit| self.emitted >= limit) {
+            return None;
         }
+
+        self.effects
+            .sort_unstable_by_key(|e| e.next_offset().unwrap_or(u64::MAX));
+
+        let result = self.effects.first_mut()?.next()?;
+        self.emitted += 1;
+
+        match result.clone() {
+            Ok(input) => self.writer.push_input(input),
+            Err(skipped_input) => self.writer.push_metadata(skipped_input.into()),
+        }
+
+        Some(result)
     }
 }
 
@@ -239,12 +241,17 @@ mod tests {
             e.trigger_hertz(1000.0).schema(AlternatingSchemaBuilder)
         });
 
-        let inputs: Vec<_> = merge_effect_builder.limit(5).build().unwrap().collect();
+        let attempts: Vec<_> = merge_effect_builder.limit(5).build().unwrap().collect();
 
         assert_eq!(
-            inputs.len(),
-            3,
+            attempts.len(),
+            5,
             "limit should count both real and skipped attempts toward the cap"
+        );
+        assert_eq!(
+            attempts.iter().filter(|a| a.is_ok()).count(),
+            3,
+            "alternating schema should yield a real input every other attempt"
         );
     }
 }

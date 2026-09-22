@@ -8,9 +8,10 @@ use serde_json::Value;
 /// `MergeEffectBuilder::run_log`), so "post" - which references "user" - sees prior "user" data as
 /// soon as it's emitted instead of every attempt being skipped for lack of anything to resolve. A
 /// "post" fired before any "user" exists is skipped rather than yielded (its metadata just goes to
-/// the run log - see `MergeEffect::next`), so plain `take(60)` is enough to get 60 real inputs.
+/// the run log - see `MergeEffect::next`), so `filter_map(Result::ok).take(60)` is enough to get 60
+/// real inputs.
 fn assert_merge_effect(merge_effect: MergeEffect) {
-    let events: Vec<_> = merge_effect.take(60).collect();
+    let events: Vec<_> = merge_effect.filter_map(Result::ok).take(60).collect();
 
     let user_events: Vec<_> = events
         .iter()

@@ -2,7 +2,7 @@ use crate::build::{BuildError, EffectKey};
 use crate::effect::clock::Clock;
 use crate::effect::schema::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext};
 use crate::effect::trigger::{Trigger, TriggerConfig};
-use crate::effect::{Input, SkippedInput};
+use crate::effect::{Effect, Input, SkippedInput};
 use crate::run_log::{RunLogReader, SimpleEventRunLog};
 use crate::util::ext::FlattenErr;
 use crate::util::time::Moment;
@@ -25,8 +25,10 @@ impl SourceEffect {
     pub fn builder(key: String) -> EffectBuilder {
         EffectBuilder::new(key)
     }
+}
 
-    pub fn next_offset(&self) -> Option<u64> {
+impl Effect for SourceEffect {
+    fn next_offset(&self) -> Option<u64> {
         let offset = self.trigger.next_offset()?;
         if offset > self.end_offset {
             None

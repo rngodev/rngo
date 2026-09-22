@@ -12,6 +12,10 @@ use serde_json::Value;
 
 pub use trigger::TriggerEvent;
 
+pub trait Effect: Iterator<Item = Result<Input, SkippedInput>> {
+    fn next_offset(&self) -> Option<u64>;
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Input {
     pub id: u64,

@@ -16,7 +16,7 @@ pub use build::{BuildError, EffectKey, MergeEffectKey, SchemaEdge};
 pub use channel::Channel;
 pub use effect::merge::MergeEffect;
 pub use effect::source::SourceEffect;
-pub use effect::{Input, schema};
+pub use effect::{Effect, Input, SkippedInput, schema};
 pub use format::Format;
 pub use output::{Level, Output};
 pub use parse::Dialect;

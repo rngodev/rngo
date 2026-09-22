@@ -64,7 +64,7 @@ fn resolves_custom_schema_independently_per_effect() {
     }"#;
 
     let merge_effect = build(json).unwrap();
-    let events: Vec<_> = merge_effect.take(20).collect();
+    let events: Vec<_> = merge_effect.filter_map(Result::ok).take(20).collect();
 
     assert!(events.iter().any(|e| e.effect == "a"));
     assert!(events.iter().any(|e| e.effect == "b"));
@@ -97,7 +97,7 @@ fn custom_schema_can_reference_another_custom_schema() {
     }"#;
 
     let merge_effect = build(json).unwrap();
-    let events: Vec<_> = merge_effect.take(1).collect();
+    let events: Vec<_> = merge_effect.filter_map(Result::ok).take(1).collect();
     assert_eq!(events[0].data, serde_json::json!("x"));
 }
 

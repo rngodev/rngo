@@ -62,7 +62,7 @@ pub fn run(
         .build()
         .map_err(join_errors)?;
 
-    for input in &mut merge_effect {
+    for input in (&mut merge_effect).flatten() {
         proxy.send(&input)?;
     }
 
