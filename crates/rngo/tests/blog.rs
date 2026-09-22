@@ -1,7 +1,7 @@
 mod common;
 
-use rngo_sim::build::*;
-use rngo_sim::{Dialect, Simulation};
+use rngo::build::*;
+use rngo::{Dialect, Simulation};
 use serde_json::Value;
 
 /// `Simulation` writes each input it produces back into its run log as it's yielded (see

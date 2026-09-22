@@ -1,7 +1,7 @@
 mod status;
 
 use console::style;
-use rngo_sim::{Dialect, SignalOutcome, SqliteRunLog, spec};
+use rngo::{Dialect, SignalOutcome, SqliteRunLog, spec};
 use status::StatusWriter;
 use std::error::Error;
 use std::path::{Path, PathBuf};

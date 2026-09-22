@@ -1,7 +1,7 @@
 use chrono::{DateTime, FixedOffset};
 use console::{Term, style};
-use rngo_sim::spec::Spec;
-use rngo_sim::{Input, Metadata, Output, RunLogWriter};
+use rngo::spec::Spec;
+use rngo::{Input, Metadata, Output, RunLogWriter};
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;

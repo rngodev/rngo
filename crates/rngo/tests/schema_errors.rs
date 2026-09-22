@@ -1,8 +1,8 @@
 mod common;
 
 use common::{BuildErrorTestExt, ParseErrorTestExt};
-use rngo_sim::build::*;
-use rngo_sim::{BuildError, Dialect, EffectKey, ParseError, Simulation};
+use rngo::build::*;
+use rngo::{BuildError, Dialect, EffectKey, ParseError, Simulation};
 
 #[test]
 fn builder() {

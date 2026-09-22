@@ -1,5 +1,5 @@
-use rngo_sim::build::*;
-use rngo_sim::{SimpleEventRunLog, Simulation, SqliteRunLog};
+use rngo::build::*;
+use rngo::{SimpleEventRunLog, Simulation, SqliteRunLog};
 use rusqlite::Connection;
 use tempfile::TempDir;
 

@@ -1207,36 +1207,6 @@ dependencies = [
 name = "rngo"
 version = "0.36.0"
 dependencies = [
- "rngo-sim",
-]
-
-[[package]]
-name = "rngo-cli"
-version = "0.36.0"
-dependencies = [
- "chrono",
- "clap",
- "console",
- "dialoguer",
- "dirs",
- "dotenvy",
- "handlebars",
- "indexmap",
- "rngo-sim",
- "rusqlite",
- "semver",
- "serde_json",
- "serde_yaml",
- "tempfile",
- "ureq",
- "uuid",
- "zip",
-]
-
-[[package]]
-name = "rngo-sim"
-version = "0.36.0"
-dependencies = [
  "cel",
  "chrono",
  "handlebars",
@@ -1253,6 +1223,29 @@ dependencies = [
  "serde_path_to_error",
  "tempfile",
  "thiserror",
+]
+
+[[package]]
+name = "rngo-cli"
+version = "0.36.0"
+dependencies = [
+ "chrono",
+ "clap",
+ "console",
+ "dialoguer",
+ "dirs",
+ "dotenvy",
+ "handlebars",
+ "indexmap",
+ "rngo",
+ "rusqlite",
+ "semver",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+ "ureq",
+ "uuid",
+ "zip",
 ]
 
 [[package]]
