@@ -9,7 +9,7 @@ use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct MergeEffect {
-    effects: Vec<SourceEffect>,
+    effects: Vec<Box<dyn Effect>>,
     writer: Rc<dyn RunLogWriter>,
     limit: Option<u64>,
     emitted: u64,
@@ -23,7 +23,7 @@ impl MergeEffect {
 
 impl Effect for MergeEffect {
     fn next_offset(&self) -> Option<u64> {
-        self.effects.iter().filter_map(Effect::next_offset).min()
+        self.effects.iter().filter_map(|e| e.next_offset()).min()
     }
 }
 
@@ -123,11 +123,11 @@ impl MergeEffectBuilder {
         self
     }
 
-    pub fn set_effect(&mut self, effect: SourceEffectBuilder) {
+    pub fn set_source_effect(&mut self, effect: SourceEffectBuilder) {
         self.effect_builders.push(effect)
     }
 
-    pub fn with_effect(
+    pub fn with_source_effect(
         &mut self,
         key: &str,
         f: impl FnOnce(SourceEffectBuilder) -> SourceEffectBuilder,
@@ -166,7 +166,7 @@ impl EffectBuilder for MergeEffectBuilder {
             }
         };
 
-        let mut effects = vec![];
+        let mut effects: Vec<Box<dyn Effect>> = vec![];
 
         for mut effect_builder in self.effect_builders {
             effect_builder
@@ -177,7 +177,7 @@ impl EffectBuilder for MergeEffectBuilder {
                 .set_seed(self.seed);
 
             match effect_builder.build() {
-                Ok(effect) => effects.push(effect),
+                Ok(effect) => effects.push(Box::new(effect)),
                 Err(mut e) => errors.append(&mut e),
             }
         }
@@ -242,7 +242,7 @@ mod tests {
     fn limit_counts_effects_and_errors_together() {
         let mut merge_effect_builder = super::MergeEffect::builder();
 
-        merge_effect_builder.with_effect("alternating", |e| {
+        merge_effect_builder.with_source_effect("alternating", |e| {
             e.trigger_hertz(1000.0).schema(AlternatingSchemaBuilder)
         });
 

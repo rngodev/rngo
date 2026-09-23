@@ -26,7 +26,7 @@ let mut merge_effect = rngo::MergeEffect.builder()
     .seed(41)
     .start(TimeDelta.months(-3))
     .end(TimeDelta.zero())
-    .with_effect("user", |effect| {
+    .with_source_effect("user", |effect| {
         effect
             .trigger_expression("hz(10, hour) * (offset * 0.0001)")
             .schema(
@@ -43,7 +43,7 @@ let mut merge_effect = rngo::MergeEffect.builder()
             )
           
     })
-    .with_effect("post", |effect| {
+    .with_source_effect("post", |effect| {
         effect
             .trigger_expression("hz(100, hour) * (offset * 0.0001)")
             .schema(

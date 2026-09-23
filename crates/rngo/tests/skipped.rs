@@ -9,7 +9,7 @@ fn reference_with_no_prior_events_is_skipped_not_logged() {
     let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
 
     let mut merge_effect_builder = MergeEffect::builder();
-    merge_effect_builder.with_effect("derived", |e| {
+    merge_effect_builder.with_source_effect("derived", |e| {
         e.trigger_hertz(1.0)
             .schema(reference().effect("nonexistent"))
     });
@@ -56,7 +56,7 @@ fn object_with_a_skipped_property_is_itself_skipped() {
     let run_log = SimpleEventRunLog::new();
 
     let mut merge_effect_builder = MergeEffect::builder();
-    merge_effect_builder.with_effect("derived", |e| {
+    merge_effect_builder.with_source_effect("derived", |e| {
         e.trigger_hertz(1.0).schema(
             object()
                 .property("id", constant().value(1))
@@ -86,7 +86,7 @@ fn array_with_a_skipped_item_is_itself_skipped() {
     let run_log = SimpleEventRunLog::new();
 
     let mut merge_effect_builder = MergeEffect::builder();
-    merge_effect_builder.with_effect("derived", |e| {
+    merge_effect_builder.with_source_effect("derived", |e| {
         e.trigger_hertz(1.0).schema(
             array()
                 .min_items(1)

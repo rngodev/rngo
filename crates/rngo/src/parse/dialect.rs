@@ -162,7 +162,7 @@ impl Dialect {
             match visitor.parse() {
                 Ok(schema_builder) => {
                     effect_builder.set_schema(schema_builder);
-                    merge_effect_builder.set_effect(effect_builder);
+                    merge_effect_builder.set_source_effect(effect_builder);
                 }
                 Err(mut e) => errors.append(&mut e),
             }

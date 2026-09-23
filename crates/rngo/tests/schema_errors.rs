@@ -9,16 +9,16 @@ fn builder() {
     let mut merge_effect_builder = MergeEffect::builder();
 
     merge_effect_builder
-        .with_effect("number", |e| e.schema(number().minimum(100).maximum(18)))
-        .with_effect("object", |e| {
+        .with_source_effect("number", |e| e.schema(number().minimum(100).maximum(18)))
+        .with_source_effect("object", |e| {
             e.schema(
                 object()
                     .property("name", string())
                     .property("age", number().minimum(100).maximum(18)),
             )
         })
-        .with_effect("no_schema", |e| e)
-        .with_effect("nested", |e| {
+        .with_source_effect("no_schema", |e| e)
+        .with_source_effect("nested", |e| {
             e.schema(
                 object().property(
                     "score",

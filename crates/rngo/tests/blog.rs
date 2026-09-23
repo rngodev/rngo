@@ -113,7 +113,7 @@ fn builder() {
     let mut merge_effect_builder = MergeEffect::builder();
 
     merge_effect_builder
-        .with_effect("user", |e| {
+        .with_source_effect("user", |e| {
             e.schema(
                 object()
                     .property("id", number().minimum(1).scale(0).step(1))
@@ -127,7 +127,7 @@ fn builder() {
                     .property("created_at", context().path(["sim", "offset"])),
             )
         })
-        .with_effect("post", |e| {
+        .with_source_effect("post", |e| {
             e.schema(
                 object()
                     .property("id", number().minimum(1).scale(0).step(1))

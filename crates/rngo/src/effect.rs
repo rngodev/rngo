@@ -13,7 +13,7 @@ use serde_json::Value;
 
 pub use trigger::TriggerEvent;
 
-pub trait Effect: Iterator<Item = Result<Input, SkippedInput>> {
+pub trait Effect: std::fmt::Debug + Iterator<Item = Result<Input, SkippedInput>> {
     fn next_offset(&self) -> Option<u64>;
 }
 
