@@ -23,6 +23,10 @@ pub trait EffectBuilder {
     fn build(self) -> Result<Self::Effect, Vec<BuildError>>;
 }
 
+pub enum EffectPoll {
+    Ready(Input)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Input {
     pub id: u64,

@@ -1,15 +1,15 @@
 mod common;
 
 use common::ParseErrorTestExt;
-use rngo::{Dialect, EffectBuilder, MergeEffect, ParseError};
+use rngo::{Dialect, ParseError, Simulation};
 use std::fmt;
 
-fn build(json: &str) -> Result<MergeEffect, String> {
+fn build(json: &str) -> Result<Simulation, String> {
     let value: serde_json::Value = serde_json::from_str(json).unwrap();
-    let merge_effect_builder = Dialect::primitive()
-        .parse_merge_effect_json(value)
+    let simulation_builder = Dialect::primitive()
+        .parse_simulation_json(value)
         .map_err(join_errors)?;
-    merge_effect_builder.build().map_err(join_errors)
+    simulation_builder.build().map_err(join_errors)
 }
 
 fn join_errors<E: fmt::Display>(errors: Vec<E>) -> String {
@@ -23,7 +23,7 @@ fn join_errors<E: fmt::Display>(errors: Vec<E>) -> String {
 fn parse_errors(json: &str) -> Vec<ParseError> {
     let value: serde_json::Value = serde_json::from_str(json).unwrap();
     Dialect::primitive()
-        .parse_merge_effect_json(value)
+        .parse_simulation_json(value)
         .unwrap_err()
 }
 
@@ -63,8 +63,8 @@ fn resolves_custom_schema_independently_per_effect() {
         }
     }"#;
 
-    let merge_effect = build(json).unwrap();
-    let events: Vec<_> = merge_effect.filter_map(Result::ok).take(20).collect();
+    let simulation = build(json).unwrap();
+    let events: Vec<_> = simulation.take(20).collect();
 
     assert!(events.iter().any(|e| e.effect == "a"));
     assert!(events.iter().any(|e| e.effect == "b"));
@@ -96,8 +96,8 @@ fn custom_schema_can_reference_another_custom_schema() {
         }
     }"#;
 
-    let merge_effect = build(json).unwrap();
-    let events: Vec<_> = merge_effect.filter_map(Result::ok).take(1).collect();
+    let simulation = build(json).unwrap();
+    let events: Vec<_> = simulation.take(1).collect();
     assert_eq!(events[0].data, serde_json::json!("x"));
 }
 

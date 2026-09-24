@@ -2,23 +2,23 @@ mod common;
 
 use common::{BuildErrorTestExt, ParseErrorTestExt};
 use rngo::build::*;
-use rngo::{BuildError, Dialect, EffectBuilder, EffectKey, MergeEffect, ParseError};
+use rngo::{BuildError, Dialect, EffectKey, ParseError, Simulation};
 
 #[test]
 fn builder() {
-    let mut merge_effect_builder = MergeEffect::builder();
+    let mut simulation_builder = Simulation::builder();
 
-    merge_effect_builder
-        .with_source_effect("number", |e| e.schema(number().minimum(100).maximum(18)))
-        .with_source_effect("object", |e| {
+    simulation_builder
+        .with_effect("number", |e| e.schema(number().minimum(100).maximum(18)))
+        .with_effect("object", |e| {
             e.schema(
                 object()
                     .property("name", string())
                     .property("age", number().minimum(100).maximum(18)),
             )
         })
-        .with_source_effect("no_schema", |e| e)
-        .with_source_effect("nested", |e| {
+        .with_effect("no_schema", |e| e)
+        .with_effect("nested", |e| {
             e.schema(
                 object().property(
                     "score",
@@ -29,7 +29,7 @@ fn builder() {
             )
         });
 
-    let errors = merge_effect_builder.build().unwrap_err();
+    let errors = simulation_builder.build().unwrap_err();
 
     let number_error = errors
         .iter()
@@ -112,7 +112,7 @@ fn spec() {
 
     let value: serde_json::Value = serde_json::from_str(json).unwrap();
     let errors = Dialect::primitive()
-        .parse_merge_effect_json(value)
+        .parse_simulation_json(value)
         .unwrap_err();
 
     let by_effect = |key: &'static str| {

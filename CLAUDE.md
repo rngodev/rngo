@@ -36,27 +36,25 @@ The workspace has two crates:
 1. **Spec** (`spec.rs`): A YAML/JSON document loaded from `.rngo/spec.yml` merged with per-file `effects/*.yml`, `channels/*.yml`, `schemas/*.yml`, and `signals/*.yml` (each merge step lives in `cli/src/run.rs::load_spec`, keyed by file stem). Defines `seed`, `start`, `end`, named `effects`, named `channels`, named custom `schemas`, and named `signals`.
 
 2. **Dialect** (`rngo/src/parse/dialect.rs`): Converts a `spec::Spec` into builders by dispatching each effect's schema to a matching `SchemaParser`, each channel's format to a `FormatParser`, each channel's target to a `ChannelTargetParser`, and each signal to a `SignalParser`. `Dialect::primitive()` registers all built-in parsers. Three entry points, one per builder:
-   - `parse_merge_effect` → `MergeEffectBuilder`
+   - `parse_simulation` → `SimulationBuilder`
    - `parse_proxy` → `ProxyBuilder` (channel dispatch)
    - `parse_audit` → `AuditBuilder` (signal evaluation)
 
-3. **Effect / EffectBuilder** (`effect.rs`): The common interfaces implemented by both `MergeEffect`/`MergeEffectBuilder` and `SourceEffect`/`SourceEffectBuilder`. `Effect` requires `next_offset() -> Option<u64>` plus `Iterator<Item = Result<Input, SkippedInput>>`, so every call to `next()` yields exactly one attempt (a real `Input` or a `SkippedInput`), never looping internally to skip past failed attempts. `EffectBuilder` requires `fn build(self) -> Result<Self::Effect, Vec<BuildError>>` where `Self::Effect: Effect`. Both traits must be imported (`use rngo::{Effect, EffectBuilder}`) to call their methods from outside the crate.
+3. **Simulation** (`effect/simulation.rs`): An `Iterator<Item = Input>`. Each call to `next()` sorts all `Effect`s by their next timestamp offset, advances the earliest one, and pushes the resulting `Input` (or `SkippedInput` metadata) to a `RunLogWriter`, looping internally past skipped attempts until it finds a real one (or runs out). Orchestrates many `Effect`s but doesn't share a trait with it — `Effect` models a single logical kind of input; `Simulation` merges many of them into one time-ordered run.
 
-4. **MergeEffect** (`effect/merge.rs`): Stores its children as `Vec<Box<dyn Effect>>`. Each call to `next()` sorts them all by their next timestamp offset, advances the earliest one, and pushes the resulting `Input` (or `SkippedInput` metadata) to a `RunLogWriter` before returning it. Consumers that only want real inputs (e.g. the CLI run loop) filter with `.flatten()` or `.filter_map(Result::ok)`. `MergeEffectBuilder::with_source_effect`/`set_source_effect` add a `SourceEffectBuilder` to build; only `SourceEffect`s are constructible this way today, though the `Vec<Box<dyn Effect>>` storage leaves room for nesting other `Effect` implementations later.
+4. **Effect** (`effect.rs`): Also an iterator, yielding `Result<Input, SkippedInput>`. Driven by a `Trigger` (either a `Clock` for time-based firing or another `Effect` for dependency-based firing) and a `Schema` for generating values. `Input` (`{ id, effect, offset, timestamp, data, metadata }`) is the event an effect produces each time it fires.
 
-5. **SourceEffect** (`effect/source.rs`): Driven by a `Trigger` (either a `Clock` for time-based firing or another `SourceEffect` for dependency-based firing) and a `Schema` for generating values. `Input` (`{ id, effect, offset, timestamp, data, metadata }`) is the event an effect produces each time it fires.
+5. **Proxy** (`rngo/src/proxy.rs`): Channel dispatch. For each `Input`, looks up its effect's assigned channel, formats it via the channel's optional `Format`, and hands it to the channel's `ChannelTarget`, pushing any resulting `Output`s to the `RunLogWriter`.
 
-6. **Proxy** (`rngo/src/proxy.rs`): Channel dispatch. For each `Input`, looks up its effect's assigned channel, formats it via the channel's optional `Format`, and hands it to the channel's `ChannelTarget`, pushing any resulting `Output`s to the `RunLogWriter`.
-
-7. **Audit** (`rngo/src/audit.rs`): Runs after the simulation finishes. Evaluates every named `Signal` against the completed run's log, writes each `SignalOutcome` back as metadata, and produces an `AuditReport` (pass/fail/error counts, `passed()`) that the CLI uses for its exit status.
+6. **Audit** (`rngo/src/audit.rs`): Runs after the simulation finishes. Evaluates every named `Signal` against the completed run's log, writes each `SignalOutcome` back as metadata, and produces an `AuditReport` (pass/fail/error counts, `passed()`) that the CLI uses for its exit status.
 
 ### CLI run loop (`cli/src/run.rs`)
 
 - `load_spec` merges `.rngo/spec.yml` with `.rngo/effects/*.yml`, `channels/*.yml`, `schemas/*.yml`, `signals/*.yml`, or `load_spec_file` loads a single file when `--spec` is passed.
-- `Dialect::primitive()` parses the spec three ways (merge effect, proxy, audit builders).
-- `--dry-run`: only builds the `MergeEffect` (to validate the spec) and returns, without creating a run directory or touching channels.
-- Otherwise: creates a run directory at `.rngo/runs/<UUIDv7>/`, symlinks `.rngo/runs/last` to it, writes a `spec.json` snapshot, and opens a `SqliteRunLog` (backed by `log.sqlite`) as both the merge effect's `RunLogReader`/`RunLogWriter` and the proxy's writer — wrapped in `StatusWriter` (`cli/src/run/status.rs`), which renders a live effect/output counter to stderr as it forwards writes through.
-- Drives the `MergeEffect` iterator, flattening out skipped attempts and sending each real `Input` through the `Proxy`, then calls `proxy.finish()`, then builds and runs the `Audit` against the same `SqliteRunLog` and prints per-signal outcomes.
+- `Dialect::primitive()` parses the spec three ways (simulation, proxy, audit builders).
+- `--dry-run`: only builds the `Simulation` (to validate the spec) and returns, without creating a run directory or touching channels.
+- Otherwise: creates a run directory at `.rngo/runs/<UUIDv7>/`, symlinks `.rngo/runs/last` to it, writes a `spec.json` snapshot, and opens a `SqliteRunLog` (backed by `log.sqlite`) as both the simulation's `RunLogReader`/`RunLogWriter` and the proxy's writer — wrapped in `StatusWriter` (`cli/src/run/status.rs`), which renders a live effect/output counter to stderr as it forwards writes through.
+- Drives the `Simulation` iterator, sending each `Input` through the `Proxy`, then calls `proxy.finish()`, then builds and runs the `Audit` against the same `SqliteRunLog` and prints per-signal outcomes.
 - `--stdout`: builds the `Proxy` with `stdout(true)`, which swaps every channel's target for a `Stdout` target (prints each input's formatted data to stdout) instead of running the real channel targets.
 - `--limit N` caps the total number of effect attempts (successful + skipped) the simulation will produce.
 

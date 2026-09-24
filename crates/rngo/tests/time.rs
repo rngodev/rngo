@@ -2,16 +2,11 @@ mod common;
 
 use common::BuildErrorTestExt;
 use rngo::build::*;
-use rngo::{BuildError, Dialect, EffectBuilder, EffectKey, MergeEffect};
+use rngo::{BuildError, Dialect, EffectKey, Simulation};
 use serde_json::Value;
 
-fn effect_offsets(sim: MergeEffect, take: usize) -> Vec<u64> {
-    sim.map(|result| match result {
-        Ok(input) => input.offset,
-        Err(skipped) => skipped.offset,
-    })
-    .take(take)
-    .collect()
+fn effect_offsets(sim: Simulation, take: usize) -> Vec<u64> {
+    sim.map(|input| input.offset).take(take).collect()
 }
 
 /// The default simulation window is 30 days (start = -30d, end = now).
@@ -22,8 +17,8 @@ fn effect_offsets(sim: MergeEffect, take: usize) -> Vec<u64> {
 /// the simulation ~60 days into the future — well past the end.
 #[test]
 fn simulation_respects_end_time() {
-    let mut builder = MergeEffect::builder();
-    builder.with_source_effect("events", |e| e.schema(constant().value(Value::Null)));
+    let mut builder = Simulation::builder();
+    builder.with_effect("events", |e| e.schema(constant().value(Value::Null)));
 
     let offsets = effect_offsets(builder.build().unwrap(), 60);
     let window_secs: u64 = 30 * 86_400;
@@ -48,9 +43,9 @@ fn effect_respects_start_time() {
     use chrono::TimeDelta;
     use rngo::Moment;
 
-    let mut builder = MergeEffect::builder();
-    // MergeEffect: -30d to now. Effect starts at -15d (halfway through).
-    builder.with_source_effect("events", |e| {
+    let mut builder = Simulation::builder();
+    // Simulation: -30d to now. Effect starts at -15d (halfway through).
+    builder.with_effect("events", |e| {
         e.start(Moment::Relative(TimeDelta::days(-15)))
             .schema(constant().value(Value::Null))
     });
@@ -74,7 +69,7 @@ fn effect_respects_start_time() {
 }
 
 /// An effect with its own end time (parsed from spec) should emit events before
-/// that end time and nothing after. Goes through Dialect::parse_merge_effect_json
+/// that end time and nothing after. Goes through Dialect::parse_simulation_json
 /// so a copy-paste bug that calls set_start instead of set_end in parse.rs would
 /// cause events to appear in the wrong half of the window and fail this test.
 #[test]
@@ -93,15 +88,12 @@ fn effect_respects_end_time_via_spec() {
     });
 
     let sim = Dialect::primitive()
-        .parse_merge_effect_json(spec)
+        .parse_simulation_json(spec)
         .unwrap()
         .build()
         .unwrap();
 
-    let offsets: Vec<u64> = sim
-        .filter_map(Result::ok)
-        .map(|input| input.offset)
-        .collect();
+    let offsets: Vec<u64> = sim.map(|input| input.offset).collect();
 
     // 2024-01-01 to 2024-06-01 = 31+29+31+30+31 = 152 days (2024 is a leap year)
     let effect_end_offset: u64 = 152 * 86_400;
@@ -143,15 +135,12 @@ fn effect_respects_both_start_and_end() {
     });
 
     let sim = Dialect::primitive()
-        .parse_merge_effect_json(spec)
+        .parse_simulation_json(spec)
         .unwrap()
         .build()
         .unwrap();
 
-    let offsets: Vec<u64> = sim
-        .filter_map(Result::ok)
-        .map(|input| input.offset)
-        .collect();
+    let offsets: Vec<u64> = sim.map(|input| input.offset).collect();
 
     // 2024 is a leap year.
     // 2024-04-01 is day 92 (31+29+31+1), so offset = 91 days from Jan 1.
@@ -194,9 +183,9 @@ fn effect_start_before_simulation_start_is_error() {
     use chrono::TimeDelta;
     use rngo::Moment;
 
-    let mut builder = MergeEffect::builder();
-    // MergeEffect: -30d to now. Effect tries to start before the simulation at -60d.
-    builder.with_source_effect("events", |e| {
+    let mut builder = Simulation::builder();
+    // Simulation: -30d to now. Effect tries to start before the simulation at -60d.
+    builder.with_effect("events", |e| {
         e.start(Moment::Relative(TimeDelta::days(-60)))
             .schema(constant().value(Value::Null))
     });
@@ -222,9 +211,9 @@ fn effect_end_after_simulation_end_is_error() {
     use chrono::TimeDelta;
     use rngo::Moment;
 
-    let mut builder = MergeEffect::builder();
-    // MergeEffect: -30d to now. Effect tries to end after the simulation at +1d.
-    builder.with_source_effect("events", |e| {
+    let mut builder = Simulation::builder();
+    // Simulation: -30d to now. Effect tries to end after the simulation at +1d.
+    builder.with_effect("events", |e| {
         e.end(Moment::Relative(TimeDelta::days(1)))
             .schema(constant().value(Value::Null))
     });
@@ -263,7 +252,7 @@ fn effect_bounds_outside_simulation_via_spec_are_errors() {
     });
 
     let errors = Dialect::primitive()
-        .parse_merge_effect_json(spec)
+        .parse_simulation_json(spec)
         .unwrap()
         .build()
         .unwrap_err();

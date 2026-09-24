@@ -4,7 +4,7 @@ The `rngo` library lets you assemble **cells** and define **audits** in Rust.
 
 A **cell** is responsible for sending inputs to and capturing outputs from the system under test (SUT). Its components include:
 - a `RunLog` that records inputs, outputs and metadata (and may be shared by other cells)
-- one or more `MergeEffect`s that generate and log inputs
+- one or more `Simulation`s that generate and log inputs
 - a single `Proxy` that routes the inputs and logs the outputs
 
 An **audit** surfaces patterns in the `RunLog` and usually sets expectations of those patterns.
@@ -17,16 +17,14 @@ You can define a cell using a builder DSL. First we'll define a `SqliteRunLog`:
 let run_log = rngo::SqliteRunLog::new(".")
 ```
 
-Next a `MergeEffect`. `MergeEffect` and `SourceEffect` are both built via a shared `rngo::EffectBuilder` trait, so it needs to be in scope to call `.build()`:
+Next a `Simulation`:
 
 ```rust
-use rngo::EffectBuilder;
-
-let mut merge_effect = rngo::MergeEffect.builder()
+let mut simulation = rngo::Simulation.builder()
     .seed(41)
     .start(TimeDelta.months(-3))
     .end(TimeDelta.zero())
-    .with_source_effect("user", |effect| {
+    .with_effect("user", |effect| {
         effect
             .trigger_expression("hz(10, hour) * (offset * 0.0001)")
             .schema(
@@ -43,7 +41,7 @@ let mut merge_effect = rngo::MergeEffect.builder()
             )
           
     })
-    .with_source_effect("post", |effect| {
+    .with_effect("post", |effect| {
         effect
             .trigger_expression("hz(100, hour) * (offset * 0.0001)")
             .schema(
@@ -99,10 +97,10 @@ let proxy = rngo::Proxy::builder()
     .build()?
 ```
 
-Now we can run the `MergeEffect` against the `Proxy` (and exit the sub-shells): 
+Now we can run the `Simulation` against the `Proxy` (and exit the sub-shells): 
 
 ```rust
-for input in (&mut merge_effect).flatten() {
+for input in &mut simulation {
     proxy.send(&input)?;
 }
 
@@ -230,15 +228,13 @@ You can also define the above in JSON (or YAML) spec - it would look like this:
 You can parse and run like this:
 
 ```rust
-use rngo::EffectBuilder;
-
 let value: serde_json::Value = serde_json::from_str(raw).unwrap();
 let spec = rngo::spec::from_value(value)?;
 let dialect = rngo::Dialect::primitive();
 let run_log = rngo::SqliteRunLog::new(".")
 
-let mut merge_effect = dialect
-    .parse_merge_effect(spec.clone())?
+let mut simulation = dialect
+    .parse_simulation(spec.clone())?
     .run_log(run_log.clone())
     .build()?;
 
@@ -252,7 +248,7 @@ let audit = dialect
     .run_log(run_log)
     .build()?;
 
-for input in (&mut merge_effect).flatten() {
+for input in &mut simulation {
     proxy.send(&input)?;
 }
 
