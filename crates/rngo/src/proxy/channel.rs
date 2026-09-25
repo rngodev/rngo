@@ -1,6 +1,6 @@
 pub mod target;
 
-use crate::format::Format;
+use crate::proxy::format::Format;
 use crate::{BuildError, Input, Output};
 use std::error::Error;
 use std::sync::mpsc::Sender;

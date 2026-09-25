@@ -44,7 +44,7 @@ The workspace has two crates:
 
 4. **Effect** (`effect.rs`): Also an iterator, yielding `Result<Input, SkippedInput>`. Driven by a `Trigger` (either a `Clock` for time-based firing or another `Effect` for dependency-based firing) and a `Schema` for generating values. `Input` (`{ id, effect, offset, timestamp, data, metadata }`) is the event an effect produces each time it fires.
 
-5. **Proxy** (`rngo/src/proxy.rs`): Channel dispatch. For each `Input`, looks up its effect's assigned channel, formats it via the channel's optional `Format`, and hands it to the channel's `ChannelTarget`, pushing any resulting `Output`s to the `RunLogWriter`.
+5. **Proxy** (`rngo/src/proxy.rs`, with `channel`, `format`, and `output` submodules under `rngo/src/proxy/`): Channel dispatch. For each `Input`, looks up its effect's assigned channel, formats it via the channel's optional `Format`, and hands it to the channel's `ChannelTarget`, pushing any resulting `Output`s to the `RunLogWriter`.
 
 6. **Audit** (`rngo/src/audit.rs`): Runs after the simulation finishes. Evaluates every named `Signal` against the completed run's log, writes each `SignalOutcome` back as metadata, and produces an `AuditReport` (pass/fail/error counts, `passed()`) that the CLI uses for its exit status.
 
@@ -58,7 +58,7 @@ The workspace has two crates:
 - `--stdout`: builds the `Proxy` with `stdout(true)`, which swaps every channel's target for a `Stdout` target (prints each input's formatted data to stdout) instead of running the real channel targets.
 - `--limit N` caps the total number of effect attempts (successful + skipped) the simulation will produce.
 
-### Channel targets (`rngo/src/channel/target/`)
+### Channel targets (`rngo/src/proxy/channel/target/`)
 
 `ChannelTarget` implementations, wired up by `Proxy`:
 - `stream`: spawns one long-lived subprocess per channel, writes formatted event lines to its stdin.

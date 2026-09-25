@@ -1,6 +1,3 @@
-pub use crate::channel::target::exec::ExecBuilder;
-pub use crate::channel::target::stream::StreamBuilder;
-use crate::channel::target::{Exec, Stream};
 pub use crate::effect::schema::array::ArrayBuilder;
 pub use crate::effect::schema::constant::ConstantBuilder;
 pub use crate::effect::schema::context::ContextBuilder;
@@ -13,7 +10,10 @@ pub use crate::effect::schema::string::StrBuilder;
 use crate::effect::schema::{
     Array, Constant, Context, Function, Number, Object, Reference, Select, Str,
 };
-pub use crate::format::SqlFormat;
+pub use crate::proxy::channel::target::exec::ExecBuilder;
+pub use crate::proxy::channel::target::stream::StreamBuilder;
+use crate::proxy::channel::target::{Exec, Stream};
+pub use crate::proxy::format::SqlFormat;
 use crate::signal::SqlSignal;
 pub use crate::signal::sql::SqlSignalBuilder;
 use thiserror::Error;

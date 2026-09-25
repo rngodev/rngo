@@ -1,5 +1,5 @@
-use crate::channel::{ChannelTarget, ChannelTargetBuilder};
 use crate::parse::ChannelTargetParser;
+use crate::proxy::channel::{ChannelTarget, ChannelTargetBuilder};
 use crate::{BuildError, Input, Level, Output, ParseError, spec};
 use chrono::Utc;
 use std::io::{BufRead, BufReader, Write};
