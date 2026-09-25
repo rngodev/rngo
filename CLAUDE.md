@@ -71,9 +71,9 @@ An effect opts into a channel by setting `channel: <channel-key>`. The format us
 
 `Array`, `Constant`, `Context`, `Custom`, `Function`, `Number`, `Object`, `Reference`, `Select`, `Str` (module `string.rs`). Each implements `SchemaBuilder` (parse-time) and `Schema` (run-time). `Custom` backs the spec's `schemas:` section, letting effects reference named custom schema types by name. Builder factory functions are re-exported from `rngo/src/build.rs`.
 
-### Signals & audit (`rngo/src/signal.rs`, `rngo/src/audit.rs`)
+### Signals & audit (`rngo/src/audit/signal.rs`, `rngo/src/audit.rs`)
 
-Named `signals` in the spec are checks run once, after the simulation completes, against the finished run's SQLite log. The only built-in kind is `SqlSignal` (`rngo/src/signal/sql.rs`): it runs a SQL `query` against the log database and evaluates an optional CEL `expect` expression against the scalar result. `Audit::run()` evaluates every signal and records a `SignalOutcome` (`Success { value, eval }` or `Error`) as run-log metadata; `AuditReport::passed()` is false if any signal fails its expectation or errors, and drives the CLI's process exit status.
+Named `signals` in the spec are checks run once, after the simulation completes, against the finished run's SQLite log. The only built-in kind is `SqlSignal` (`rngo/src/audit/signal/sql.rs`): it runs a SQL `query` against the log database and evaluates an optional CEL `expect` expression against the scalar result. `Audit::run()` evaluates every signal and records a `SignalOutcome` (`Success { value, eval }` or `Error`) as run-log metadata; `AuditReport::passed()` is false if any signal fails its expectation or errors, and drives the CLI's process exit status.
 
 ### Log (`rngo/src/run_log.rs`)
 

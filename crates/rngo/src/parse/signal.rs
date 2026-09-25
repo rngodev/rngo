@@ -1,4 +1,4 @@
-use crate::signal::Signal;
+use crate::audit::signal::Signal;
 use crate::spec::{self, ParseError};
 
 pub trait SignalParser {

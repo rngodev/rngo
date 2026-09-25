@@ -4,10 +4,10 @@ mod effect;
 mod parse;
 mod proxy;
 mod run_log;
-pub mod signal;
 pub mod spec;
 mod util;
 
+pub use audit::signal::{self, Signal, SignalBuilder, SignalOutcome};
 pub use audit::{Audit, AuditBuilder, AuditReport};
 pub use build::{BuildError, EffectKey, SchemaEdge, SimulationKey};
 pub use effect::simulation::{Simulation, SimulationBuilder};
@@ -18,6 +18,5 @@ pub use proxy::format::Format;
 pub use proxy::output::{self, Level, Output};
 pub use proxy::{Proxy, ProxyBuilder};
 pub use run_log::{Metadata, RunLogReader, RunLogWriter, SimpleEventRunLog, SqliteRunLog};
-pub use signal::{Signal, SignalBuilder, SignalOutcome};
 pub use spec::ParseError;
 pub use util::time::Moment;
