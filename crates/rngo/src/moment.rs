@@ -1,4 +1,4 @@
-use super::cel::CelContextExt;
+use crate::cel::CelContextExt;
 use crate::spec::ParseError;
 use cel::{Context, Program, Value};
 use chrono::{DateTime, FixedOffset, NaiveDate, TimeDelta, TimeZone, Utc};

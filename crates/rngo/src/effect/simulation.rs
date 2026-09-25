@@ -1,7 +1,7 @@
 use crate::build::{BuildError, SimulationKey};
 use crate::effect::{Effect, EffectBuilder, Input};
 use crate::log::SimpleEventRunLog;
-use crate::util::time::Moment;
+use crate::moment::Moment;
 use crate::{RunLogReader, RunLogWriter};
 use chrono::{TimeDelta, Utc};
 use std::rc::Rc;

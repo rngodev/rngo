@@ -5,8 +5,7 @@ mod trigger;
 
 use crate::build::{BuildError, EffectKey};
 use crate::log::{Metadata, RunLogReader, SimpleEventRunLog};
-use crate::util::ext::FlattenErr;
-use crate::util::time::Moment;
+use crate::moment::Moment;
 use chrono::{DateTime, FixedOffset, TimeDelta};
 use clock::Clock;
 use multi_try::MultiTry;
@@ -344,7 +343,10 @@ impl EffectBuilder {
                 }),
         };
 
-        match schema_result.and_try(trigger_result).flatten_err() {
+        match schema_result
+            .and_try(trigger_result)
+            .map_err(|e| e.into_iter().flatten().collect::<Vec<_>>())
+        {
             Ok((schema, trigger)) if errors.is_empty() => Ok(Effect {
                 key: self.key,
                 run_log_reader: run_log_reader.clone(),

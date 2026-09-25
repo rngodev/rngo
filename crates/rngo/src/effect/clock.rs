@@ -1,5 +1,5 @@
 use crate::BuildError;
-use crate::util::cel::CelContextExt;
+use crate::cel::CelContextExt;
 use cel::{Context, Program, Value};
 use rand::RngExt;
 use rand_pcg::Pcg32;

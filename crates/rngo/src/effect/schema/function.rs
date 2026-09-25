@@ -1,9 +1,9 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::build::{BuildError, SchemaEdge};
+use crate::cel::{CelContextExt, json_to_cel};
 use crate::effect::schema::Metadata;
 use crate::parse::{SchemaParseVisitor, SchemaParser};
 use crate::spec::{self, ParseError as Error};
-use crate::util::cel::{CelContextExt, json_to_cel};
 use cel::{Context, Program};
 use indexmap::IndexMap;
 use std::collections::HashMap;

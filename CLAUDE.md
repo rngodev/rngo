@@ -75,6 +75,10 @@ An effect opts into a channel by setting `channel: <channel-key>`. The format us
 
 Named `signals` in the spec are checks run once, after the simulation completes, against the finished run's SQLite log. The only built-in kind is `SqlSignal` (`rngo/src/audit/signal/sql.rs`): it runs a SQL `query` against the log database and evaluates an optional CEL `expect` expression against the scalar result. `Audit::run()` evaluates every signal and records a `SignalOutcome` (`Success { value, eval }` or `Error`) as run-log metadata; `AuditReport::passed()` is false if any signal fails its expectation or errors, and drives the CLI's process exit status.
 
+### CEL & moments (`rngo/src/cel.rs`, `rngo/src/moment.rs`)
+
+`cel.rs` defines the spec's expression language: `CelContextExt` adds the functions and variables available to spec expressions (`with_time`, `with_hertz`, `with_strings`, `with_now`, `with_simulation`, `with_offset`), and `json_to_cel` converts JSON values into CEL values. It is used by clocks, `Function` schemas, SQL signals, and `MomentParser`. `moment.rs` defines `Moment` (an absolute timestamp or an offset from now), used for simulation and effect `start`/`end`, plus `MomentParser`, which parses RFC 3339, `YYYY-MM-DD`, or CEL expressions into a `Moment`.
+
 ### Log (`rngo/src/log.rs`)
 
 A shared `Rc<dyn RunLogReader>` is threaded through all effects and schemas so that `Reference`, trigger-by-effect, and SQL signals can look up previously emitted events — by last input overall, last/random/unique input for a given effect key, or an arbitrary `query()`. A separate `RunLogWriter` trait pushes `Input`, `Output`, and `Metadata` rows. `SimpleEventRunLog` (`log/simple.rs`) is the in-memory implementation; `SqliteRunLog` (`log/sqlite.rs`) persists all three to `log.sqlite` in the run directory and implements both traits.

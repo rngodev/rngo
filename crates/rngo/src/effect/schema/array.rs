@@ -1,9 +1,10 @@
-use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
+use super::{
+    JsonPointerPart, Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult,
+};
 use crate::build::{BuildError, SchemaEdge};
 use crate::effect::schema::Metadata;
 use crate::parse::{SchemaParseVisitor, SchemaParser};
 use crate::spec::{self, ParseError as Error};
-use crate::util::json_pointer::JsonPointerPart;
 use rand::RngExt;
 use rand_pcg::Pcg32;
 

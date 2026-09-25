@@ -6,12 +6,12 @@ use crate::audit::{Audit, AuditBuilder, signal};
 use crate::effect::schema::custom::CustomParser;
 use crate::effect::simulation::{Simulation, SimulationBuilder};
 use crate::effect::{Effect, schema};
+use crate::moment::Moment;
 use crate::parse::ChannelTargetParser;
 use crate::proxy::channel::{Channel, ChannelTargetBuilder, target};
 use crate::proxy::format::Format;
 use crate::proxy::{Proxy, ProxyBuilder, format};
 use crate::spec::{self, ParseError, Spec};
-use crate::util::time::Moment;
 use std::collections::HashMap;
 use std::rc::Rc;
 
