@@ -1,6 +1,11 @@
-use crate::channel::ChannelBuilder;
-use crate::channel::target::Stdout;
-use crate::{BuildError, Channel, Input, Output, RunLogWriter, SimpleEventRunLog};
+pub mod channel;
+pub mod format;
+pub mod output;
+
+use crate::{BuildError, Input, RunLogWriter, SimpleEventRunLog};
+use channel::target::Stdout;
+use channel::{Channel, ChannelBuilder};
+use output::Output;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver};

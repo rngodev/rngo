@@ -1,4 +1,4 @@
-use crate::channel::ChannelTargetBuilder;
+use crate::proxy::channel::ChannelTargetBuilder;
 use crate::{ParseError, spec};
 
 pub trait ChannelTargetParser {

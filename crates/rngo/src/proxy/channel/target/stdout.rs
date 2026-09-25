@@ -1,4 +1,4 @@
-use crate::channel::{ChannelTarget, ChannelTargetBuilder};
+use crate::proxy::channel::{ChannelTarget, ChannelTargetBuilder};
 use crate::{BuildError, Input, Output};
 use std::sync::mpsc::Sender;
 

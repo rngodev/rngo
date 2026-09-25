@@ -1,6 +1,6 @@
 use crate::Output;
 use crate::effect::Input;
-use crate::output::Level;
+use crate::proxy::output::Level;
 use crate::run_log::{Metadata, RunLogReader, RunLogWriter};
 use chrono::{DateTime, Utc};
 use rand::RngExt;

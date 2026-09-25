@@ -1,4 +1,4 @@
-use crate::format::Format;
+use crate::proxy::format::Format;
 use crate::spec::{self, ParseError};
 
 pub trait FormatParser {
