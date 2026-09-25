@@ -1,6 +1,7 @@
 use super::format::FormatParser;
 use super::schema::{SchemaParseVisitor, SchemaParser};
 use super::signal::SignalParser;
+use crate::audit::signal::{self, Signal};
 use crate::audit::{Audit, AuditBuilder};
 use crate::effect::schema::custom::CustomParser;
 use crate::effect::simulation::{Simulation, SimulationBuilder};
@@ -9,8 +10,6 @@ use crate::parse::ChannelTargetParser;
 use crate::proxy::channel::{Channel, ChannelTargetBuilder, target};
 use crate::proxy::format::Format;
 use crate::proxy::{Proxy, ProxyBuilder, format};
-use crate::signal;
-use crate::signal::Signal;
 use crate::spec::{self, ParseError, Spec};
 use crate::util::time::Moment;
 use std::collections::HashMap;

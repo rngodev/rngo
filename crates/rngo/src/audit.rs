@@ -1,8 +1,10 @@
 use crate::build::BuildError;
+pub mod signal;
+
 use crate::run_log::Metadata;
-use crate::signal::{Signal, SignalBuilder, SignalOutcome};
 use crate::{RunLogReader, RunLogWriter};
 use indexmap::IndexMap;
+use signal::{Signal, SignalBuilder, SignalOutcome};
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -213,8 +215,8 @@ impl AuditReport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::signal::SignalEval;
     use crate::{Input, RunLogReader, RunLogWriter};
+    use signal::SignalEval;
     use std::cell::RefCell;
     use std::rc::Rc;
 
