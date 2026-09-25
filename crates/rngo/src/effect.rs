@@ -4,7 +4,7 @@ pub mod simulation;
 mod trigger;
 
 use crate::build::{BuildError, EffectKey};
-use crate::run_log::{Metadata, RunLogReader, SimpleEventRunLog};
+use crate::log::{Metadata, RunLogReader, SimpleEventRunLog};
 use crate::util::ext::FlattenErr;
 use crate::util::time::Moment;
 use chrono::{DateTime, FixedOffset, TimeDelta};
