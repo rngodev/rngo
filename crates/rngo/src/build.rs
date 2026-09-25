@@ -1,3 +1,5 @@
+use crate::audit::signal::SqlSignal;
+pub use crate::audit::signal::sql::SqlSignalBuilder;
 pub use crate::effect::schema::array::ArrayBuilder;
 pub use crate::effect::schema::constant::ConstantBuilder;
 pub use crate::effect::schema::context::ContextBuilder;
@@ -14,8 +16,6 @@ pub use crate::proxy::channel::target::exec::ExecBuilder;
 pub use crate::proxy::channel::target::stream::StreamBuilder;
 use crate::proxy::channel::target::{Exec, Stream};
 pub use crate::proxy::format::SqlFormat;
-use crate::signal::SqlSignal;
-pub use crate::signal::sql::SqlSignalBuilder;
 use thiserror::Error;
 
 pub fn array() -> ArrayBuilder {

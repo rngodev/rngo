@@ -1,8 +1,8 @@
 use super::{Signal, SignalBuilder, SignalOutcome};
 use crate::RunLogReader;
+use crate::audit::signal::{CelExpectation, SignalEval};
 use crate::build::BuildError;
 use crate::parse::SignalParser;
-use crate::signal::{CelExpectation, SignalEval};
 use crate::spec::{self, ParseError};
 use crate::util::cel::json_to_cel;
 use cel::{Context, Program};
