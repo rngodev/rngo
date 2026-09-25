@@ -1,6 +1,6 @@
 use super::clock::Clock;
 use crate::effect::Input;
-use crate::run_log::RunLogReader;
+use crate::log::RunLogReader;
 use std::rc::Rc;
 
 #[derive(Clone, Debug)]

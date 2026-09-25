@@ -1,9 +1,9 @@
 mod audit;
 pub mod build;
 mod effect;
+mod log;
 mod parse;
 mod proxy;
-mod run_log;
 pub mod spec;
 mod util;
 
@@ -12,11 +12,11 @@ pub use audit::{Audit, AuditBuilder, AuditReport};
 pub use build::{BuildError, EffectKey, SchemaEdge, SimulationKey};
 pub use effect::simulation::{Simulation, SimulationBuilder};
 pub use effect::{Effect, EffectBuilder, Input, SkippedInput, schema};
+pub use log::{Metadata, RunLogReader, RunLogWriter, SimpleEventRunLog, SqliteRunLog};
 pub use parse::Dialect;
 pub use proxy::channel::Channel;
 pub use proxy::format::Format;
 pub use proxy::output::{self, Level, Output};
 pub use proxy::{Proxy, ProxyBuilder};
-pub use run_log::{Metadata, RunLogReader, RunLogWriter, SimpleEventRunLog, SqliteRunLog};
 pub use spec::ParseError;
 pub use util::time::Moment;

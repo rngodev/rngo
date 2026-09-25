@@ -1,5 +1,5 @@
 use crate::build::BuildError;
-use crate::run_log::Metadata;
+use crate::log::Metadata;
 pub mod signal;
 
 use crate::{RunLogReader, RunLogWriter};

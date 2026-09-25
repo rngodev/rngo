@@ -22,7 +22,7 @@ pub use string::Str;
 
 use crate::build::{BuildError, SchemaEdge};
 use crate::effect::TriggerEvent;
-use crate::run_log::RunLogReader;
+use crate::log::RunLogReader;
 use crate::util::json_pointer::{JsonPointer, JsonPointerPart};
 use rand_pcg::Pcg32;
 use rand_seeder::Seeder;

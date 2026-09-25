@@ -1,4 +1,4 @@
-use crate::run_log::{Metadata, RunLogReader, RunLogWriter};
+use crate::log::{Metadata, RunLogReader, RunLogWriter};
 use crate::{Input, Output};
 use rand::RngExt;
 use rand_pcg::Pcg32;

@@ -1,7 +1,7 @@
 use crate::Output;
 use crate::effect::Input;
+use crate::log::{Metadata, RunLogReader, RunLogWriter};
 use crate::proxy::output::Level;
-use crate::run_log::{Metadata, RunLogReader, RunLogWriter};
 use chrono::{DateTime, Utc};
 use rand::RngExt;
 use rand_pcg::Pcg32;

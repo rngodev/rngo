@@ -1,6 +1,6 @@
 use crate::build::{BuildError, SimulationKey};
 use crate::effect::{Effect, EffectBuilder, Input};
-use crate::run_log::SimpleEventRunLog;
+use crate::log::SimpleEventRunLog;
 use crate::util::time::Moment;
 use crate::{RunLogReader, RunLogWriter};
 use chrono::{TimeDelta, Utc};
