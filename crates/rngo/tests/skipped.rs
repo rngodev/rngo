@@ -65,8 +65,8 @@ fn object_with_a_skipped_property_is_itself_skipped() {
     });
 
     // `.limit(5)` bounds total attempts, not real inputs - without it, an effect that always
-    // skips would loop internally until the simulation's time window itself runs out (see
-    // `Simulation::next`), rather than stopping quickly.
+    // skips would keep yielding skipped attempts until the simulation's time window itself runs
+    // out, rather than stopping quickly.
     let simulation = simulation_builder
         .run_log(run_log)
         .limit(5)

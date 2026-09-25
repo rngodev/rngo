@@ -391,7 +391,7 @@ impl RunLogReader for SqliteRunLog {
 mod tests {
     use super::*;
     use crate::effect::Input;
-    use crate::schema::Metadata as SchemaMetadata;
+    use crate::effect::schema::Metadata as SchemaMetadata;
     use chrono::Utc;
     use tempfile::TempDir;
 

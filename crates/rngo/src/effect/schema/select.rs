@@ -1,7 +1,7 @@
 use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
 use crate::build::{BuildError, SchemaEdge};
+use crate::effect::schema::Metadata;
 use crate::parse::{SchemaParseVisitor, SchemaParser};
-use crate::schema::Metadata;
 use crate::spec::{self, ParseError as Error};
 use rand::RngExt;
 use rand_pcg::Pcg32;

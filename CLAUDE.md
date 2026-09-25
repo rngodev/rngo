@@ -40,7 +40,7 @@ The workspace has two crates:
    - `parse_proxy` → `ProxyBuilder` (channel dispatch)
    - `parse_audit` → `AuditBuilder` (signal evaluation)
 
-3. **Simulation** (`simulation.rs`): An `Iterator<Item = Input>`. Each call to `next()` sorts all `Effect`s by their next timestamp offset, advances the earliest one, and pushes the resulting `Input` (or `SkippedInput` metadata) to a `RunLogWriter`.
+3. **Simulation** (`effect/simulation.rs`): An `Iterator<Item = Input>`. Each call to `next()` sorts all `Effect`s by their next timestamp offset, advances the earliest one, and pushes the resulting `Input` (or `SkippedInput` metadata) to a `RunLogWriter`, looping internally past skipped attempts until it finds a real one (or runs out). Orchestrates many `Effect`s but doesn't share a trait with it — `Effect` models a single logical kind of input; `Simulation` merges many of them into one time-ordered run.
 
 4. **Effect** (`effect.rs`): Also an iterator, yielding `Result<Input, SkippedInput>`. Driven by a `Trigger` (either a `Clock` for time-based firing or another `Effect` for dependency-based firing) and a `Schema` for generating values. `Input` (`{ id, effect, offset, timestamp, data, metadata }`) is the event an effect produces each time it fires.
 
@@ -67,7 +67,7 @@ The workspace has two crates:
 
 An effect opts into a channel by setting `channel: <channel-key>`. The format used is resolved by merging the effect-level `format` over the channel-level `format`. A `stream` channel with no effects writing to it is still spawned for the run's duration, but only as an output source (e.g. tailing a log file) - its stdout/stderr lines still become `Output` events, just with no associated effect.
 
-### Schema types (all in `rngo/src/schema/`)
+### Schema types (all in `rngo/src/effect/schema/`)
 
 `Array`, `Constant`, `Context`, `Custom`, `Function`, `Number`, `Object`, `Reference`, `Select`, `Str` (module `string.rs`). Each implements `SchemaBuilder` (parse-time) and `Schema` (run-time). `Custom` backs the spec's `schemas:` section, letting effects reference named custom schema types by name. Builder factory functions are re-exported from `rngo/src/build.rs`.
 
