@@ -1,3 +1,5 @@
+use rand::RngExt;
+use rand_pcg::Pcg32;
 use std::collections::HashMap;
 
 /// In-memory index of each effect's inputs, in push order, and of which ones each unique cursor
@@ -33,8 +35,29 @@ impl<T: Clone> InputPool<T> {
         self.effects.get(effect).map(Vec::as_slice).unwrap_or(&[])
     }
 
+    /// A uniformly random input of `effect`, or `None` if it has none.
+    pub fn random(&self, effect: &str, rng: &mut Pcg32) -> Option<T> {
+        let items = self.items(effect);
+        if items.is_empty() {
+            return None;
+        }
+        let index = rng.random_range(0..items.len() as i64) as usize;
+        Some(items[index].clone())
+    }
+
+    /// Consumes and returns a uniformly random input of `effect` that `cursor` hasn't consumed
+    /// yet, or `None` if none remain.
+    pub fn take(&mut self, effect: &str, cursor: &str, rng: &mut Pcg32) -> Option<T> {
+        let remaining = self.remaining(effect, cursor);
+        if remaining == 0 {
+            return None;
+        }
+        let index = rng.random_range(0..remaining as i64) as usize;
+        Some(self.take_nth(effect, cursor, index))
+    }
+
     /// Number of `effect`'s inputs that `cursor` hasn't consumed yet.
-    pub fn remaining(&self, effect: &str, cursor: &str) -> usize {
+    fn remaining(&self, effect: &str, cursor: &str) -> usize {
         let consumed = self
             .cursors
             .get(effect)
@@ -45,7 +68,7 @@ impl<T: Clone> InputPool<T> {
 
     /// Consumes and returns the `index`th (0-based) input `cursor` hasn't consumed yet.
     /// `index` must be less than `remaining(effect, cursor)`.
-    pub fn take(&mut self, effect: &str, cursor: &str, index: usize) -> T {
+    fn take_nth(&mut self, effect: &str, cursor: &str, index: usize) -> T {
         let len = self.items(effect).len();
         let consumed = self.consumed(effect, cursor);
         let position = consumed.nth_unconsumed(index, len);
@@ -157,7 +180,7 @@ mod tests {
     }
 
     #[test]
-    fn take_matches_naive_selection_as_the_pool_grows() {
+    fn take_nth_matches_naive_selection_as_the_pool_grows() {
         let mut pool = InputPool::default();
         let mut consumed = vec![];
         let mut seed = 12345u64;
@@ -181,7 +204,7 @@ mod tests {
 
             let index = (seed >> 33) as usize % remaining;
             let expected = naive_nth(&consumed, index);
-            assert_eq!(pool.take("a", "c", index), expected as u64);
+            assert_eq!(pool.take_nth("a", "c", index), expected as u64);
             consumed[expected] = true;
         }
     }
@@ -192,7 +215,7 @@ mod tests {
         pool.push("a", 1);
         pool.push("b", 2);
 
-        assert_eq!(pool.take("a", "x", 0), 1);
+        assert_eq!(pool.take_nth("a", "x", 0), 1);
         assert_eq!(pool.remaining("a", "x"), 0);
         assert_eq!(pool.remaining("a", "y"), 1);
         assert_eq!(pool.remaining("b", "x"), 1);
@@ -208,6 +231,6 @@ mod tests {
         pool.mark("a", "c", 0);
 
         assert_eq!(pool.remaining("a", "c"), 4);
-        assert_eq!(pool.take("a", "c", 0), 1);
+        assert_eq!(pool.take_nth("a", "c", 0), 1);
     }
 }

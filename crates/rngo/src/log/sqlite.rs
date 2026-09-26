@@ -4,7 +4,6 @@ use crate::log::pool::InputPool;
 use crate::log::{Metadata, RunLogReader, RunLogWriter};
 use crate::proxy::output::Level;
 use chrono::{DateTime, Utc};
-use rand::RngExt;
 use rand_pcg::Pcg32;
 use rusqlite::types::Value as SqlValue;
 use rusqlite::{Connection, OptionalExtension};
@@ -335,13 +334,8 @@ fn query_random_for_effect(
     key: &str,
     rng: &mut Pcg32,
 ) -> Option<Rc<Input>> {
-    let ids = pool.items(key);
-    if ids.is_empty() {
-        return None;
-    }
-
-    let index = rng.random_range(0..ids.len() as i64) as usize;
-    Some(Rc::new(query_by_id(connection, key, ids[index])))
+    let id = pool.random(key, rng)?;
+    Some(Rc::new(query_by_id(connection, key, id)))
 }
 
 fn query_unique_for_effect(
@@ -351,13 +345,8 @@ fn query_unique_for_effect(
     cursor: &str,
     rng: &mut Pcg32,
 ) -> Option<Rc<Input>> {
-    let remaining = pool.remaining(key, cursor);
-    if remaining == 0 {
-        return None;
-    }
-
-    let index = rng.random_range(0..remaining as i64) as usize;
-    let input = query_by_id(connection, key, pool.take(key, cursor, index));
+    let id = pool.take(key, cursor, rng)?;
+    let input = query_by_id(connection, key, id);
 
     insert_metadata_row(
         connection,

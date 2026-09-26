@@ -1,7 +1,6 @@
 use crate::log::pool::InputPool;
 use crate::log::{Metadata, RunLogReader, RunLogWriter};
 use crate::{Input, Output};
-use rand::RngExt;
 use rand_pcg::Pcg32;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -30,24 +29,11 @@ impl RunLogReader for SimpleEventRunLog {
     }
 
     fn random_for_effect(&self, key: &str, rng: &mut Pcg32) -> Option<Rc<Input>> {
-        let pool = self.pool.borrow();
-        let candidates = pool.items(key);
-        if candidates.is_empty() {
-            None
-        } else {
-            let idx = rng.random_range(0..candidates.len());
-            Some(candidates[idx].clone())
-        }
+        self.pool.borrow().random(key, rng)
     }
 
     fn unique_for_effect(&self, key: &str, cursor: &str, rng: &mut Pcg32) -> Option<Rc<Input>> {
-        let mut pool = self.pool.borrow_mut();
-        let remaining = pool.remaining(key, cursor);
-        if remaining == 0 {
-            return None;
-        }
-        let index = rng.random_range(0..remaining);
-        Some(pool.take(key, cursor, index))
+        self.pool.borrow_mut().take(key, cursor, rng)
     }
 
     fn query(&self, _query: &str) -> Option<serde_json::Value> {
