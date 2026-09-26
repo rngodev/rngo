@@ -1,9 +1,9 @@
+use crate::log::unique::UniquePool;
 use crate::log::{Metadata, RunLogReader, RunLogWriter};
 use crate::{Input, Output};
 use rand::RngExt;
 use rand_pcg::Pcg32;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 #[derive(Debug, Default)]
@@ -11,7 +11,7 @@ pub struct SimpleEventRunLog {
     inputs: RefCell<Vec<Rc<Input>>>,
     outputs: RefCell<Vec<Output>>,
     metadata: RefCell<Vec<Metadata>>,
-    returned: RefCell<HashMap<String, HashSet<u64>>>,
+    unique: RefCell<UniquePool<Rc<Input>>>,
 }
 
 impl SimpleEventRunLog {
@@ -48,25 +48,13 @@ impl RunLogReader for SimpleEventRunLog {
     }
 
     fn unique_for_effect(&self, key: &str, cursor: &str, rng: &mut Pcg32) -> Option<Rc<Input>> {
-        let inputs = self.inputs.borrow();
-        let mut returned = self.returned.borrow_mut();
-        let returned = returned.entry(cursor.to_string()).or_default();
-
-        let candidates = inputs
-            .iter()
-            .filter(|e| e.effect == key && !returned.contains(&e.id))
-            .collect::<Vec<_>>();
-
-        if candidates.is_empty() {
-            None
-        } else {
-            let idx = rng.random_range(0..candidates.len());
-            let chosen = candidates.get(idx).cloned().cloned();
-            if let Some(chosen) = &chosen {
-                returned.insert(chosen.id);
-            }
-            chosen
+        let mut unique = self.unique.borrow_mut();
+        let remaining = unique.remaining(key, cursor);
+        if remaining == 0 {
+            return None;
         }
+        let index = rng.random_range(0..remaining);
+        Some(unique.take(key, cursor, index))
     }
 
     fn query(&self, _query: &str) -> Option<serde_json::Value> {
@@ -76,7 +64,9 @@ impl RunLogReader for SimpleEventRunLog {
 
 impl RunLogWriter for SimpleEventRunLog {
     fn push_input(&self, input: Input) {
-        self.inputs.borrow_mut().push(Rc::new(input));
+        let input = Rc::new(input);
+        self.unique.borrow_mut().push(&input.effect, input.clone());
+        self.inputs.borrow_mut().push(input);
     }
 
     fn push_output(&self, output: Output) {
@@ -158,7 +148,7 @@ mod tests {
         push_inputs(&run_log, "a", 5);
         let mut rng = rng(1);
 
-        let mut seen = HashSet::new();
+        let mut seen = std::collections::HashSet::new();
         for _ in 0..5 {
             let sampled = run_log.unique_for_effect("a", "cursor", &mut rng).unwrap();
             assert!(

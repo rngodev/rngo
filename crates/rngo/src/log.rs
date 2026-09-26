@@ -1,5 +1,6 @@
 mod simple;
 mod sqlite;
+mod unique;
 
 use crate::Output;
 use crate::effect::Input;

@@ -1,5 +1,6 @@
 use crate::Output;
 use crate::effect::Input;
+use crate::log::unique::UniquePool;
 use crate::log::{Metadata, RunLogReader, RunLogWriter};
 use crate::proxy::output::Level;
 use chrono::{DateTime, Utc};
@@ -17,6 +18,7 @@ const BATCH_SIZE: usize = 500;
 pub struct SqliteRunLog {
     connection: RefCell<Connection>,
     pending: Cell<usize>,
+    unique: RefCell<UniquePool<u64>>,
 }
 
 impl SqliteRunLog {
@@ -69,9 +71,12 @@ impl SqliteRunLog {
             )
             .unwrap();
 
+        let unique = load_unique_pool(&connection);
+
         Rc::new(SqliteRunLog {
             connection: RefCell::new(connection),
             pending: Cell::new(0),
+            unique: RefCell::new(unique),
         })
     }
 
@@ -91,6 +96,48 @@ impl Drop for SqliteRunLog {
     fn drop(&mut self) {
         let _ = self.connection.borrow().execute_batch("COMMIT;");
     }
+}
+
+fn load_unique_pool(connection: &Connection) -> UniquePool<u64> {
+    let mut pool = UniquePool::default();
+
+    let mut inputs = connection
+        .prepare("SELECT effect, id FROM inputs ORDER BY id ASC")
+        .unwrap();
+    let rows = inputs
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .unwrap();
+    for row in rows {
+        let (effect, id) = row.unwrap();
+        pool.push(&effect, id as u64);
+    }
+
+    let mut markers = connection
+        .prepare(
+            "SELECT DISTINCT i.effect, m.segment, m.input_id FROM metadata m
+            JOIN inputs i ON i.id = m.input_id
+            WHERE m.type = '_unique_reference'",
+        )
+        .unwrap();
+    let rows = markers
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })
+        .unwrap();
+    for row in rows {
+        let (effect, cursor, id) = row.unwrap();
+        if let Ok(position) = pool.items(&effect).binary_search(&(id as u64)) {
+            pool.mark(&effect, &cursor, position);
+        }
+    }
+
+    pool
 }
 
 fn commit(connection: &RefCell<Connection>, pending: &Cell<usize>) {
@@ -154,6 +201,7 @@ impl RunLogWriter for SqliteRunLog {
             ])
             .unwrap();
 
+        self.unique.borrow_mut().push(&input.effect, input.id);
         self.record();
     }
 
@@ -304,45 +352,29 @@ fn query_random_for_effect(
 
 fn query_unique_for_effect(
     connection: &Connection,
+    unique: &mut UniquePool<u64>,
     key: &str,
     cursor: &str,
     rng: &mut Pcg32,
 ) -> Option<Rc<Input>> {
-    let count: i64 = connection
-        .prepare_cached(
-            "SELECT COUNT(*) FROM inputs i WHERE i.effect = ?1 AND NOT EXISTS (
-                SELECT 1 FROM metadata m
-                WHERE m.type = '_unique_reference' AND m.segment = ?2 AND m.input_id = i.id
-            )",
-        )
-        .unwrap()
-        .query_row(rusqlite::params![key, cursor], |row| row.get(0))
-        .unwrap();
-
-    if count == 0 {
+    let remaining = unique.remaining(key, cursor);
+    if remaining == 0 {
         return None;
     }
 
-    let offset_index = rng.random_range(0..count);
-    let row = connection
-        .prepare_cached(
-            "SELECT i.id, i.offset, i.data, i.metadata FROM inputs i WHERE i.effect = ?1 AND NOT EXISTS (
-                SELECT 1 FROM metadata m
-                WHERE m.type = '_unique_reference' AND m.segment = ?2 AND m.input_id = i.id
-            ) ORDER BY i.id ASC LIMIT 1 OFFSET ?3",
-        )
-        .unwrap()
-        .query_row(rusqlite::params![key, cursor, offset_index], |row| {
-            let id: i64 = row.get(0)?;
-            let offset: i64 = row.get(1)?;
-            let data: String = row.get(2)?;
-            let metadata: String = row.get(3)?;
-            Ok((id, offset, data, metadata))
-        })
-        .optional()
-        .unwrap()?;
+    let index = rng.random_range(0..remaining as i64) as usize;
+    let id = unique.take(key, cursor, index) as i64;
 
-    let (id, offset, data, metadata) = row;
+    let (offset, data, metadata) = connection
+        .prepare_cached("SELECT offset, data, metadata FROM inputs WHERE id = ?1")
+        .unwrap()
+        .query_row(rusqlite::params![id], |row| {
+            let offset: i64 = row.get(0)?;
+            let data: String = row.get(1)?;
+            let metadata: String = row.get(2)?;
+            Ok((offset, data, metadata))
+        })
+        .unwrap();
 
     insert_metadata_row(
         connection,
@@ -378,7 +410,13 @@ impl RunLogReader for SqliteRunLog {
     }
 
     fn unique_for_effect(&self, key: &str, cursor: &str, rng: &mut Pcg32) -> Option<Rc<Input>> {
-        query_unique_for_effect(&self.connection.borrow(), key, cursor, rng)
+        query_unique_for_effect(
+            &self.connection.borrow(),
+            &mut self.unique.borrow_mut(),
+            key,
+            cursor,
+            rng,
+        )
     }
 
     fn query(&self, query: &str) -> Option<serde_json::Value> {
@@ -758,6 +796,32 @@ mod tests {
 
         let last = run_log.last().unwrap();
         assert!(last.metadata.is_empty());
+    }
+
+    #[test]
+    fn unique_cursor_state_survives_reopening_the_log() {
+        let tmp = TempDir::new().unwrap();
+        let mut rng = rng(1);
+        let mut seen = std::collections::HashSet::new();
+
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
+        push_inputs(&run_log, "a", 6);
+        for _ in 0..3 {
+            let sampled = run_log.unique_for_effect("a", "cursor", &mut rng).unwrap();
+            seen.insert(sampled.id);
+        }
+        drop(run_log);
+
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
+        for _ in 0..3 {
+            let sampled = run_log.unique_for_effect("a", "cursor", &mut rng).unwrap();
+            assert!(
+                seen.insert(sampled.id),
+                "id {} returned more than once",
+                sampled.id
+            );
+        }
+        assert!(run_log.unique_for_effect("a", "cursor", &mut rng).is_none());
     }
 
     #[test]

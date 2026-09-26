@@ -86,6 +86,8 @@ Named `signals` in the spec are checks run once, after the simulation completes,
 
 A shared `Rc<dyn RunLogReader>` is threaded through all effects and schemas so that `Reference`, trigger-by-effect, and SQL signals can look up previously emitted events — by last input overall, last/random/unique input for a given effect key, or an arbitrary `query()`. A separate `RunLogWriter` trait pushes `Input`, `Output`, and `Metadata` rows. `SimpleEventRunLog` (`log/simple.rs`) is the in-memory implementation; `SqliteRunLog` (`log/sqlite.rs`) persists all three to `log.sqlite` in the run directory and implements both traits.
 
+`unique_for_effect` (the `unique` reference cursor) is backed in both implementations by `UniquePool` (`log/unique.rs`): each effect's inputs in push order, plus a Fenwick tree per (effect, cursor) of consumed positions, so picking the k-th unconsumed input is O(log n) instead of a scan. It assumes inputs for an effect are pushed in increasing `id` order (true because ids come from `last().id + 1`), so "k-th in push order" matches the original `ORDER BY id` selection and seeded runs stay reproducible. `SqliteRunLog` keeps its pool in memory, fills it from `push_input`, and rebuilds it from the `inputs` table and `_unique_reference` metadata rows on open; it still writes those rows on every draw.
+
 ### Benchmarks (`crates/rngo/benches/`)
 
 Criterion benches, run with `just bench`. The lib target sets `bench = false` so criterion flags (e.g. `--save-baseline`) aren't passed to libtest. Reports land in `target/criterion/`.
