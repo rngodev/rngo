@@ -66,6 +66,7 @@ pub fn run(
         proxy.send(&input)?;
     }
 
+    simulation.finish();
     proxy.finish();
 
     let audit = audit_builder
@@ -1101,6 +1102,49 @@ mod tests {
             content.lines().count(),
             3,
             "limit should cap the run at exactly 3 effects"
+        );
+    }
+
+    #[test]
+    fn signals_can_read_simulation_wall_clock_times() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+
+        fs::create_dir_all(base.join(".rngo/effects")).unwrap();
+        fs::create_dir_all(base.join(".rngo/signals")).unwrap();
+
+        write_yaml(
+            base.join(".rngo/spec.yml"),
+            &json!({
+                "seed": 1,
+                "start": "2024-01-01",
+                "end": "2024-01-04"
+            }),
+        );
+
+        write_yaml(
+            base.join(".rngo/effects/ping.yml"),
+            &json!({
+                "trigger": "hz(1, day)",
+                "schema": { "type": "constant", "value": 1 }
+            }),
+        );
+
+        write_yaml(
+            base.join(".rngo/signals/simulation-times.yml"),
+            &json!({
+                "type": "sql",
+                "query": "SELECT COUNT(*) FROM metadata WHERE type IN ('simulation_start', 'simulation_end')",
+                "expect": "result == 2"
+            }),
+        );
+
+        assert!(run(base, false, None, false, None).unwrap());
+
+        let (_, passed) = signal_outcome(base, "simulation-times");
+        assert!(
+            passed,
+            "signals should be able to read the simulation start and end times"
         );
     }
 }
