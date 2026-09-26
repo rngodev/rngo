@@ -135,6 +135,10 @@ impl Dialect {
                 };
             };
 
+            if let Some(limit) = effect.limit {
+                effect_builder.set_limit(limit);
+            }
+
             if let Some(trigger_union) = &effect.trigger {
                 let trigger = match trigger_union {
                     spec::TriggerUnion::Shorthand(rate) => {
