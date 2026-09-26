@@ -25,7 +25,7 @@ impl RunLogReader for SimpleEventRunLog {
     }
 
     fn last_for_effect(&self, key: &str) -> Option<Rc<Input>> {
-        self.pool.borrow().items(key).last().cloned()
+        self.pool.borrow().last(key)
     }
 
     fn random_for_effect(&self, key: &str, rng: &mut Pcg32) -> Option<Rc<Input>> {

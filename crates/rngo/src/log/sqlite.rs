@@ -131,9 +131,7 @@ fn load_pool(connection: &Connection) -> InputPool<u64> {
         .unwrap();
     for row in rows {
         let (effect, cursor, id) = row.unwrap();
-        if let Ok(position) = pool.items(&effect).binary_search(&(id as u64)) {
-            pool.mark(&effect, &cursor, position);
-        }
+        pool.mark(&effect, &cursor, &(id as u64));
     }
 
     pool

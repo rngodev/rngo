@@ -30,8 +30,13 @@ impl<T: Clone> InputPool<T> {
         }
     }
 
+    /// `effect`'s most recently pushed input.
+    pub fn last(&self, effect: &str) -> Option<T> {
+        self.items(effect).last().cloned()
+    }
+
     /// All of `effect`'s inputs in push order; empty if it has none.
-    pub fn items(&self, effect: &str) -> &[T] {
+    fn items(&self, effect: &str) -> &[T] {
         self.effects.get(effect).map(Vec::as_slice).unwrap_or(&[])
     }
 
@@ -75,13 +80,6 @@ impl<T: Clone> InputPool<T> {
         self.effects[effect][position].clone()
     }
 
-    /// Records the input at `position` in `items(effect)` as consumed by `cursor`, without
-    /// returning it. Used to replay prior draws when reopening a log. Must not be called twice for
-    /// the same position.
-    pub fn mark(&mut self, effect: &str, cursor: &str, position: usize) {
-        self.consumed(effect, cursor).mark(position);
-    }
-
     /// `cursor`'s consumed set for `effect`, created empty on first use.
     fn consumed(&mut self, effect: &str, cursor: &str) -> &mut Consumed {
         if !self.cursors.contains_key(effect) {
@@ -92,6 +90,17 @@ impl<T: Clone> InputPool<T> {
             cursors.insert(cursor.to_string(), Consumed::default());
         }
         cursors.get_mut(cursor).unwrap()
+    }
+}
+
+impl<T: Clone + Ord> InputPool<T> {
+    /// Records `item` as consumed by `cursor` without returning it; ignored if `item` isn't one of
+    /// `effect`'s inputs. Used to replay prior draws when reopening a log. Must not be called twice
+    /// for the same item.
+    pub fn mark(&mut self, effect: &str, cursor: &str, item: &T) {
+        if let Ok(position) = self.items(effect).binary_search(item) {
+            self.consumed(effect, cursor).mark(position);
+        }
     }
 }
 
@@ -221,14 +230,15 @@ mod tests {
     }
 
     #[test]
-    fn mark_excludes_a_position_from_later_takes() {
+    fn mark_excludes_an_item_from_later_takes() {
         let mut pool = InputPool::default();
-        for id in 0..5 {
+        for id in [10, 20, 30] {
             pool.push("a", id);
         }
-        pool.mark("a", "c", 0);
+        pool.mark("a", "c", &10);
+        pool.mark("a", "c", &99);
 
-        assert_eq!(pool.remaining("a", "c"), 4);
-        assert_eq!(pool.take_nth("a", "c", 0), 1);
+        assert_eq!(pool.remaining("a", "c"), 2);
+        assert_eq!(pool.take_nth("a", "c", 0), 20);
     }
 }
