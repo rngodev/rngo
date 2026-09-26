@@ -69,10 +69,9 @@ impl<T: Clone> InputPool<T> {
     /// Consumes and returns the `index`th (0-based) input `cursor` hasn't consumed yet.
     /// `index` must be less than `remaining(effect, cursor)`.
     fn take_nth(&mut self, effect: &str, cursor: &str, index: usize) -> T {
-        let len = self.items(effect).len();
         let consumed = self.consumed(effect, cursor);
-        let position = consumed.nth_unconsumed(index, len);
-        consumed.mark(position, len);
+        let position = consumed.nth_unconsumed(index);
+        consumed.mark(position);
         self.effects[effect][position].clone()
     }
 
@@ -80,8 +79,7 @@ impl<T: Clone> InputPool<T> {
     /// returning it. Used to replay prior draws when reopening a log. Must not be called twice for
     /// the same position.
     pub fn mark(&mut self, effect: &str, cursor: &str, position: usize) {
-        let len = self.items(effect).len();
-        self.consumed(effect, cursor).mark(position, len);
+        self.consumed(effect, cursor).mark(position);
     }
 
     /// `cursor`'s consumed set for `effect`, created empty on first use.
@@ -98,7 +96,8 @@ impl<T: Clone> InputPool<T> {
 }
 
 /// Fenwick tree counting consumed positions. `tree` is 1-indexed (`tree[0]` is unused) and its
-/// capacity is always a power of two; `total` is the number of consumed positions.
+/// capacity is always a power of two; positions past the capacity are unconsumed. `total` is the
+/// number of consumed positions.
 #[derive(Debug)]
 struct Consumed {
     tree: Vec<usize>,
@@ -124,18 +123,18 @@ impl Consumed {
         self.tree.len() - 1
     }
 
-    /// Doubles capacity until it covers `len` positions. New positions start unconsumed.
-    fn grow(&mut self, len: usize) {
-        while self.capacity() < len {
+    /// Doubles capacity until it covers the 0-based `position`. New positions start unconsumed.
+    fn grow(&mut self, position: usize) {
+        while self.capacity() <= position {
             let capacity = self.capacity() * 2;
             self.tree.resize(capacity + 1, 0);
             self.tree[capacity] = self.total;
         }
     }
 
-    /// Marks the 0-based `position` consumed. `len` is the effect's current input count.
-    fn mark(&mut self, position: usize, len: usize) {
-        self.grow(len);
+    /// Marks the 0-based `position` consumed.
+    fn mark(&mut self, position: usize) {
+        self.grow(position);
         let mut i = position + 1;
         while i <= self.capacity() {
             self.tree[i] += 1;
@@ -144,9 +143,8 @@ impl Consumed {
         self.total += 1;
     }
 
-    /// 0-based position of the `index`th (0-based) unconsumed input among the first `len`.
-    fn nth_unconsumed(&mut self, index: usize, len: usize) -> usize {
-        self.grow(len);
+    /// 0-based position of the `index`th (0-based) unconsumed position.
+    fn nth_unconsumed(&self, index: usize) -> usize {
         let mut position = 0;
         let mut rank = index + 1;
         let mut step = self.capacity();
@@ -161,7 +159,7 @@ impl Consumed {
             }
             step /= 2;
         }
-        position
+        position + rank - 1
     }
 }
 
