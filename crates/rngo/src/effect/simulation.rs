@@ -24,17 +24,20 @@ impl Simulation {
     pub fn finish(&mut self) {
         if self.started && !self.finished {
             self.finished = true;
-            self.record_wall_clock("simulation_end");
+            self.record_timing("simulation_end");
         }
     }
 
-    fn record_wall_clock(&self, mtype: &str) {
+    fn record_timing(&self, key: &str) {
         self.writer.push_metadata(Metadata {
-            mtype: mtype.to_string(),
+            mtype: "timing".to_string(),
             input_id: None,
             output_id: None,
             offset: None,
-            data: Some(Utc::now().to_rfc3339().into()),
+            data: Some(serde_json::json!({
+                "key": key,
+                "timestamp": Utc::now().to_rfc3339(),
+            })),
             segment: None,
         });
     }
@@ -73,7 +76,7 @@ impl Iterator for Simulation {
 
         if !self.started {
             self.started = true;
-            self.record_wall_clock("simulation_start");
+            self.record_timing("simulation_start");
         }
 
         let input = self.advance();
@@ -303,33 +306,28 @@ mod tests {
         }
     }
 
-    fn wall_clock_metadata(writer: &RecordedMetadata) -> Vec<crate::Metadata> {
+    fn timing_metadata(writer: &RecordedMetadata) -> Vec<serde_json::Value> {
         writer
             .0
             .borrow()
             .iter()
-            .filter(|metadata| metadata.mtype.starts_with("simulation_"))
-            .cloned()
+            .filter(|metadata| metadata.mtype == "timing")
+            .map(|metadata| metadata.data.clone().unwrap())
             .collect()
     }
 
-    fn wall_clock_types(writer: &RecordedMetadata) -> Vec<String> {
-        wall_clock_metadata(writer)
-            .into_iter()
-            .map(|metadata| metadata.mtype)
-            .collect()
-    }
-
-    fn wall_clock_times(writer: &RecordedMetadata) -> Vec<chrono::DateTime<chrono::FixedOffset>> {
-        wall_clock_metadata(writer)
+    fn timing_keys(writer: &RecordedMetadata) -> Vec<String> {
+        timing_metadata(writer)
             .iter()
-            .map(|metadata| {
-                let data = metadata
-                    .data
-                    .as_ref()
-                    .and_then(|data| data.as_str())
-                    .unwrap();
-                chrono::DateTime::parse_from_rfc3339(data).unwrap()
+            .map(|data| data["key"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    fn timing_timestamps(writer: &RecordedMetadata) -> Vec<chrono::DateTime<chrono::FixedOffset>> {
+        timing_metadata(writer)
+            .iter()
+            .map(|data| {
+                chrono::DateTime::parse_from_rfc3339(data["timestamp"].as_str().unwrap()).unwrap()
             })
             .collect()
     }
@@ -347,47 +345,38 @@ mod tests {
     }
 
     #[test]
-    fn records_wall_clock_start_and_end_when_exhausted() {
+    fn records_start_and_end_timing_when_exhausted() {
         let writer = std::rc::Rc::new(RecordedMetadata::default());
         let mut simulation = simulation_with(writer.clone());
 
-        assert!(wall_clock_types(&writer).is_empty());
+        assert!(timing_keys(&writer).is_empty());
         assert_eq!(simulation.by_ref().count(), 3);
-        assert_eq!(
-            wall_clock_types(&writer),
-            ["simulation_start", "simulation_end"]
-        );
+        assert_eq!(timing_keys(&writer), ["simulation_start", "simulation_end"]);
 
-        let times = wall_clock_times(&writer);
+        let times = timing_timestamps(&writer);
         assert!(times[0] <= times[1]);
 
         assert!(simulation.next().is_none());
         drop(simulation);
-        assert_eq!(
-            wall_clock_types(&writer),
-            ["simulation_start", "simulation_end"]
-        );
+        assert_eq!(timing_keys(&writer), ["simulation_start", "simulation_end"]);
     }
 
     #[test]
-    fn records_wall_clock_end_when_dropped_early() {
+    fn records_end_timing_when_dropped_early() {
         let writer = std::rc::Rc::new(RecordedMetadata::default());
         let mut simulation = simulation_with(writer.clone());
 
         simulation.next();
-        assert_eq!(wall_clock_types(&writer), ["simulation_start"]);
+        assert_eq!(timing_keys(&writer), ["simulation_start"]);
 
         drop(simulation);
-        assert_eq!(
-            wall_clock_types(&writer),
-            ["simulation_start", "simulation_end"]
-        );
+        assert_eq!(timing_keys(&writer), ["simulation_start", "simulation_end"]);
     }
 
     #[test]
-    fn does_not_record_wall_clock_times_when_never_started() {
+    fn does_not_record_timing_when_never_started() {
         let writer = std::rc::Rc::new(RecordedMetadata::default());
         drop(simulation_with(writer.clone()));
-        assert!(wall_clock_types(&writer).is_empty());
+        assert!(timing_keys(&writer).is_empty());
     }
 }
