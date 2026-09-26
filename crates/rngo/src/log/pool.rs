@@ -1,21 +1,21 @@
 use std::collections::HashMap;
 
 #[derive(Debug)]
-pub(crate) struct UniquePool<T> {
+pub(crate) struct InputPool<T> {
     effects: HashMap<String, Vec<T>>,
     cursors: HashMap<String, HashMap<String, Consumed>>,
 }
 
-impl<T> Default for UniquePool<T> {
+impl<T> Default for InputPool<T> {
     fn default() -> Self {
-        UniquePool {
+        InputPool {
             effects: HashMap::new(),
             cursors: HashMap::new(),
         }
     }
 }
 
-impl<T: Clone> UniquePool<T> {
+impl<T: Clone> InputPool<T> {
     pub fn push(&mut self, effect: &str, item: T) {
         match self.effects.get_mut(effect) {
             Some(items) => items.push(item),
@@ -141,7 +141,7 @@ mod tests {
 
     #[test]
     fn take_matches_naive_selection_as_the_pool_grows() {
-        let mut pool = UniquePool::default();
+        let mut pool = InputPool::default();
         let mut consumed = vec![];
         let mut seed = 12345u64;
 
@@ -171,7 +171,7 @@ mod tests {
 
     #[test]
     fn cursors_and_effects_are_independent() {
-        let mut pool = UniquePool::default();
+        let mut pool = InputPool::default();
         pool.push("a", 1);
         pool.push("b", 2);
 
@@ -184,7 +184,7 @@ mod tests {
 
     #[test]
     fn mark_excludes_a_position_from_later_takes() {
-        let mut pool = UniquePool::default();
+        let mut pool = InputPool::default();
         for id in 0..5 {
             pool.push("a", id);
         }

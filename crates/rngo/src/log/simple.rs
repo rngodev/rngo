@@ -1,4 +1,4 @@
-use crate::log::unique::UniquePool;
+use crate::log::pool::InputPool;
 use crate::log::{Metadata, RunLogReader, RunLogWriter};
 use crate::{Input, Output};
 use rand::RngExt;
@@ -11,7 +11,7 @@ pub struct SimpleEventRunLog {
     inputs: RefCell<Vec<Rc<Input>>>,
     outputs: RefCell<Vec<Output>>,
     metadata: RefCell<Vec<Metadata>>,
-    unique: RefCell<UniquePool<Rc<Input>>>,
+    pool: RefCell<InputPool<Rc<Input>>>,
 }
 
 impl SimpleEventRunLog {
@@ -26,35 +26,28 @@ impl RunLogReader for SimpleEventRunLog {
     }
 
     fn last_for_effect(&self, key: &str) -> Option<Rc<Input>> {
-        self.inputs
-            .borrow()
-            .iter()
-            .rfind(|e| e.effect == key)
-            .cloned()
+        self.pool.borrow().items(key).last().cloned()
     }
 
     fn random_for_effect(&self, key: &str, rng: &mut Pcg32) -> Option<Rc<Input>> {
-        let inputs = self.inputs.borrow();
-        let candidates = inputs
-            .iter()
-            .filter(|e| e.effect == key)
-            .collect::<Vec<_>>();
+        let pool = self.pool.borrow();
+        let candidates = pool.items(key);
         if candidates.is_empty() {
             None
         } else {
             let idx = rng.random_range(0..candidates.len());
-            candidates.get(idx).cloned().cloned()
+            Some(candidates[idx].clone())
         }
     }
 
     fn unique_for_effect(&self, key: &str, cursor: &str, rng: &mut Pcg32) -> Option<Rc<Input>> {
-        let mut unique = self.unique.borrow_mut();
-        let remaining = unique.remaining(key, cursor);
+        let mut pool = self.pool.borrow_mut();
+        let remaining = pool.remaining(key, cursor);
         if remaining == 0 {
             return None;
         }
         let index = rng.random_range(0..remaining);
-        Some(unique.take(key, cursor, index))
+        Some(pool.take(key, cursor, index))
     }
 
     fn query(&self, _query: &str) -> Option<serde_json::Value> {
@@ -65,7 +58,7 @@ impl RunLogReader for SimpleEventRunLog {
 impl RunLogWriter for SimpleEventRunLog {
     fn push_input(&self, input: Input) {
         let input = Rc::new(input);
-        self.unique.borrow_mut().push(&input.effect, input.clone());
+        self.pool.borrow_mut().push(&input.effect, input.clone());
         self.inputs.borrow_mut().push(input);
     }
 

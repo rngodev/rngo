@@ -1,6 +1,6 @@
 use crate::Output;
 use crate::effect::Input;
-use crate::log::unique::UniquePool;
+use crate::log::pool::InputPool;
 use crate::log::{Metadata, RunLogReader, RunLogWriter};
 use crate::proxy::output::Level;
 use chrono::{DateTime, Utc};
@@ -18,7 +18,7 @@ const BATCH_SIZE: usize = 500;
 pub struct SqliteRunLog {
     connection: RefCell<Connection>,
     pending: Cell<usize>,
-    unique: RefCell<UniquePool<u64>>,
+    pool: RefCell<InputPool<u64>>,
 }
 
 impl SqliteRunLog {
@@ -71,12 +71,12 @@ impl SqliteRunLog {
             )
             .unwrap();
 
-        let unique = load_unique_pool(&connection);
+        let pool = load_pool(&connection);
 
         Rc::new(SqliteRunLog {
             connection: RefCell::new(connection),
             pending: Cell::new(0),
-            unique: RefCell::new(unique),
+            pool: RefCell::new(pool),
         })
     }
 
@@ -98,8 +98,8 @@ impl Drop for SqliteRunLog {
     }
 }
 
-fn load_unique_pool(connection: &Connection) -> UniquePool<u64> {
-    let mut pool = UniquePool::default();
+fn load_pool(connection: &Connection) -> InputPool<u64> {
+    let mut pool = InputPool::default();
 
     let mut inputs = connection
         .prepare("SELECT effect, id FROM inputs ORDER BY id ASC")
@@ -201,7 +201,7 @@ impl RunLogWriter for SqliteRunLog {
             ])
             .unwrap();
 
-        self.unique.borrow_mut().push(&input.effect, input.id);
+        self.pool.borrow_mut().push(&input.effect, input.id);
         self.record();
     }
 
@@ -307,68 +307,11 @@ fn query_last_for_effect(connection: &Connection, key: &str) -> Option<Rc<Input>
     }))
 }
 
-fn query_random_for_effect(
-    connection: &Connection,
-    key: &str,
-    rng: &mut Pcg32,
-) -> Option<Rc<Input>> {
-    let count: i64 = connection
-        .prepare_cached("SELECT COUNT(*) FROM inputs WHERE effect = ?1")
-        .unwrap()
-        .query_row(rusqlite::params![key], |row| row.get(0))
-        .unwrap();
-
-    if count == 0 {
-        return None;
-    }
-
-    let offset_index = rng.random_range(0..count);
-    let row = connection
-        .prepare_cached(
-            "SELECT id, offset, data, metadata FROM inputs WHERE effect = ?1 ORDER BY id ASC LIMIT 1 OFFSET ?2",
-        )
-        .unwrap()
-        .query_row(rusqlite::params![key, offset_index], |row| {
-            let id: i64 = row.get(0)?;
-            let offset: i64 = row.get(1)?;
-            let data: String = row.get(2)?;
-            let metadata: String = row.get(3)?;
-            Ok((id, offset, data, metadata))
-        })
-        .optional()
-        .unwrap()?;
-
-    let (id, offset, data, metadata) = row;
-
-    Some(Rc::new(Input {
-        id: id as u64,
-        effect: key.to_string(),
-        offset: offset as u64,
-        timestamp: placeholder_timestamp(),
-        data: serde_json::from_str(&data).unwrap(),
-        metadata: serde_json::from_str(&metadata).unwrap(),
-    }))
-}
-
-fn query_unique_for_effect(
-    connection: &Connection,
-    unique: &mut UniquePool<u64>,
-    key: &str,
-    cursor: &str,
-    rng: &mut Pcg32,
-) -> Option<Rc<Input>> {
-    let remaining = unique.remaining(key, cursor);
-    if remaining == 0 {
-        return None;
-    }
-
-    let index = rng.random_range(0..remaining as i64) as usize;
-    let id = unique.take(key, cursor, index) as i64;
-
+fn query_by_id(connection: &Connection, key: &str, id: u64) -> Input {
     let (offset, data, metadata) = connection
         .prepare_cached("SELECT offset, data, metadata FROM inputs WHERE id = ?1")
         .unwrap()
-        .query_row(rusqlite::params![id], |row| {
+        .query_row(rusqlite::params![id as i64], |row| {
             let offset: i64 = row.get(0)?;
             let data: String = row.get(1)?;
             let metadata: String = row.get(2)?;
@@ -376,24 +319,57 @@ fn query_unique_for_effect(
         })
         .unwrap();
 
-    insert_metadata_row(
-        connection,
-        "_unique_reference",
-        Some(id),
-        None,
-        Some(offset as u64),
-        None,
-        Some(cursor),
-    );
-
-    Some(Rc::new(Input {
-        id: id as u64,
+    Input {
+        id,
         effect: key.to_string(),
         offset: offset as u64,
         timestamp: placeholder_timestamp(),
         data: serde_json::from_str(&data).unwrap(),
         metadata: serde_json::from_str(&metadata).unwrap(),
-    }))
+    }
+}
+
+fn query_random_for_effect(
+    connection: &Connection,
+    pool: &InputPool<u64>,
+    key: &str,
+    rng: &mut Pcg32,
+) -> Option<Rc<Input>> {
+    let ids = pool.items(key);
+    if ids.is_empty() {
+        return None;
+    }
+
+    let index = rng.random_range(0..ids.len() as i64) as usize;
+    Some(Rc::new(query_by_id(connection, key, ids[index])))
+}
+
+fn query_unique_for_effect(
+    connection: &Connection,
+    pool: &mut InputPool<u64>,
+    key: &str,
+    cursor: &str,
+    rng: &mut Pcg32,
+) -> Option<Rc<Input>> {
+    let remaining = pool.remaining(key, cursor);
+    if remaining == 0 {
+        return None;
+    }
+
+    let index = rng.random_range(0..remaining as i64) as usize;
+    let input = query_by_id(connection, key, pool.take(key, cursor, index));
+
+    insert_metadata_row(
+        connection,
+        "_unique_reference",
+        Some(input.id as i64),
+        None,
+        Some(input.offset),
+        None,
+        Some(cursor),
+    );
+
+    Some(Rc::new(input))
 }
 
 impl RunLogReader for SqliteRunLog {
@@ -406,13 +382,13 @@ impl RunLogReader for SqliteRunLog {
     }
 
     fn random_for_effect(&self, key: &str, rng: &mut Pcg32) -> Option<Rc<Input>> {
-        query_random_for_effect(&self.connection.borrow(), key, rng)
+        query_random_for_effect(&self.connection.borrow(), &self.pool.borrow(), key, rng)
     }
 
     fn unique_for_effect(&self, key: &str, cursor: &str, rng: &mut Pcg32) -> Option<Rc<Input>> {
         query_unique_for_effect(
             &self.connection.borrow(),
-            &mut self.unique.borrow_mut(),
+            &mut self.pool.borrow_mut(),
             key,
             cursor,
             rng,
