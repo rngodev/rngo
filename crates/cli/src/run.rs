@@ -68,6 +68,7 @@ pub fn run(
 
     simulation.finish();
     proxy.finish();
+    writer.finish();
 
     let audit = audit_builder
         .run_log(sqlite_run_log)
