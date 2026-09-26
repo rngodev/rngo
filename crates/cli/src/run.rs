@@ -1014,6 +1014,39 @@ mod tests {
     }
 
     #[test]
+    fn dry_run_rejects_invalid_effect_limit() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+
+        fs::create_dir_all(base.join(".rngo/effects")).unwrap();
+
+        write_yaml(
+            base.join(".rngo/spec.yml"),
+            &json!({
+                "seed": 1,
+                "start": "2024-01-01",
+                "end": "2024-01-04"
+            }),
+        );
+
+        write_yaml(
+            base.join(".rngo/effects/ping.yml"),
+            &json!({
+                "trigger": "hz(1, day)",
+                "limit": 0,
+                "schema": { "type": "constant", "value": 1 }
+            }),
+        );
+
+        let error = run(base, false, None, true, None).unwrap_err();
+
+        assert!(
+            error.to_string().contains("effects.ping.limit"),
+            "error should name the effect: {error}"
+        );
+    }
+
+    #[test]
     fn limit_caps_total_effects_produced() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();

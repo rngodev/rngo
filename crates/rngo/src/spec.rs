@@ -1,6 +1,7 @@
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::num::NonZeroU64;
 use thiserror::Error;
 
 pub fn from_value(value: serde_json::Value) -> Result<Spec, Vec<ParseError>> {
@@ -15,12 +16,19 @@ pub fn from_value(value: serde_json::Value) -> Result<Spec, Vec<ParseError>> {
 }
 
 #[derive(Error, Debug)]
-#[error("failed to parse: `{message}`")]
+#[error("failed to parse{}: `{message}`", display_path(.path))]
 pub enum ParseError {
     SchemaError {
         path: Option<Vec<String>>,
         message: String,
     },
+}
+
+fn display_path(path: &Option<Vec<String>>) -> String {
+    match path {
+        Some(path) if !path.is_empty() => format!(" `{}`", path.join(".")),
+        _ => String::new(),
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -57,6 +65,7 @@ pub struct Effect {
     pub channel: Option<String>,
     pub start: Option<String>,
     pub end: Option<String>,
+    pub limit: Option<NonZeroU64>,
     pub trigger: Option<TriggerUnion>,
     pub metadata: Option<Value>,
     pub schema: Schema,

@@ -27,6 +27,7 @@ let mut simulation = rngo::Simulation.builder()
     .with_effect("user", |effect| {
         effect
             .trigger_expression("hz(10, hour) * (offset * 0.0001)")
+            .limit(NonZeroU64::new(1000).unwrap())
             .schema(
                 object()
                     .property("id", number().minimum(1).scale(0).step(1))
@@ -147,6 +148,7 @@ You can also define the above in JSON (or YAML) spec - it would look like this:
             "channel": "db",
             "metadata": { "table": "USERS" },
             "trigger": "hz(10, hour) * (offset * 0.0001)",
+            "limit": 1000,
             "schema": {
                 "type": "object",
                 "properties": {

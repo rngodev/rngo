@@ -14,6 +14,7 @@ use schema::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::num::NonZeroU64;
 use std::rc::Rc;
 use trigger::{Trigger, TriggerConfig};
 
@@ -26,6 +27,8 @@ pub struct Effect {
     trigger: Trigger,
     schema: Box<dyn Schema>,
     end_offset: u64,
+    limit: Option<u64>,
+    produced: u64,
     sim_start: DateTime<FixedOffset>,
     sim_end: DateTime<FixedOffset>,
 }
@@ -36,6 +39,10 @@ impl Effect {
     }
 
     pub fn next_offset(&self) -> Option<u64> {
+        if self.limit.is_some_and(|limit| self.produced >= limit) {
+            return None;
+        }
+
         let offset = self.trigger.next_offset()?;
         if offset > self.end_offset {
             None
@@ -64,6 +71,7 @@ impl Iterator for Effect {
 
         if let Some(data) = result.value {
             let last_id = self.run_log_reader.last().map(|e| e.id).unwrap_or(0);
+            self.produced += 1;
 
             Some(Ok(Input {
                 id: last_id + 1,
@@ -127,6 +135,7 @@ pub struct EffectBuilder {
     pub key: String,
     pub start: Option<Moment>,
     pub end: Option<Moment>,
+    pub limit: Option<NonZeroU64>,
     now: Option<DateTime<FixedOffset>>,
     sim_start: Option<DateTime<FixedOffset>>,
     sim_end: Option<DateTime<FixedOffset>>,
@@ -142,6 +151,7 @@ impl EffectBuilder {
             key,
             start: None,
             end: None,
+            limit: None,
             now: None,
             sim_start: None,
             sim_end: None,
@@ -169,6 +179,16 @@ impl EffectBuilder {
 
     pub fn set_end(&mut self, end: Moment) -> &mut Self {
         self.end = Some(end);
+        self
+    }
+
+    pub fn limit(mut self, limit: NonZeroU64) -> Self {
+        self.set_limit(limit);
+        self
+    }
+
+    pub fn set_limit(&mut self, limit: NonZeroU64) -> &mut Self {
+        self.limit = Some(limit);
         self
     }
 
@@ -353,6 +373,8 @@ impl EffectBuilder {
                 trigger,
                 schema,
                 end_offset,
+                limit: self.limit.map(NonZeroU64::get),
+                produced: 0,
                 sim_start,
                 sim_end,
             }),
@@ -362,5 +384,83 @@ impl EffectBuilder {
                 Err(errors)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Effect;
+    use crate::build::{BuildError, constant};
+    use crate::effect::schema::{
+        Metadata, Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult,
+    };
+    use chrono::Utc;
+    use std::num::NonZeroU64;
+
+    #[derive(Debug, Default)]
+    struct AlternatingSchema {
+        calls: u32,
+    }
+
+    impl Schema for AlternatingSchema {
+        fn next(&mut self, _context: &SchemaContext) -> SchemaResult {
+            self.calls += 1;
+            if self.calls % 2 == 1 {
+                SchemaResult {
+                    value: None,
+                    metadata: vec![Metadata {
+                        mtype: "error".into(),
+                        attribute: None,
+                        data: None,
+                    }],
+                }
+            } else {
+                SchemaResult {
+                    value: Some(serde_json::Value::Null),
+                    metadata: vec![],
+                }
+            }
+        }
+    }
+
+    #[derive(Debug)]
+    struct AlternatingSchemaBuilder;
+
+    impl SchemaBuilder for AlternatingSchemaBuilder {
+        fn build(&self, _visitor: SchemaBuildVisitor) -> Result<Box<dyn Schema>, Vec<BuildError>> {
+            Ok(Box::new(AlternatingSchema::default()))
+        }
+    }
+
+    #[test]
+    fn limit_caps_produced_inputs() {
+        let effect = Effect::builder("ping".into())
+            .now(Utc::now().fixed_offset())
+            .trigger_hertz(1000.0)
+            .limit(NonZeroU64::new(3).unwrap())
+            .schema(constant().value(1))
+            .build()
+            .unwrap();
+
+        let results: Vec<_> = effect.collect();
+
+        assert_eq!(results.len(), 3);
+        assert!(results.iter().all(Result::is_ok));
+    }
+
+    #[test]
+    fn limit_does_not_count_skipped_inputs() {
+        let effect = Effect::builder("alternating".into())
+            .now(Utc::now().fixed_offset())
+            .trigger_hertz(1000.0)
+            .limit(NonZeroU64::new(3).unwrap())
+            .schema(AlternatingSchemaBuilder)
+            .build()
+            .unwrap();
+
+        let results: Vec<_> = effect.collect();
+
+        assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 3);
+        assert_eq!(results.iter().filter(|r| r.is_err()).count(), 3);
     }
 }
