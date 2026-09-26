@@ -52,7 +52,6 @@ The workspace has two crates:
 
 - `load_spec` merges `.rngo/spec.yml` with `.rngo/effects/*.yml`, `channels/*.yml`, `schemas/*.yml`, `signals/*.yml`, or `load_spec_file` loads a single file when `--spec` is passed.
 - `Dialect::primitive()` parses the spec three ways (simulation, proxy, audit builders).
-- Ctrl-C sets an interrupt flag: the simulation loop stops, `simulation.finish()` records `simulation_end`, `proxy.finish()` runs, the audit is skipped, and the exit status is non-zero. A second Ctrl-C exits immediately.
 - `--dry-run`: only builds the `Simulation` (to validate the spec) and returns, without creating a run directory or touching channels.
 - Otherwise: creates a run directory at `.rngo/runs/<UUIDv7>/`, symlinks `.rngo/runs/last` to it, writes a `spec.json` snapshot, and opens a `SqliteRunLog` (backed by `log.sqlite`) as both the simulation's `RunLogReader`/`RunLogWriter` and the proxy's writer — wrapped in `StatusWriter` (`cli/src/run/status.rs`), which renders a live effect/output counter to stderr as it forwards writes through.
 - Drives the `Simulation` iterator, sending each `Input` through the `Proxy`, then calls `proxy.finish()`, then builds and runs the `Audit` against the same `SqliteRunLog` and prints per-signal outcomes.

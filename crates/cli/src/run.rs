@@ -5,12 +5,8 @@ use rngo::{Dialect, SignalOutcome, SqliteRunLog, spec};
 use status::StatusWriter;
 use std::error::Error;
 use std::path::{Path, PathBuf};
-use std::sync::Once;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::{fmt, fs};
 use uuid::Uuid;
-
-static INTERRUPTED: AtomicBool = AtomicBool::new(false);
 
 pub fn run(
     base: &Path,
@@ -52,7 +48,6 @@ pub fn run(
     let run_dir = prepare_run_dir(base, &spec)?;
 
     let sqlite_run_log = SqliteRunLog::new(run_dir.clone());
-    watch_for_interrupt();
     let reader = sqlite_run_log.clone();
     let writer = StatusWriter::new(sqlite_run_log.clone(), &spec);
 
@@ -68,19 +63,11 @@ pub fn run(
         .map_err(join_errors)?;
 
     for input in &mut simulation {
-        if INTERRUPTED.load(Ordering::SeqCst) {
-            break;
-        }
         proxy.send(&input)?;
     }
 
     simulation.finish();
     proxy.finish();
-
-    if INTERRUPTED.load(Ordering::SeqCst) {
-        eprintln!("interrupted");
-        return Ok(false);
-    }
 
     let audit = audit_builder
         .run_log(sqlite_run_log)
@@ -123,17 +110,6 @@ pub fn run(
     }
 
     Ok(audit_report.passed())
-}
-
-fn watch_for_interrupt() {
-    static INSTALL: Once = Once::new();
-    INSTALL.call_once(|| {
-        let _ = ctrlc::set_handler(|| {
-            if INTERRUPTED.swap(true, Ordering::SeqCst) {
-                std::process::exit(130);
-            }
-        });
-    });
 }
 
 fn load_spec_file(path: &Path) -> Result<spec::Spec, Box<dyn Error>> {
