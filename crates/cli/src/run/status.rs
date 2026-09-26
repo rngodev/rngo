@@ -46,6 +46,10 @@ impl StatusWriter {
         })
     }
 
+    pub fn finish(&self) {
+        self.render(true);
+    }
+
     fn render(&self, force: bool) {
         if !self.term.is_term() {
             return;
@@ -132,6 +136,6 @@ impl RunLogWriter for StatusWriter {
 
 impl Drop for StatusWriter {
     fn drop(&mut self) {
-        self.render(true);
+        self.finish();
     }
 }
