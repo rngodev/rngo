@@ -52,8 +52,8 @@ The workspace has two crates:
 
 - `load_spec` merges `.rngo/spec.yml` with `.rngo/effects/*.yml`, `channels/*.yml`, `schemas/*.yml`, `signals/*.yml`, or `load_spec_file` loads a single file when `--spec` is passed.
 - `Dialect::primitive()` parses the spec three ways (simulation, proxy, audit builders).
-- Right after opening the log, a `RunClock` (`cli/src/run/clock.rs`) writes a `run_start` metadata row, and writes `run_end` once the audit has run — or on drop, so errored runs still get one. `data` is the wall-clock time as a JSON-encoded RFC 3339 string (query with `data ->> '$'`). Signals can read `run_start` but not `run_end`, which is written after they run.
-- Ctrl-C sets an interrupt flag: the simulation loop stops, `proxy.finish()` runs, `run_end` is recorded, the audit is skipped, and the exit status is non-zero. A second Ctrl-C exits immediately.
+- Right after opening the log, a `SimulationClock` (`cli/src/run/clock.rs`) writes a `simulation_start` metadata row, and writes `simulation_end` after `proxy.finish()` and before the audit — or on drop, so errored runs still get one. `data` is the wall-clock time as a JSON-encoded RFC 3339 string (query with `data ->> '$'`). Signals can read both.
+- Ctrl-C sets an interrupt flag: the simulation loop stops, `proxy.finish()` runs, `simulation_end` is recorded, the audit is skipped, and the exit status is non-zero. A second Ctrl-C exits immediately.
 - `--dry-run`: only builds the `Simulation` (to validate the spec) and returns, without creating a run directory or touching channels.
 - Otherwise: creates a run directory at `.rngo/runs/<UUIDv7>/`, symlinks `.rngo/runs/last` to it, writes a `spec.json` snapshot, and opens a `SqliteRunLog` (backed by `log.sqlite`) as both the simulation's `RunLogReader`/`RunLogWriter` and the proxy's writer — wrapped in `StatusWriter` (`cli/src/run/status.rs`), which renders a live effect/output counter to stderr as it forwards writes through.
 - Drives the `Simulation` iterator, sending each `Input` through the `Proxy`, then calls `proxy.finish()`, then builds and runs the `Audit` against the same `SqliteRunLog` and prints per-signal outcomes.

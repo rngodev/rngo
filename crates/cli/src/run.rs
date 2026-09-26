@@ -1,7 +1,7 @@
 mod clock;
 mod status;
 
-use clock::RunClock;
+use clock::SimulationClock;
 use console::style;
 use rngo::{Dialect, SignalOutcome, SqliteRunLog, spec};
 use status::StatusWriter;
@@ -54,7 +54,7 @@ pub fn run(
     let run_dir = prepare_run_dir(base, &spec)?;
 
     let sqlite_run_log = SqliteRunLog::new(run_dir.clone());
-    let mut clock = RunClock::start(sqlite_run_log.clone());
+    let mut clock = SimulationClock::start(sqlite_run_log.clone());
     watch_for_interrupt();
     let reader = sqlite_run_log.clone();
     let writer = StatusWriter::new(sqlite_run_log.clone(), &spec);
@@ -78,9 +78,9 @@ pub fn run(
     }
 
     proxy.finish();
+    clock.end();
 
     if INTERRUPTED.load(Ordering::SeqCst) {
-        clock.end();
         eprintln!("interrupted");
         return Ok(false);
     }
@@ -91,7 +91,6 @@ pub fn run(
         .map_err(join_errors)?;
 
     let audit_report = audit.run();
-    clock.end();
 
     if !audit_report.outcomes.is_empty() {
         println!();
@@ -1147,7 +1146,7 @@ mod tests {
     }
 
     #[test]
-    fn run_records_wall_clock_start_and_end() {
+    fn run_records_wall_clock_simulation_start_and_end() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
@@ -1172,21 +1171,24 @@ mod tests {
         );
 
         write_yaml(
-            base.join(".rngo/signals/run-start.yml"),
+            base.join(".rngo/signals/simulation-times.yml"),
             &json!({
                 "type": "sql",
-                "query": "SELECT data ->> '$' FROM metadata WHERE type = 'run_start'",
-                "expect": "result != ''"
+                "query": "SELECT COUNT(*) FROM metadata WHERE type IN ('simulation_start', 'simulation_end')",
+                "expect": "result == 2"
             }),
         );
 
         assert!(run(base, false, None, false, None).unwrap());
 
-        let (_, passed) = signal_outcome(base, "run-start");
-        assert!(passed, "signals should be able to read the run start time");
+        let (_, passed) = signal_outcome(base, "simulation-times");
+        assert!(
+            passed,
+            "signals should be able to read the simulation start and end times"
+        );
 
-        let starts = wall_clock_times(base, "run_start");
-        let ends = wall_clock_times(base, "run_end");
+        let starts = wall_clock_times(base, "simulation_start");
+        let ends = wall_clock_times(base, "simulation_end");
         assert_eq!(starts.len(), 1);
         assert_eq!(ends.len(), 1);
         assert!(starts[0] <= ends[0]);

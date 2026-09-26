@@ -1,26 +1,26 @@
 use rngo::{Metadata, RunLogWriter, SqliteRunLog};
 use std::rc::Rc;
 
-pub struct RunClock {
+pub struct SimulationClock {
     log: Rc<SqliteRunLog>,
     ended: bool,
 }
 
-impl RunClock {
+impl SimulationClock {
     pub fn start(log: Rc<SqliteRunLog>) -> Self {
-        record(&log, "run_start");
-        RunClock { log, ended: false }
+        record(&log, "simulation_start");
+        SimulationClock { log, ended: false }
     }
 
     pub fn end(&mut self) {
         if !self.ended {
-            record(&self.log, "run_end");
+            record(&self.log, "simulation_end");
             self.ended = true;
         }
     }
 }
 
-impl Drop for RunClock {
+impl Drop for SimulationClock {
     fn drop(&mut self) {
         self.end();
     }
@@ -47,7 +47,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let log = SqliteRunLog::new(tmp.path().to_path_buf());
 
-        drop(RunClock::start(log.clone()));
+        drop(SimulationClock::start(log.clone()));
         drop(log);
 
         let connection = rusqlite::Connection::open(tmp.path().join("log.sqlite")).unwrap();
@@ -58,6 +58,6 @@ mod tests {
             .unwrap()
             .map(|t| t.unwrap())
             .collect();
-        assert_eq!(types, ["run_start", "run_end"]);
+        assert_eq!(types, ["simulation_start", "simulation_end"]);
     }
 }
