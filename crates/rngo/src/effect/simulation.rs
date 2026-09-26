@@ -293,27 +293,48 @@ mod tests {
     }
 
     #[derive(Debug, Default)]
-    struct MetadataTypes(std::cell::RefCell<Vec<String>>);
+    struct RecordedMetadata(std::cell::RefCell<Vec<crate::Metadata>>);
 
-    impl crate::RunLogWriter for MetadataTypes {
+    impl crate::RunLogWriter for RecordedMetadata {
         fn push_input(&self, _input: crate::Input) {}
         fn push_output(&self, _output: crate::Output) {}
         fn push_metadata(&self, metadata: crate::Metadata) {
-            self.0.borrow_mut().push(metadata.mtype);
+            self.0.borrow_mut().push(metadata);
         }
     }
 
-    fn wall_clock_types(writer: &MetadataTypes) -> Vec<String> {
+    fn wall_clock_metadata(writer: &RecordedMetadata) -> Vec<crate::Metadata> {
         writer
             .0
             .borrow()
             .iter()
-            .filter(|mtype| mtype.starts_with("simulation_"))
+            .filter(|metadata| metadata.mtype.starts_with("simulation_"))
             .cloned()
             .collect()
     }
 
-    fn simulation_with(writer: std::rc::Rc<MetadataTypes>) -> super::Simulation {
+    fn wall_clock_types(writer: &RecordedMetadata) -> Vec<String> {
+        wall_clock_metadata(writer)
+            .into_iter()
+            .map(|metadata| metadata.mtype)
+            .collect()
+    }
+
+    fn wall_clock_times(writer: &RecordedMetadata) -> Vec<chrono::DateTime<chrono::FixedOffset>> {
+        wall_clock_metadata(writer)
+            .iter()
+            .map(|metadata| {
+                let data = metadata
+                    .data
+                    .as_ref()
+                    .and_then(|data| data.as_str())
+                    .unwrap();
+                chrono::DateTime::parse_from_rfc3339(data).unwrap()
+            })
+            .collect()
+    }
+
+    fn simulation_with(writer: std::rc::Rc<RecordedMetadata>) -> super::Simulation {
         let mut simulation_builder = super::Simulation::builder()
             .run_log_reader(crate::SimpleEventRunLog::new())
             .run_log_writer(writer);
@@ -327,7 +348,7 @@ mod tests {
 
     #[test]
     fn records_wall_clock_start_and_end_when_exhausted() {
-        let writer = std::rc::Rc::new(MetadataTypes::default());
+        let writer = std::rc::Rc::new(RecordedMetadata::default());
         let mut simulation = simulation_with(writer.clone());
 
         assert!(wall_clock_types(&writer).is_empty());
@@ -336,6 +357,9 @@ mod tests {
             wall_clock_types(&writer),
             ["simulation_start", "simulation_end"]
         );
+
+        let times = wall_clock_times(&writer);
+        assert!(times[0] <= times[1]);
 
         assert!(simulation.next().is_none());
         drop(simulation);
@@ -347,7 +371,7 @@ mod tests {
 
     #[test]
     fn records_wall_clock_end_when_dropped_early() {
-        let writer = std::rc::Rc::new(MetadataTypes::default());
+        let writer = std::rc::Rc::new(RecordedMetadata::default());
         let mut simulation = simulation_with(writer.clone());
 
         simulation.next();
@@ -362,7 +386,7 @@ mod tests {
 
     #[test]
     fn does_not_record_wall_clock_times_when_never_started() {
-        let writer = std::rc::Rc::new(MetadataTypes::default());
+        let writer = std::rc::Rc::new(RecordedMetadata::default());
         drop(simulation_with(writer.clone()));
         assert!(wall_clock_types(&writer).is_empty());
     }

@@ -1129,21 +1129,8 @@ mod tests {
         );
     }
 
-    fn wall_clock_times(base: &Path, mtype: &str) -> Vec<chrono::DateTime<chrono::FixedOffset>> {
-        let connection =
-            rusqlite::Connection::open(base.join(".rngo/runs/last/log.sqlite")).unwrap();
-        let mut statement = connection
-            .prepare("SELECT data ->> '$' FROM metadata WHERE type = ?1")
-            .unwrap();
-        statement
-            .query_map([mtype], |row| row.get::<_, String>(0))
-            .unwrap()
-            .map(|data| chrono::DateTime::parse_from_rfc3339(&data.unwrap()).unwrap())
-            .collect()
-    }
-
     #[test]
-    fn run_records_wall_clock_simulation_start_and_end() {
+    fn signals_can_read_simulation_wall_clock_times() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
@@ -1183,11 +1170,5 @@ mod tests {
             passed,
             "signals should be able to read the simulation start and end times"
         );
-
-        let starts = wall_clock_times(base, "simulation_start");
-        let ends = wall_clock_times(base, "simulation_end");
-        assert_eq!(starts.len(), 1);
-        assert_eq!(ends.len(), 1);
-        assert!(starts[0] <= ends[0]);
     }
 }
