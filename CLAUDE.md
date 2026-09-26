@@ -4,6 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Coding
 
+Give interfaces (traits, trait methods, public structs, enums, and functions) terse `///` doc comments: one line on what it does, plus what each non-obvious argument means. Skip ones that just restate the name or signature.
+
 Avoid inline comments. If additional context is needed for a section of code, add it in CLAUDE.md.
 
 Always run `just fmt` and `just clippy` after making code changes. If clippy reports warnings or errors, fix them directly in the code.

@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+/// In-memory index of each effect's inputs, in push order, and of which ones each unique cursor
+/// has consumed. Assumes an effect's inputs are pushed in increasing `id` order.
 #[derive(Debug)]
 pub(crate) struct InputPool<T> {
     effects: HashMap<String, Vec<T>>,
@@ -16,6 +18,7 @@ impl<T> Default for InputPool<T> {
 }
 
 impl<T: Clone> InputPool<T> {
+    /// Appends `item` to `effect`'s inputs.
     pub fn push(&mut self, effect: &str, item: T) {
         match self.effects.get_mut(effect) {
             Some(items) => items.push(item),
@@ -25,10 +28,12 @@ impl<T: Clone> InputPool<T> {
         }
     }
 
+    /// All of `effect`'s inputs in push order; empty if it has none.
     pub fn items(&self, effect: &str) -> &[T] {
         self.effects.get(effect).map(Vec::as_slice).unwrap_or(&[])
     }
 
+    /// Number of `effect`'s inputs that `cursor` hasn't consumed yet.
     pub fn remaining(&self, effect: &str, cursor: &str) -> usize {
         let consumed = self
             .cursors
@@ -38,6 +43,8 @@ impl<T: Clone> InputPool<T> {
         self.items(effect).len() - consumed
     }
 
+    /// Consumes and returns the `index`th (0-based) input `cursor` hasn't consumed yet.
+    /// `index` must be less than `remaining(effect, cursor)`.
     pub fn take(&mut self, effect: &str, cursor: &str, index: usize) -> T {
         let len = self.items(effect).len();
         let consumed = self.consumed(effect, cursor);
@@ -46,11 +53,15 @@ impl<T: Clone> InputPool<T> {
         self.effects[effect][position].clone()
     }
 
+    /// Records the input at `position` in `items(effect)` as consumed by `cursor`, without
+    /// returning it. Used to replay prior draws when reopening a log. Must not be called twice for
+    /// the same position.
     pub fn mark(&mut self, effect: &str, cursor: &str, position: usize) {
         let len = self.items(effect).len();
         self.consumed(effect, cursor).mark(position, len);
     }
 
+    /// `cursor`'s consumed set for `effect`, created empty on first use.
     fn consumed(&mut self, effect: &str, cursor: &str) -> &mut Consumed {
         if !self.cursors.contains_key(effect) {
             self.cursors.insert(effect.to_string(), HashMap::new());
@@ -63,6 +74,8 @@ impl<T: Clone> InputPool<T> {
     }
 }
 
+/// Fenwick tree counting consumed positions. `tree` is 1-indexed (`tree[0]` is unused) and its
+/// capacity is always a power of two; `total` is the number of consumed positions.
 #[derive(Debug)]
 struct Consumed {
     tree: Vec<usize>,
@@ -78,6 +91,7 @@ impl Default for Consumed {
     }
 }
 
+/// Lowest set bit of `i`: the size of the range Fenwick node `i` covers.
 fn lowbit(i: usize) -> usize {
     i & i.wrapping_neg()
 }
@@ -87,6 +101,7 @@ impl Consumed {
         self.tree.len() - 1
     }
 
+    /// Doubles capacity until it covers `len` positions. New positions start unconsumed.
     fn grow(&mut self, len: usize) {
         while self.capacity() < len {
             let capacity = self.capacity() * 2;
@@ -95,6 +110,7 @@ impl Consumed {
         }
     }
 
+    /// Marks the 0-based `position` consumed. `len` is the effect's current input count.
     fn mark(&mut self, position: usize, len: usize) {
         self.grow(len);
         let mut i = position + 1;
@@ -105,6 +121,7 @@ impl Consumed {
         self.total += 1;
     }
 
+    /// 0-based position of the `index`th (0-based) unconsumed input among the first `len`.
     fn nth_unconsumed(&mut self, index: usize, len: usize) -> usize {
         self.grow(len);
         let mut position = 0;
