@@ -1,12 +1,18 @@
+mod clock;
 mod status;
 
+use clock::RunClock;
 use console::style;
 use rngo::{Dialect, SignalOutcome, SqliteRunLog, spec};
 use status::StatusWriter;
 use std::error::Error;
 use std::path::{Path, PathBuf};
+use std::sync::Once;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{fmt, fs};
 use uuid::Uuid;
+
+static INTERRUPTED: AtomicBool = AtomicBool::new(false);
 
 pub fn run(
     base: &Path,
@@ -48,6 +54,8 @@ pub fn run(
     let run_dir = prepare_run_dir(base, &spec)?;
 
     let sqlite_run_log = SqliteRunLog::new(run_dir.clone());
+    let mut clock = RunClock::start(sqlite_run_log.clone());
+    watch_for_interrupt();
     let reader = sqlite_run_log.clone();
     let writer = StatusWriter::new(sqlite_run_log.clone(), &spec);
 
@@ -63,10 +71,19 @@ pub fn run(
         .map_err(join_errors)?;
 
     for input in &mut simulation {
+        if INTERRUPTED.load(Ordering::SeqCst) {
+            break;
+        }
         proxy.send(&input)?;
     }
 
     proxy.finish();
+
+    if INTERRUPTED.load(Ordering::SeqCst) {
+        clock.end();
+        eprintln!("interrupted");
+        return Ok(false);
+    }
 
     let audit = audit_builder
         .run_log(sqlite_run_log)
@@ -74,6 +91,7 @@ pub fn run(
         .map_err(join_errors)?;
 
     let audit_report = audit.run();
+    clock.end();
 
     if !audit_report.outcomes.is_empty() {
         println!();
@@ -109,6 +127,17 @@ pub fn run(
     }
 
     Ok(audit_report.passed())
+}
+
+fn watch_for_interrupt() {
+    static INSTALL: Once = Once::new();
+    INSTALL.call_once(|| {
+        let _ = ctrlc::set_handler(|| {
+            if INTERRUPTED.swap(true, Ordering::SeqCst) {
+                std::process::exit(130);
+            }
+        });
+    });
 }
 
 fn load_spec_file(path: &Path) -> Result<spec::Spec, Box<dyn Error>> {
@@ -1034,7 +1063,7 @@ mod tests {
             &json!({
                 "trigger": "hz(1, day)",
                 "limit": 0,
-                "schema": { "type": "constant", "value": 1 }
+                "schema": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
             }),
         );
 
@@ -1102,5 +1131,64 @@ mod tests {
             3,
             "limit should cap the run at exactly 3 effects"
         );
+    }
+
+    fn wall_clock_times(base: &Path, mtype: &str) -> Vec<chrono::DateTime<chrono::FixedOffset>> {
+        let connection =
+            rusqlite::Connection::open(base.join(".rngo/runs/last/log.sqlite")).unwrap();
+        let mut statement = connection
+            .prepare("SELECT data ->> '$' FROM metadata WHERE type = ?1")
+            .unwrap();
+        statement
+            .query_map([mtype], |row| row.get::<_, String>(0))
+            .unwrap()
+            .map(|data| chrono::DateTime::parse_from_rfc3339(&data.unwrap()).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn run_records_wall_clock_start_and_end() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+
+        fs::create_dir_all(base.join(".rngo/effects")).unwrap();
+        fs::create_dir_all(base.join(".rngo/signals")).unwrap();
+
+        write_yaml(
+            base.join(".rngo/spec.yml"),
+            &json!({
+                "seed": 1,
+                "start": "2024-01-01",
+                "end": "2024-01-04"
+            }),
+        );
+
+        write_yaml(
+            base.join(".rngo/effects/ping.yml"),
+            &json!({
+                "trigger": "hz(1, day)",
+                "schema": { "type": "constant", "value": 1 }
+            }),
+        );
+
+        write_yaml(
+            base.join(".rngo/signals/run-start.yml"),
+            &json!({
+                "type": "sql",
+                "query": "SELECT data ->> '$' FROM metadata WHERE type = 'run_start'",
+                "expect": "result != ''"
+            }),
+        );
+
+        assert!(run(base, false, None, false, None).unwrap());
+
+        let (_, passed) = signal_outcome(base, "run-start");
+        assert!(passed, "signals should be able to read the run start time");
+
+        let starts = wall_clock_times(base, "run_start");
+        let ends = wall_clock_times(base, "run_end");
+        assert_eq!(starts.len(), 1);
+        assert_eq!(ends.len(), 1);
+        assert!(starts[0] <= ends[0]);
     }
 }
