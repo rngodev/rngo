@@ -1106,7 +1106,7 @@ mod tests {
     }
 
     #[test]
-    fn signals_can_read_simulation_wall_clock_times() {
+    fn signals_can_read_simulation_timing() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
@@ -1134,7 +1134,7 @@ mod tests {
             base.join(".rngo/signals/simulation-times.yml"),
             &json!({
                 "type": "sql",
-                "query": "SELECT COUNT(*) FROM metadata WHERE type IN ('simulation_start', 'simulation_end')",
+                "query": "SELECT COUNT(*) FROM metadata WHERE type = 'timing' AND data ->> 'key' IN ('simulation_start', 'simulation_end')",
                 "expect": "result == 2"
             }),
         );
