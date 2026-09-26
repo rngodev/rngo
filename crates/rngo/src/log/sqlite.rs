@@ -55,6 +55,9 @@ impl SqliteRunLog {
                     data TEXT
                 );
 
+                CREATE INDEX IF NOT EXISTS idx_inputs_id ON inputs(id);
+                CREATE INDEX IF NOT EXISTS idx_inputs_effect_id ON inputs(effect, id);
+
                 CREATE INDEX IF NOT EXISTS idx_metadata_input_id ON metadata(input_id);
                 CREATE INDEX IF NOT EXISTS idx_metadata_output_id ON metadata(output_id);
 
