@@ -1,7 +1,5 @@
-mod clock;
 mod status;
 
-use clock::SimulationClock;
 use console::style;
 use rngo::{Dialect, SignalOutcome, SqliteRunLog, spec};
 use status::StatusWriter;
@@ -54,7 +52,6 @@ pub fn run(
     let run_dir = prepare_run_dir(base, &spec)?;
 
     let sqlite_run_log = SqliteRunLog::new(run_dir.clone());
-    let mut clock = SimulationClock::start(sqlite_run_log.clone());
     watch_for_interrupt();
     let reader = sqlite_run_log.clone();
     let writer = StatusWriter::new(sqlite_run_log.clone(), &spec);
@@ -77,8 +74,8 @@ pub fn run(
         proxy.send(&input)?;
     }
 
+    simulation.finish();
     proxy.finish();
-    clock.end();
 
     if INTERRUPTED.load(Ordering::SeqCst) {
         eprintln!("interrupted");

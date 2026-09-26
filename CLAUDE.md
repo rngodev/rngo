@@ -40,7 +40,7 @@ The workspace has two crates:
    - `parse_proxy` → `ProxyBuilder` (channel dispatch)
    - `parse_audit` → `AuditBuilder` (signal evaluation)
 
-3. **Simulation** (`effect/simulation.rs`): An `Iterator<Item = Input>`. Each call to `next()` sorts all `Effect`s by their next timestamp offset, advances the earliest one, and pushes the resulting `Input` (or `SkippedInput` metadata) to a `RunLogWriter`, looping internally past skipped attempts until it finds a real one (or runs out). Orchestrates many `Effect`s but doesn't share a trait with it — `Effect` models a single logical kind of input; `Simulation` merges many of them into one time-ordered run.
+3. **Simulation** (`effect/simulation.rs`): An `Iterator<Item = Input>`. Each call to `next()` sorts all `Effect`s by their next timestamp offset, advances the earliest one, and pushes the resulting `Input` (or `SkippedInput` metadata) to a `RunLogWriter`, looping internally past skipped attempts until it finds a real one (or runs out). It also records wall-clock `simulation_start` (on the first `next()`) and `simulation_end` (when exhausted, on `finish()`, or on drop) metadata rows; `data` is a JSON-encoded RFC 3339 string (query with `data ->> '$'`), so signals can read both. Orchestrates many `Effect`s but doesn't share a trait with it — `Effect` models a single logical kind of input; `Simulation` merges many of them into one time-ordered run.
 
 4. **Effect** (`effect.rs`): Also an iterator, yielding `Result<Input, SkippedInput>`. Driven by a `Trigger` (either a `Clock` for time-based firing or another `Effect` for dependency-based firing) and a `Schema` for generating values. `Input` (`{ id, effect, offset, timestamp, data, metadata }`) is the event an effect produces each time it fires.
 
@@ -52,8 +52,7 @@ The workspace has two crates:
 
 - `load_spec` merges `.rngo/spec.yml` with `.rngo/effects/*.yml`, `channels/*.yml`, `schemas/*.yml`, `signals/*.yml`, or `load_spec_file` loads a single file when `--spec` is passed.
 - `Dialect::primitive()` parses the spec three ways (simulation, proxy, audit builders).
-- Right after opening the log, a `SimulationClock` (`cli/src/run/clock.rs`) writes a `simulation_start` metadata row, and writes `simulation_end` after `proxy.finish()` and before the audit — or on drop, so errored runs still get one. `data` is the wall-clock time as a JSON-encoded RFC 3339 string (query with `data ->> '$'`). Signals can read both.
-- Ctrl-C sets an interrupt flag: the simulation loop stops, `proxy.finish()` runs, `simulation_end` is recorded, the audit is skipped, and the exit status is non-zero. A second Ctrl-C exits immediately.
+- Ctrl-C sets an interrupt flag: the simulation loop stops, `simulation.finish()` records `simulation_end`, `proxy.finish()` runs, the audit is skipped, and the exit status is non-zero. A second Ctrl-C exits immediately.
 - `--dry-run`: only builds the `Simulation` (to validate the spec) and returns, without creating a run directory or touching channels.
 - Otherwise: creates a run directory at `.rngo/runs/<UUIDv7>/`, symlinks `.rngo/runs/last` to it, writes a `spec.json` snapshot, and opens a `SqliteRunLog` (backed by `log.sqlite`) as both the simulation's `RunLogReader`/`RunLogWriter` and the proxy's writer — wrapped in `StatusWriter` (`cli/src/run/status.rs`), which renders a live effect/output counter to stderr as it forwards writes through.
 - Drives the `Simulation` iterator, sending each `Input` through the `Proxy`, then calls `proxy.finish()`, then builds and runs the `Audit` against the same `SqliteRunLog` and prints per-signal outcomes.

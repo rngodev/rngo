@@ -1,6 +1,6 @@
 use crate::build::{BuildError, SimulationKey};
 use crate::effect::{Effect, EffectBuilder, Input};
-use crate::log::SimpleEventRunLog;
+use crate::log::{Metadata, SimpleEventRunLog};
 use crate::moment::Moment;
 use crate::{RunLogReader, RunLogWriter};
 use chrono::{TimeDelta, Utc};
@@ -12,18 +12,34 @@ pub struct Simulation {
     writer: Rc<dyn RunLogWriter>,
     limit: Option<u64>,
     emitted: u64,
+    started: bool,
+    finished: bool,
 }
 
 impl Simulation {
     pub fn builder() -> SimulationBuilder {
         SimulationBuilder::new()
     }
-}
 
-impl Iterator for Simulation {
-    type Item = Input;
+    pub fn finish(&mut self) {
+        if self.started && !self.finished {
+            self.finished = true;
+            self.record_wall_clock("simulation_end");
+        }
+    }
 
-    fn next(&mut self) -> Option<Self::Item> {
+    fn record_wall_clock(&self, mtype: &str) {
+        self.writer.push_metadata(Metadata {
+            mtype: mtype.to_string(),
+            input_id: None,
+            output_id: None,
+            offset: None,
+            data: Some(Utc::now().to_rfc3339().into()),
+            segment: None,
+        });
+    }
+
+    fn advance(&mut self) -> Option<Input> {
         loop {
             if self.limit.is_some_and(|limit| self.emitted >= limit) {
                 return None;
@@ -44,6 +60,33 @@ impl Iterator for Simulation {
                 }
             }
         }
+    }
+}
+
+impl Iterator for Simulation {
+    type Item = Input;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.finished {
+            return None;
+        }
+
+        if !self.started {
+            self.started = true;
+            self.record_wall_clock("simulation_start");
+        }
+
+        let input = self.advance();
+        if input.is_none() {
+            self.finish();
+        }
+        input
+    }
+}
+
+impl Drop for Simulation {
+    fn drop(&mut self) {
+        self.finish();
     }
 }
 
@@ -181,6 +224,8 @@ impl SimulationBuilder {
                 writer: run_log_writer,
                 limit: self.limit,
                 emitted: 0,
+                started: false,
+                finished: false,
             })
         } else {
             Err(errors)
@@ -245,5 +290,80 @@ mod tests {
             3,
             "limit should count both real and skipped attempts toward the cap"
         );
+    }
+
+    #[derive(Debug, Default)]
+    struct MetadataTypes(std::cell::RefCell<Vec<String>>);
+
+    impl crate::RunLogWriter for MetadataTypes {
+        fn push_input(&self, _input: crate::Input) {}
+        fn push_output(&self, _output: crate::Output) {}
+        fn push_metadata(&self, metadata: crate::Metadata) {
+            self.0.borrow_mut().push(metadata.mtype);
+        }
+    }
+
+    fn wall_clock_types(writer: &MetadataTypes) -> Vec<String> {
+        writer
+            .0
+            .borrow()
+            .iter()
+            .filter(|mtype| mtype.starts_with("simulation_"))
+            .cloned()
+            .collect()
+    }
+
+    fn simulation_with(writer: std::rc::Rc<MetadataTypes>) -> super::Simulation {
+        let mut simulation_builder = super::Simulation::builder()
+            .run_log_reader(crate::SimpleEventRunLog::new())
+            .run_log_writer(writer);
+
+        simulation_builder.with_effect("alternating", |e| {
+            e.trigger_hertz(1000.0).schema(AlternatingSchemaBuilder)
+        });
+
+        simulation_builder.limit(5).build().unwrap()
+    }
+
+    #[test]
+    fn records_wall_clock_start_and_end_when_exhausted() {
+        let writer = std::rc::Rc::new(MetadataTypes::default());
+        let mut simulation = simulation_with(writer.clone());
+
+        assert!(wall_clock_types(&writer).is_empty());
+        assert_eq!(simulation.by_ref().count(), 3);
+        assert_eq!(
+            wall_clock_types(&writer),
+            ["simulation_start", "simulation_end"]
+        );
+
+        assert!(simulation.next().is_none());
+        drop(simulation);
+        assert_eq!(
+            wall_clock_types(&writer),
+            ["simulation_start", "simulation_end"]
+        );
+    }
+
+    #[test]
+    fn records_wall_clock_end_when_dropped_early() {
+        let writer = std::rc::Rc::new(MetadataTypes::default());
+        let mut simulation = simulation_with(writer.clone());
+
+        simulation.next();
+        assert_eq!(wall_clock_types(&writer), ["simulation_start"]);
+
+        drop(simulation);
+        assert_eq!(
+            wall_clock_types(&writer),
+            ["simulation_start", "simulation_end"]
+        );
+    }
+
+    #[test]
+    fn does_not_record_wall_clock_times_when_never_started() {
+        let writer = std::rc::Rc::new(MetadataTypes::default());
+        drop(simulation_with(writer.clone()));
+        assert!(wall_clock_types(&writer).is_empty());
     }
 }
