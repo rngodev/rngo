@@ -1,0 +1,236 @@
+use rand::RngExt;
+use rand_pcg::Pcg32;
+use std::collections::HashMap;
+
+/// In-memory index of each effect's inputs, in push order, and of which ones each unique cursor
+/// has consumed. Assumes an effect's inputs are pushed in increasing `id` order.
+#[derive(Debug)]
+pub(crate) struct InputPool<T> {
+    effects: HashMap<String, Vec<T>>,
+    cursors: HashMap<String, HashMap<String, Consumed>>,
+}
+
+impl<T> Default for InputPool<T> {
+    fn default() -> Self {
+        InputPool {
+            effects: HashMap::new(),
+            cursors: HashMap::new(),
+        }
+    }
+}
+
+impl<T: Clone> InputPool<T> {
+    /// Appends `item` to `effect`'s inputs.
+    pub fn push(&mut self, effect: &str, item: T) {
+        match self.effects.get_mut(effect) {
+            Some(items) => items.push(item),
+            None => {
+                self.effects.insert(effect.to_string(), vec![item]);
+            }
+        }
+    }
+
+    /// All of `effect`'s inputs in push order; empty if it has none.
+    pub fn items(&self, effect: &str) -> &[T] {
+        self.effects.get(effect).map(Vec::as_slice).unwrap_or(&[])
+    }
+
+    /// A uniformly random input of `effect`, or `None` if it has none.
+    pub fn random(&self, effect: &str, rng: &mut Pcg32) -> Option<T> {
+        let items = self.items(effect);
+        if items.is_empty() {
+            return None;
+        }
+        let index = rng.random_range(0..items.len() as i64) as usize;
+        Some(items[index].clone())
+    }
+
+    /// Consumes and returns a uniformly random input of `effect` that `cursor` hasn't consumed
+    /// yet, or `None` if none remain.
+    pub fn take(&mut self, effect: &str, cursor: &str, rng: &mut Pcg32) -> Option<T> {
+        let remaining = self.remaining(effect, cursor);
+        if remaining == 0 {
+            return None;
+        }
+        let index = rng.random_range(0..remaining as i64) as usize;
+        Some(self.take_nth(effect, cursor, index))
+    }
+
+    /// Number of `effect`'s inputs that `cursor` hasn't consumed yet.
+    fn remaining(&self, effect: &str, cursor: &str) -> usize {
+        let consumed = self
+            .cursors
+            .get(effect)
+            .and_then(|cursors| cursors.get(cursor))
+            .map_or(0, |consumed| consumed.total);
+        self.items(effect).len() - consumed
+    }
+
+    /// Consumes and returns the `index`th (0-based) input `cursor` hasn't consumed yet.
+    /// `index` must be less than `remaining(effect, cursor)`.
+    fn take_nth(&mut self, effect: &str, cursor: &str, index: usize) -> T {
+        let len = self.items(effect).len();
+        let consumed = self.consumed(effect, cursor);
+        let position = consumed.nth_unconsumed(index, len);
+        consumed.mark(position, len);
+        self.effects[effect][position].clone()
+    }
+
+    /// Records the input at `position` in `items(effect)` as consumed by `cursor`, without
+    /// returning it. Used to replay prior draws when reopening a log. Must not be called twice for
+    /// the same position.
+    pub fn mark(&mut self, effect: &str, cursor: &str, position: usize) {
+        let len = self.items(effect).len();
+        self.consumed(effect, cursor).mark(position, len);
+    }
+
+    /// `cursor`'s consumed set for `effect`, created empty on first use.
+    fn consumed(&mut self, effect: &str, cursor: &str) -> &mut Consumed {
+        if !self.cursors.contains_key(effect) {
+            self.cursors.insert(effect.to_string(), HashMap::new());
+        }
+        let cursors = self.cursors.get_mut(effect).unwrap();
+        if !cursors.contains_key(cursor) {
+            cursors.insert(cursor.to_string(), Consumed::default());
+        }
+        cursors.get_mut(cursor).unwrap()
+    }
+}
+
+/// Fenwick tree counting consumed positions. `tree` is 1-indexed (`tree[0]` is unused) and its
+/// capacity is always a power of two; `total` is the number of consumed positions.
+#[derive(Debug)]
+struct Consumed {
+    tree: Vec<usize>,
+    total: usize,
+}
+
+impl Default for Consumed {
+    fn default() -> Self {
+        Consumed {
+            tree: vec![0, 0],
+            total: 0,
+        }
+    }
+}
+
+/// Lowest set bit of `i`: the size of the range Fenwick node `i` covers.
+fn lowbit(i: usize) -> usize {
+    i & i.wrapping_neg()
+}
+
+impl Consumed {
+    fn capacity(&self) -> usize {
+        self.tree.len() - 1
+    }
+
+    /// Doubles capacity until it covers `len` positions. New positions start unconsumed.
+    fn grow(&mut self, len: usize) {
+        while self.capacity() < len {
+            let capacity = self.capacity() * 2;
+            self.tree.resize(capacity + 1, 0);
+            self.tree[capacity] = self.total;
+        }
+    }
+
+    /// Marks the 0-based `position` consumed. `len` is the effect's current input count.
+    fn mark(&mut self, position: usize, len: usize) {
+        self.grow(len);
+        let mut i = position + 1;
+        while i <= self.capacity() {
+            self.tree[i] += 1;
+            i += lowbit(i);
+        }
+        self.total += 1;
+    }
+
+    /// 0-based position of the `index`th (0-based) unconsumed input among the first `len`.
+    fn nth_unconsumed(&mut self, index: usize, len: usize) -> usize {
+        self.grow(len);
+        let mut position = 0;
+        let mut rank = index + 1;
+        let mut step = self.capacity();
+        while step > 0 {
+            let next = position + step;
+            if next <= self.capacity() {
+                let free = step - self.tree[next];
+                if free < rank {
+                    position = next;
+                    rank -= free;
+                }
+            }
+            step /= 2;
+        }
+        position
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn naive_nth(consumed: &[bool], index: usize) -> usize {
+        consumed
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| !**c)
+            .nth(index)
+            .unwrap()
+            .0
+    }
+
+    #[test]
+    fn take_nth_matches_naive_selection_as_the_pool_grows() {
+        let mut pool = InputPool::default();
+        let mut consumed = vec![];
+        let mut seed = 12345u64;
+
+        for id in 0..2000u64 {
+            pool.push("a", id);
+            consumed.push(false);
+
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            if !seed.is_multiple_of(3) {
+                continue;
+            }
+
+            let remaining = pool.remaining("a", "c");
+            assert_eq!(remaining, consumed.iter().filter(|c| !**c).count());
+            if remaining == 0 {
+                continue;
+            }
+
+            let index = (seed >> 33) as usize % remaining;
+            let expected = naive_nth(&consumed, index);
+            assert_eq!(pool.take_nth("a", "c", index), expected as u64);
+            consumed[expected] = true;
+        }
+    }
+
+    #[test]
+    fn cursors_and_effects_are_independent() {
+        let mut pool = InputPool::default();
+        pool.push("a", 1);
+        pool.push("b", 2);
+
+        assert_eq!(pool.take_nth("a", "x", 0), 1);
+        assert_eq!(pool.remaining("a", "x"), 0);
+        assert_eq!(pool.remaining("a", "y"), 1);
+        assert_eq!(pool.remaining("b", "x"), 1);
+        assert_eq!(pool.remaining("missing", "x"), 0);
+    }
+
+    #[test]
+    fn mark_excludes_a_position_from_later_takes() {
+        let mut pool = InputPool::default();
+        for id in 0..5 {
+            pool.push("a", id);
+        }
+        pool.mark("a", "c", 0);
+
+        assert_eq!(pool.remaining("a", "c"), 4);
+        assert_eq!(pool.take_nth("a", "c", 0), 1);
+    }
+}

@@ -9,6 +9,9 @@ homepage = "https://rngo.dev"
 keywords = ["simulation", "testing", "data", "codegen"]
 categories = ["development-tools::testing", "simulation"]
 
+[lib]
+bench = false
+
 [dependencies]
 rand = { version = "0.10.1", features = ["serde"] }
 rand_pcg = { version = "0.10.2", features = ["serde"] }
@@ -27,4 +30,13 @@ rusqlite = { version = "0.40.1", features = ["bundled"] }
 handlebars = "6"
 
 [dev-dependencies]
+criterion = { version = "0.8.2", features = ["html_reports"] }
 tempfile = "3"
+
+[[bench]]
+name = "sqlite_log"
+harness = false
+
+[[bench]]
+name = "simulation"
+harness = false

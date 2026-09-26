@@ -4,6 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Coding
 
+Give interfaces (traits, trait methods, public structs, enums, and functions) terse `///` doc comments: one line on what it does, plus what each non-obvious argument means. Skip ones that just restate the name or signature.
+
 Avoid inline comments. If additional context is needed for a section of code, add it in CLAUDE.md.
 
 Always run `just fmt` and `just clippy` after making code changes. If clippy reports warnings or errors, fix them directly in the code.
@@ -23,6 +25,9 @@ cargo clippy --workspace --all-targets -- -D warnings  # lint (warnings are erro
 cargo build                     # build
 cargo run -p rngo-cli -- run            # run simulation (writes to .rngo/runs/<UUID>/, symlinked from .rngo/runs/last)
 cargo run -p rngo-cli -- run --stdout   # run simulation, print all events to stdout as JSON
+just bench                      # run all criterion benchmarks (crates/rngo/benches/)
+just bench sqlite_log/random    # run benchmarks whose name matches a filter
+just bench --save-baseline main # save a named baseline; compare later with --baseline main
 ```
 
 ## Architecture
@@ -82,3 +87,11 @@ Named `signals` in the spec are checks run once, after the simulation completes,
 ### Log (`rngo/src/log.rs`)
 
 A shared `Rc<dyn RunLogReader>` is threaded through all effects and schemas so that `Reference`, trigger-by-effect, and SQL signals can look up previously emitted events — by last input overall, last/random/unique input for a given effect key, or an arbitrary `query()`. A separate `RunLogWriter` trait pushes `Input`, `Output`, and `Metadata` rows. `SimpleEventRunLog` (`log/simple.rs`) is the in-memory implementation; `SqliteRunLog` (`log/sqlite.rs`) persists all three to `log.sqlite` in the run directory and implements both traits.
+
+`InputPool` (`log/pool.rs`) backs the per-effect lookups in both implementations: each effect's inputs in push order, plus a Fenwick tree per (effect, cursor) of consumed positions. The pool owns the random draws: `random` (for `random_for_effect`) indexes into the effect's list, and `take` (for `unique_for_effect`) finds the k-th unconsumed input in O(log n); `SimpleEventRunLog` also uses it for `last_for_effect`. Both draw with `rng.random_range(0..n as i64)`, matching `SqliteRunLog`'s original SQL-era draws, so both logs produce identical output for a given seed. It assumes inputs for an effect are pushed in increasing `id` order (true because ids come from `last().id + 1`), so "k-th in push order" matches the original `ORDER BY id` selection. `SqliteRunLog` stores only ids in its pool and fetches rows by `id`; it fills the pool from `push_input`, rebuilds it from the `inputs` table and `_unique_reference` metadata rows on open, and still writes those rows on every unique draw.
+
+### Benchmarks (`crates/rngo/benches/`)
+
+Criterion benches, run with `just bench`. The lib target sets `bench = false` so criterion flags (e.g. `--save-baseline`) aren't passed to libtest. Reports land in `target/criterion/`.
+- `sqlite_log`: micro benches for `SqliteRunLog` against a pre-filled log (1k/10k inputs split across effects `a` and `b`): `push_input` (write + commit throughput), `last_for_effect`, `random_for_effect`, `unique_for_effect`, and an ad-hoc `query`. `unique_for_effect` consumes inputs as it draws, so it rotates to a fresh cursor every `size / 4` draws to avoid exhausting the pool and measuring the `None` path.
+- `simulation`: end-to-end runs of a user/post spec (post references user) with `random` and `unique` cursors, each on both `SimpleEventRunLog` (`memory`) and `SqliteRunLog` (`sqlite`), capped with `limit`. Setup (spec parsing, temp dir, log creation) is excluded from timing; the SQLite variant includes `finish()` and the final `commit()`.
