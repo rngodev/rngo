@@ -1059,7 +1059,7 @@ mod tests {
             &json!({
                 "trigger": "hz(1, day)",
                 "limit": 0,
-                "schema": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
+                "schema": { "type": "constant", "value": 1 }
             }),
         );
 
