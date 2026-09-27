@@ -3,7 +3,7 @@ use rand_pcg::Pcg32;
 use std::collections::HashMap;
 
 /// In-memory index of each effect's inputs, in push order, and of which ones each unique cursor
-/// has consumed. Assumes an effect's inputs are pushed in increasing `id` order.
+/// has consumed.
 #[derive(Debug)]
 pub(crate) struct InputPool<T> {
     effects: HashMap<String, Vec<T>>,
@@ -46,7 +46,7 @@ impl<T: Clone> InputPool<T> {
         if items.is_empty() {
             return None;
         }
-        let index = rng.random_range(0..items.len() as i64) as usize;
+        let index = rng.random_range(0..items.len());
         Some(items[index].clone())
     }
 
@@ -57,7 +57,7 @@ impl<T: Clone> InputPool<T> {
         if remaining == 0 {
             return None;
         }
-        let index = rng.random_range(0..remaining as i64) as usize;
+        let index = rng.random_range(0..remaining);
         Some(self.take_nth(effect, cursor, index))
     }
 
@@ -95,8 +95,8 @@ impl<T: Clone> InputPool<T> {
 
 impl<T: Clone + Ord> InputPool<T> {
     /// Records `item` as consumed by `cursor` without returning it; ignored if `item` isn't one of
-    /// `effect`'s inputs. Used to replay prior draws when reopening a log. Must not be called twice
-    /// for the same item.
+    /// `effect`'s inputs. Used to replay prior draws when reopening a log. Assumes `effect`'s
+    /// inputs were pushed in increasing order, and must not be called twice for the same item.
     pub fn mark(&mut self, effect: &str, cursor: &str, item: &T) {
         if let Ok(position) = self.items(effect).binary_search(item) {
             self.consumed(effect, cursor).mark(position);
