@@ -11,3 +11,6 @@ clippy-fix:
 
 release version:
     bash scripts/release.sh {{version}}
+
+bench *args:
+    cargo bench -p rngo -- {{args}}

@@ -1,3 +1,4 @@
+mod pool;
 mod simple;
 mod sqlite;
 
