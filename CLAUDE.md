@@ -8,6 +8,8 @@ Give interfaces (traits, trait methods, public structs, enums, and functions) te
 
 Avoid inline comments. If additional context is needed for a section of code, add it in CLAUDE.md.
 
+The Rust toolchain is pinned in `rust-toolchain.toml` (used locally and in CI), and the minimum supported Rust version is `rust-version` under `[workspace.package]` in the root `Cargo.toml`. Bump them together, in their own PR, and fix any new clippy lints there.
+
 Always run `just fmt` and `just clippy` after making code changes. If clippy reports warnings or errors, fix them directly in the code.
 
 ## Commands
