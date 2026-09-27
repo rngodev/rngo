@@ -2,8 +2,9 @@ use rand::RngExt;
 use rand_pcg::Pcg32;
 use std::collections::HashMap;
 
-/// In-memory index of each effect's inputs, in push order, and of which ones each unique cursor
-/// has consumed.
+/// In-memory index of each tracked effect's inputs, in push order, and of which ones each unique
+/// cursor has consumed. Effects are only tracked once `track` is called for them, so effects that
+/// are never looked up cost nothing.
 #[derive(Debug)]
 pub(crate) struct InputPool<T> {
     effects: HashMap<String, Vec<T>>,
@@ -20,13 +21,20 @@ impl<T> Default for InputPool<T> {
 }
 
 impl<T: Clone> InputPool<T> {
-    /// Appends `item` to `effect`'s inputs.
+    /// Whether `track` has been called for `effect`.
+    pub fn is_tracked(&self, effect: &str) -> bool {
+        self.effects.contains_key(effect)
+    }
+
+    /// Starts tracking `effect`, seeded with its existing `items` in push order.
+    pub fn track(&mut self, effect: &str, items: Vec<T>) {
+        self.effects.insert(effect.to_string(), items);
+    }
+
+    /// Appends `item` to `effect`'s inputs; ignored if `effect` isn't tracked.
     pub fn push(&mut self, effect: &str, item: T) {
-        match self.effects.get_mut(effect) {
-            Some(items) => items.push(item),
-            None => {
-                self.effects.insert(effect.to_string(), vec![item]);
-            }
+        if let Some(items) = self.effects.get_mut(effect) {
+            items.push(item);
         }
     }
 
@@ -35,7 +43,7 @@ impl<T: Clone> InputPool<T> {
         self.items(effect).last().cloned()
     }
 
-    /// All of `effect`'s inputs in push order; empty if it has none.
+    /// All of `effect`'s inputs in push order; empty if it has none or isn't tracked.
     fn items(&self, effect: &str) -> &[T] {
         self.effects.get(effect).map(Vec::as_slice).unwrap_or(&[])
     }
@@ -104,11 +112,15 @@ impl<T: Clone + Ord> InputPool<T> {
     }
 }
 
-/// Fenwick tree counting consumed positions. `tree` is 1-indexed (`tree[0]` is unused) and its
-/// capacity is always a power of two; positions past the capacity are unconsumed. `total` is the
-/// number of consumed positions.
+const WORD_BITS: usize = u64::BITS as usize;
+
+/// A cursor's consumed positions: a bitset in `words`, plus a Fenwick tree counting consumed
+/// positions per word. `tree` is 1-indexed (`tree[0]` is unused) with one node per word, and the
+/// capacity in words is always a power of two; positions past the capacity are unconsumed.
+/// `total` is the number of consumed positions.
 #[derive(Debug)]
 struct Consumed {
+    words: Vec<u64>,
     tree: Vec<usize>,
     total: usize,
 }
@@ -116,26 +128,38 @@ struct Consumed {
 impl Default for Consumed {
     fn default() -> Self {
         Consumed {
+            words: vec![0],
             tree: vec![0, 0],
             total: 0,
         }
     }
 }
 
-/// Lowest set bit of `i`: the size of the range Fenwick node `i` covers.
+/// Lowest set bit of `i`: the number of words Fenwick node `i` covers.
 fn lowbit(i: usize) -> usize {
     i.isolate_lowest_one()
 }
 
+/// Bit index of the `n`th (0-based) zero bit in `bits`.
+fn nth_zero(bits: u64, n: usize) -> usize {
+    let mut zeros = !bits;
+    for _ in 0..n {
+        zeros &= zeros - 1;
+    }
+    zeros.trailing_zeros() as usize
+}
+
 impl Consumed {
+    /// Capacity in words.
     fn capacity(&self) -> usize {
-        self.tree.len() - 1
+        self.words.len()
     }
 
-    /// Doubles capacity until it covers the 0-based `position`. New positions start unconsumed.
-    fn grow(&mut self, position: usize) {
-        while self.capacity() <= position {
+    /// Doubles capacity until it covers the 0-based `word`. New positions start unconsumed.
+    fn grow(&mut self, word: usize) {
+        while self.capacity() <= word {
             let capacity = self.capacity() * 2;
+            self.words.resize(capacity, 0);
             self.tree.resize(capacity + 1, 0);
             self.tree[capacity] = self.total;
         }
@@ -143,8 +167,10 @@ impl Consumed {
 
     /// Marks the 0-based `position` consumed.
     fn mark(&mut self, position: usize) {
-        self.grow(position);
-        let mut i = position + 1;
+        let word = position / WORD_BITS;
+        self.grow(word);
+        self.words[word] |= 1 << (position % WORD_BITS);
+        let mut i = word + 1;
         while i <= self.capacity() {
             self.tree[i] += 1;
             i += lowbit(i);
@@ -154,21 +180,24 @@ impl Consumed {
 
     /// 0-based position of the `index`th (0-based) unconsumed position.
     fn nth_unconsumed(&self, index: usize) -> usize {
-        let mut position = 0;
+        let mut word = 0;
         let mut rank = index + 1;
         let mut step = self.capacity();
         while step > 0 {
-            let next = position + step;
+            let next = word + step;
             if next <= self.capacity() {
-                let free = step - self.tree[next];
+                let free = step * WORD_BITS - self.tree[next];
                 if free < rank {
-                    position = next;
+                    word = next;
                     rank -= free;
                 }
             }
             step /= 2;
         }
-        position + rank - 1
+        match self.words.get(word) {
+            Some(&bits) => word * WORD_BITS + nth_zero(bits, rank - 1),
+            None => word * WORD_BITS + rank - 1,
+        }
     }
 }
 
@@ -189,10 +218,11 @@ mod tests {
     #[test]
     fn take_nth_matches_naive_selection_as_the_pool_grows() {
         let mut pool = InputPool::default();
+        pool.track("a", vec![]);
         let mut consumed = vec![];
         let mut seed = 12345u64;
 
-        for id in 0..2000u64 {
+        for id in 0..5000u64 {
             pool.push("a", id);
             consumed.push(false);
 
@@ -219,8 +249,8 @@ mod tests {
     #[test]
     fn cursors_and_effects_are_independent() {
         let mut pool = InputPool::default();
-        pool.push("a", 1);
-        pool.push("b", 2);
+        pool.track("a", vec![1]);
+        pool.track("b", vec![2]);
 
         assert_eq!(pool.take_nth("a", "x", 0), 1);
         assert_eq!(pool.remaining("a", "x"), 0);
@@ -232,13 +262,46 @@ mod tests {
     #[test]
     fn mark_excludes_an_item_from_later_takes() {
         let mut pool = InputPool::default();
-        for id in [10, 20, 30] {
-            pool.push("a", id);
-        }
+        pool.track("a", vec![10, 20]);
+        pool.push("a", 30);
         pool.mark("a", "c", &10);
         pool.mark("a", "c", &99);
 
         assert_eq!(pool.remaining("a", "c"), 2);
         assert_eq!(pool.take_nth("a", "c", 0), 20);
+    }
+
+    #[test]
+    fn push_is_ignored_until_an_effect_is_tracked() {
+        let mut pool = InputPool::default();
+        pool.push("a", 1);
+        assert!(!pool.is_tracked("a"));
+        assert_eq!(pool.last("a"), None);
+
+        pool.track("a", vec![2]);
+        pool.push("a", 3);
+        assert_eq!(pool.last("a"), Some(3));
+        assert_eq!(pool.remaining("a", "c"), 2);
+    }
+
+    #[test]
+    fn take_exhausts_every_input_exactly_once() {
+        let mut pool = InputPool::default();
+        pool.track("a", (0..1000u64).collect());
+        let mut rng = rand_seeder::Seeder::from("pool").into_rng();
+
+        let mut seen = std::collections::HashSet::new();
+        while let Some(id) = pool.take("a", "c", &mut rng) {
+            assert!(seen.insert(id), "id {id} taken more than once");
+        }
+        assert_eq!(seen.len(), 1000);
+    }
+
+    #[test]
+    fn nth_zero_skips_set_bits() {
+        assert_eq!(nth_zero(0, 0), 0);
+        assert_eq!(nth_zero(0b1011, 0), 2);
+        assert_eq!(nth_zero(0b1011, 1), 4);
+        assert_eq!(nth_zero(!0 >> 1, 0), 63);
     }
 }
