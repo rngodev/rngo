@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use rand_pcg::Pcg32;
 use rusqlite::types::Value as SqlValue;
 use rusqlite::{Connection, OptionalExtension};
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, RefCell, RefMut};
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -70,17 +70,24 @@ impl SqliteRunLog {
             )
             .unwrap();
 
-        let pool = load_pool(&connection);
-
         Rc::new(SqliteRunLog {
             connection: RefCell::new(connection),
             pending: Cell::new(0),
-            pool: RefCell::new(pool),
+            pool: RefCell::new(InputPool::default()),
         })
     }
 
     pub fn commit(&self) {
         commit(&self.connection, &self.pending);
+    }
+
+    /// The input pool, with `effect` tracked.
+    fn pool(&self, effect: &str) -> RefMut<'_, InputPool<u64>> {
+        let mut pool = self.pool.borrow_mut();
+        if !pool.is_tracked(effect) {
+            load_effect(&self.connection.borrow(), &mut pool, effect);
+        }
+        pool
     }
 
     fn record(&self) {
@@ -97,44 +104,34 @@ impl Drop for SqliteRunLog {
     }
 }
 
-fn load_pool(connection: &Connection) -> InputPool<u64> {
-    let mut pool = InputPool::default();
+/// Starts tracking `effect` in `pool`, seeded with its logged input ids and replaying its
+/// `_unique_reference` markers.
+fn load_effect(connection: &Connection, pool: &mut InputPool<u64>, effect: &str) {
+    let ids = connection
+        .prepare_cached("SELECT id FROM inputs WHERE effect = ?1 ORDER BY id ASC")
+        .unwrap()
+        .query_map(rusqlite::params![effect], |row| row.get::<_, i64>(0))
+        .unwrap()
+        .map(|id| id.unwrap() as u64)
+        .collect();
+    pool.track(effect, ids);
 
-    let mut inputs = connection
-        .prepare("SELECT effect, id FROM inputs ORDER BY id ASC")
+    let mut markers = connection
+        .prepare_cached(
+            "SELECT DISTINCT m.segment, m.input_id FROM metadata m
+            JOIN inputs i ON i.id = m.input_id
+            WHERE m.type = '_unique_reference' AND i.effect = ?1",
+        )
         .unwrap();
-    let rows = inputs
-        .query_map([], |row| {
+    let rows = markers
+        .query_map(rusqlite::params![effect], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
         })
         .unwrap();
     for row in rows {
-        let (effect, id) = row.unwrap();
-        pool.push(&effect, id as u64);
+        let (cursor, id) = row.unwrap();
+        pool.mark(effect, &cursor, &(id as u64));
     }
-
-    let mut markers = connection
-        .prepare(
-            "SELECT DISTINCT i.effect, m.segment, m.input_id FROM metadata m
-            JOIN inputs i ON i.id = m.input_id
-            WHERE m.type = '_unique_reference'",
-        )
-        .unwrap();
-    let rows = markers
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, i64>(2)?,
-            ))
-        })
-        .unwrap();
-    for row in rows {
-        let (effect, cursor, id) = row.unwrap();
-        pool.mark(&effect, &cursor, &(id as u64));
-    }
-
-    pool
 }
 
 fn commit(connection: &RefCell<Connection>, pending: &Cell<usize>) {
@@ -369,13 +366,13 @@ impl RunLogReader for SqliteRunLog {
     }
 
     fn random_for_effect(&self, key: &str, rng: &mut Pcg32) -> Option<Rc<Input>> {
-        query_random_for_effect(&self.connection.borrow(), &self.pool.borrow(), key, rng)
+        query_random_for_effect(&self.connection.borrow(), &self.pool(key), key, rng)
     }
 
     fn unique_for_effect(&self, key: &str, cursor: &str, rng: &mut Pcg32) -> Option<Rc<Input>> {
         query_unique_for_effect(
             &self.connection.borrow(),
-            &mut self.pool.borrow_mut(),
+            &mut self.pool(key),
             key,
             cursor,
             rng,

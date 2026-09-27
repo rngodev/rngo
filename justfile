@@ -14,3 +14,6 @@ release version:
 
 bench *args:
     cargo bench -p rngo -- {{args}}
+
+memory *limits:
+    cargo run --release -p rngo --example memory -- {{limits}}

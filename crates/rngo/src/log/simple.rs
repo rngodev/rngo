@@ -2,7 +2,7 @@ use crate::log::pool::InputPool;
 use crate::log::{Metadata, RunLogReader, RunLogWriter};
 use crate::{Input, Output};
 use rand_pcg::Pcg32;
-use std::cell::RefCell;
+use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
 
 #[derive(Debug, Default)]
@@ -17,6 +17,22 @@ impl SimpleEventRunLog {
     pub fn new() -> Rc<Self> {
         Rc::new(Self::default())
     }
+
+    /// The input pool, with `effect` tracked.
+    fn pool(&self, effect: &str) -> RefMut<'_, InputPool<Rc<Input>>> {
+        let mut pool = self.pool.borrow_mut();
+        if !pool.is_tracked(effect) {
+            let items = self
+                .inputs
+                .borrow()
+                .iter()
+                .filter(|input| input.effect == effect)
+                .cloned()
+                .collect();
+            pool.track(effect, items);
+        }
+        pool
+    }
 }
 
 impl RunLogReader for SimpleEventRunLog {
@@ -25,15 +41,15 @@ impl RunLogReader for SimpleEventRunLog {
     }
 
     fn last_for_effect(&self, key: &str) -> Option<Rc<Input>> {
-        self.pool.borrow().last(key)
+        self.pool(key).last(key)
     }
 
     fn random_for_effect(&self, key: &str, rng: &mut Pcg32) -> Option<Rc<Input>> {
-        self.pool.borrow().random(key, rng)
+        self.pool(key).random(key, rng)
     }
 
     fn unique_for_effect(&self, key: &str, cursor: &str, rng: &mut Pcg32) -> Option<Rc<Input>> {
-        self.pool.borrow_mut().take(key, cursor, rng)
+        self.pool(key).take(key, cursor, rng)
     }
 
     fn query(&self, _query: &str) -> Option<serde_json::Value> {

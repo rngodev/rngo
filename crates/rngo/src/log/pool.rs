@@ -2,8 +2,9 @@ use rand::RngExt;
 use rand_pcg::Pcg32;
 use std::collections::HashMap;
 
-/// In-memory index of each effect's inputs, in push order, and of which ones each unique cursor
-/// has consumed.
+/// In-memory index of each tracked effect's inputs, in push order, and of which ones each unique
+/// cursor has consumed. Effects are only tracked once `track` is called for them, so effects that
+/// are never looked up cost nothing.
 #[derive(Debug)]
 pub(crate) struct InputPool<T> {
     effects: HashMap<String, Vec<T>>,
@@ -20,13 +21,20 @@ impl<T> Default for InputPool<T> {
 }
 
 impl<T: Clone> InputPool<T> {
-    /// Appends `item` to `effect`'s inputs.
+    /// Whether `track` has been called for `effect`.
+    pub fn is_tracked(&self, effect: &str) -> bool {
+        self.effects.contains_key(effect)
+    }
+
+    /// Starts tracking `effect`, seeded with its existing `items` in push order.
+    pub fn track(&mut self, effect: &str, items: Vec<T>) {
+        self.effects.insert(effect.to_string(), items);
+    }
+
+    /// Appends `item` to `effect`'s inputs; ignored if `effect` isn't tracked.
     pub fn push(&mut self, effect: &str, item: T) {
-        match self.effects.get_mut(effect) {
-            Some(items) => items.push(item),
-            None => {
-                self.effects.insert(effect.to_string(), vec![item]);
-            }
+        if let Some(items) = self.effects.get_mut(effect) {
+            items.push(item);
         }
     }
 
@@ -35,7 +43,7 @@ impl<T: Clone> InputPool<T> {
         self.items(effect).last().cloned()
     }
 
-    /// All of `effect`'s inputs in push order; empty if it has none.
+    /// All of `effect`'s inputs in push order; empty if it has none or isn't tracked.
     fn items(&self, effect: &str) -> &[T] {
         self.effects.get(effect).map(Vec::as_slice).unwrap_or(&[])
     }
@@ -189,6 +197,7 @@ mod tests {
     #[test]
     fn take_nth_matches_naive_selection_as_the_pool_grows() {
         let mut pool = InputPool::default();
+        pool.track("a", vec![]);
         let mut consumed = vec![];
         let mut seed = 12345u64;
 
@@ -219,8 +228,8 @@ mod tests {
     #[test]
     fn cursors_and_effects_are_independent() {
         let mut pool = InputPool::default();
-        pool.push("a", 1);
-        pool.push("b", 2);
+        pool.track("a", vec![1]);
+        pool.track("b", vec![2]);
 
         assert_eq!(pool.take_nth("a", "x", 0), 1);
         assert_eq!(pool.remaining("a", "x"), 0);
@@ -232,13 +241,25 @@ mod tests {
     #[test]
     fn mark_excludes_an_item_from_later_takes() {
         let mut pool = InputPool::default();
-        for id in [10, 20, 30] {
-            pool.push("a", id);
-        }
+        pool.track("a", vec![10, 20]);
+        pool.push("a", 30);
         pool.mark("a", "c", &10);
         pool.mark("a", "c", &99);
 
         assert_eq!(pool.remaining("a", "c"), 2);
         assert_eq!(pool.take_nth("a", "c", 0), 20);
+    }
+
+    #[test]
+    fn push_is_ignored_until_an_effect_is_tracked() {
+        let mut pool = InputPool::default();
+        pool.push("a", 1);
+        assert!(!pool.is_tracked("a"));
+        assert_eq!(pool.last("a"), None);
+
+        pool.track("a", vec![2]);
+        pool.push("a", 3);
+        assert_eq!(pool.last("a"), Some(3));
+        assert_eq!(pool.remaining("a", "c"), 2);
     }
 }
