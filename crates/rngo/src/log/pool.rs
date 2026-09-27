@@ -124,7 +124,7 @@ impl Default for Consumed {
 
 /// Lowest set bit of `i`: the size of the range Fenwick node `i` covers.
 fn lowbit(i: usize) -> usize {
-    i & i.wrapping_neg()
+    i.isolate_lowest_one()
 }
 
 impl Consumed {
