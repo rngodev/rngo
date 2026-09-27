@@ -1,6 +1,6 @@
 [package]
 name = "rngo-cli"
-version = "0.36.0"
+version = "0.37.0"
 edition = "2024"
 rust-version.workspace = true
 description = "CLI for running rngo simulations"
@@ -15,7 +15,7 @@ name = "rngo"
 path = "src/main.rs"
 
 [dependencies]
-rngo = { version = "0.36.0", path = "../rngo" }
+rngo = { version = "0.37.0", path = "../rngo" }
 chrono = "0.4"
 dotenvy = "0.15"
 clap = { version = "4", features = ["derive"] }
