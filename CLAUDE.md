@@ -71,10 +71,17 @@ The workspace has two crates:
 
 `ChannelTarget` implementations, wired up by `Proxy`:
 - `stream`: spawns one long-lived subprocess per channel, writes formatted event lines to its stdin.
-- `exec`: runs a fresh `sh -c <command>` per event; the command string is a Handlebars template rendered with the event's JSON value.
+- `exec`: runs a fresh `sh -c <data>` per event, where `<data>` is the event's formatted data. It requires a format (`ChannelTargetBuilder::requires_format`), so the channel fails to build without one; a `command` field on the target is rejected at parse time.
 - `stdout`: prints formatted event data to stdout; used in place of the real target when `--stdout` is passed.
 
-An effect opts into a channel by setting `channel: <channel-key>`. Formats are configured only on channels; effects know nothing about formats. A `stream` channel with no effects writing to it is still spawned for the run's duration, but only as an output source (e.g. tailing a log file) - its stdout/stderr lines still become `Output` events, just with no associated effect.
+An effect opts into a channel by setting `channel: <channel-key>`. Formats are configured only on channels; effects know nothing about formats.
+
+### Formats (`rngo/src/proxy/format/`)
+
+- `sql`: renders each event as an `INSERT` statement.
+- `template`: renders a Handlebars `template` against the whole serialized `Input` (`id`, `effect`, `offset`, `timestamp`, `data`, `metadata`), with HTML escaping off and a `json` helper that serializes its one argument.
+
+If a format fails for an event, `Proxy::send` pushes an error-level `Output` for that input and channel, skips the target, and carries on with the run. Format and target parse errors are prefixed with `channels.<key>.format` / `channels.<key>.target` in `Dialect::parse_proxy`, so parsers return paths relative to their own node. A `stream` channel with no effects writing to it is still spawned for the run's duration, but only as an output source (e.g. tailing a log file) - its stdout/stderr lines still become `Output` events, just with no associated effect.
 
 ### Schema types (all in `rngo/src/effect/schema/`)
 

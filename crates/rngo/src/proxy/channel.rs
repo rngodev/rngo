@@ -33,6 +33,11 @@ pub trait ChannelTargetBuilder {
         channel_key: &str,
         output_tx: Sender<Output>,
     ) -> Result<Box<dyn ChannelTarget>, Vec<BuildError>>;
+
+    /// Whether the channel must have a format for this target to work.
+    fn requires_format(&self) -> bool {
+        false
+    }
 }
 
 pub struct ChannelBuilder {
@@ -96,7 +101,12 @@ impl ChannelBuilder {
 
     pub fn build(self) -> Result<Channel, Vec<BuildError>> {
         let target = if let Some(target_builder) = self.channel_target_builder {
-            if let Some(output_tx) = self.output_tx {
+            if target_builder.requires_format() && self.format.is_none() {
+                Err(vec![BuildError::Channel {
+                    channel: self.key.clone(),
+                    message: "target requires a format".into(),
+                }])
+            } else if let Some(output_tx) = self.output_tx {
                 target_builder.build(&self.key, output_tx)
             } else {
                 Err(vec![BuildError::Channel {

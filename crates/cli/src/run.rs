@@ -324,12 +324,12 @@ mod tests {
             }),
         );
 
-        let command = "echo {{id}} >> ".to_string() + output.to_str().unwrap();
+        let command = "echo {{data.id}} >> ".to_string() + output.to_str().unwrap();
         write_yaml(
             base.join(".rngo/channels/logger.yml"),
             &json!({
-                "format": {},
-                "target": { "type": "exec", "command": command }
+                "format": { "type": "template", "template": command },
+                "target": { "type": "exec" }
             }),
         );
 
@@ -386,8 +386,8 @@ mod tests {
         write_yaml(
             base.join(".rngo/channels/logger.yml"),
             &json!({
-                "format": {},
-                "target": { "type": "exec", "command": "exit 1" }
+                "format": { "type": "template", "template": "exit 1" },
+                "target": { "type": "exec" }
             }),
         );
 
@@ -506,6 +506,55 @@ mod tests {
             content.lines().count() > 0,
             "stream subprocess should have received events"
         );
+    }
+
+    #[test]
+    fn template_format_is_written_to_a_stream_target() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+        let output = base.join("template_output.txt");
+
+        fs::create_dir_all(base.join(".rngo/effects")).unwrap();
+        fs::create_dir_all(base.join(".rngo/channels")).unwrap();
+
+        write_yaml(
+            base.join(".rngo/spec.yml"),
+            &json!({
+                "seed": 1,
+                "start": "2024-01-01",
+                "end": "2024-01-04"
+            }),
+        );
+
+        write_yaml(
+            base.join(".rngo/effects/ping.yml"),
+            &json!({
+                "channel": "logger",
+                "trigger": "hz(1, day)",
+                "schema": {
+                    "type": "object",
+                    "properties": { "tag": { "type": "constant", "value": "<a&b>" } }
+                }
+            }),
+        );
+
+        let command = "cat >> ".to_string() + output.to_str().unwrap();
+        write_yaml(
+            base.join(".rngo/channels/logger.yml"),
+            &json!({
+                "format": { "type": "template", "template": "{{effect}} {{data.tag}} {{json data}}" },
+                "target": { "type": "stream", "command": command }
+            }),
+        );
+
+        run(base, false, None, false, None).unwrap();
+
+        let content = fs::read_to_string(&output).unwrap();
+        let first = content
+            .lines()
+            .next()
+            .expect("stream should receive events");
+        assert_eq!(first, r#"ping <a&b> {"tag":"<a&b>"}"#);
     }
 
     #[test]
@@ -952,12 +1001,12 @@ mod tests {
             }),
         );
 
-        let command = "echo {{id}} >> ".to_string() + output.to_str().unwrap();
+        let command = "echo {{data.id}} >> ".to_string() + output.to_str().unwrap();
         write_yaml(
             base.join(".rngo/channels/logger.yml"),
             &json!({
-                "format": {},
-                "target": { "type": "exec", "command": command }
+                "format": { "type": "template", "template": command },
+                "target": { "type": "exec" }
             }),
         );
 
@@ -1080,12 +1129,12 @@ mod tests {
             }),
         );
 
-        let command = "echo {{id}} >> ".to_string() + output.to_str().unwrap();
+        let command = "echo {{data.id}} >> ".to_string() + output.to_str().unwrap();
         write_yaml(
             base.join(".rngo/channels/logger.yml"),
             &json!({
-                "format": {},
-                "target": { "type": "exec", "command": command }
+                "format": { "type": "template", "template": command },
+                "target": { "type": "exec" }
             }),
         );
 
