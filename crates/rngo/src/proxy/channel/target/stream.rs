@@ -1,6 +1,6 @@
 use crate::parse::ChannelTargetParser;
 use crate::proxy::channel::{ChannelTarget, ChannelTargetBuilder};
-use crate::{BuildError, Input, Level, Output, ParseError, spec};
+use crate::{BuildError, Level, Output, ParseError, spec};
 use chrono::Utc;
 use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
@@ -33,11 +33,7 @@ impl Stream {
 }
 
 impl ChannelTarget for Stream {
-    fn send(
-        &mut self,
-        _input: &Input,
-        data: Value,
-    ) -> Result<Vec<Output>, Box<dyn std::error::Error>> {
+    fn send(&mut self, data: Value) -> Result<Vec<Output>, Box<dyn std::error::Error>> {
         let Some(stdin) = self.stdin.as_mut() else {
             return Ok(vec![]);
         };

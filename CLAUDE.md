@@ -69,7 +69,7 @@ The workspace has two crates:
 
 ### Channel targets (`rngo/src/proxy/channel/target/`)
 
-`ChannelTarget` implementations, wired up by `Proxy`. `send` gets a `serde_json::Value`: the formatted data as a string when the channel has a format, otherwise the input's own `data`.
+`ChannelTarget` implementations, wired up by `Proxy`. `send` gets only a `serde_json::Value`, not the `Input`: the formatted data as a string when the channel has a format, otherwise the input's own `data`. `Proxy::send` sets `input_id` on the outputs `send` returns; outputs a target emits later through `output_tx` (e.g. `stream`'s stdout/stderr lines) have no `input_id`.
 - `stream`: spawns one long-lived subprocess per channel, writes one line per event to its stdin (a string value as-is, anything else as JSON).
 - `exec`: runs a fresh `sh -c <data>` per event. A non-string value records an error `Output` for that input instead of running. A `command` field on the target is rejected at parse time.
 - `stdout`: prints each event's value to stdout (a string as-is, anything else as JSON); used in place of the real target when `--stdout` is passed.

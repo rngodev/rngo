@@ -1,6 +1,6 @@
 use crate::parse::ChannelTargetParser;
 use crate::proxy::channel::{ChannelTarget, ChannelTargetBuilder};
-use crate::{BuildError, Input, Level, Output, ParseError, spec};
+use crate::{BuildError, Level, Output, ParseError, spec};
 use chrono::Utc;
 use serde_json::Value;
 use std::io::{BufRead, BufReader};
@@ -23,14 +23,10 @@ impl Exec {
 }
 
 impl ChannelTarget for Exec {
-    fn send(
-        &mut self,
-        input: &Input,
-        data: Value,
-    ) -> Result<Vec<Output>, Box<dyn std::error::Error>> {
+    fn send(&mut self, data: Value) -> Result<Vec<Output>, Box<dyn std::error::Error>> {
         let Value::String(command) = data else {
             return Ok(vec![Output {
-                input_id: Some(input.id),
+                input_id: None,
                 channel: self.channel_key.clone(),
                 level: Level::Error,
                 data: format!("exec needs a string command, got: {data}"),
@@ -59,7 +55,7 @@ impl ChannelTarget for Exec {
             {
                 if !line.is_empty() {
                     outputs.push(Output {
-                        input_id: Some(input.id),
+                        input_id: None,
                         channel: self.channel_key.clone(),
                         level,
                         data: line,
@@ -72,7 +68,7 @@ impl ChannelTarget for Exec {
 
         if !output.status.success() {
             outputs.push(Output {
-                input_id: Some(input.id),
+                input_id: None,
                 channel: self.channel_key.clone(),
                 level: Level::Error,
                 data: format!("command exited with {}", output.status),
@@ -127,66 +123,25 @@ impl ChannelTargetParser for ExecParser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::proxy::channel::Channel;
-    use crate::proxy::format::TemplateFormat;
-    use chrono::Utc;
     use serde_json::json;
     use std::sync::mpsc;
-
-    #[test]
-    fn runs_the_formatted_data_as_its_command() {
-        let (tx, _rx) = mpsc::channel();
-        let format = TemplateFormat::new("echo '{{data.s}}'").unwrap();
-        let mut channel = Channel::builder("logger".into())
-            .format(format)
-            .target(Exec::builder())
-            .output_tx(tx)
-            .build()
-            .unwrap();
-        let input = Input {
-            id: 1,
-            effect: "ping".into(),
-            offset: 0,
-            timestamp: Utc::now().fixed_offset(),
-            data: json!({ "s": "<a> & \"b\"" }),
-            metadata: vec![],
-        };
-
-        let data = channel.format.as_ref().unwrap().format(&input).unwrap();
-        let outputs = channel.target.send(&input, Value::String(data)).unwrap();
-
-        assert_eq!(outputs.len(), 1);
-        assert_eq!(outputs[0].data, "<a> & \"b\"");
-    }
 
     fn exec() -> Box<dyn ChannelTarget> {
         let (tx, _rx) = mpsc::channel();
         Exec::builder().build("logger", tx).unwrap()
     }
 
-    fn input(data: Value) -> Input {
-        Input {
-            id: 1,
-            effect: "ping".into(),
-            offset: 0,
-            timestamp: Utc::now().fixed_offset(),
-            data,
-            metadata: vec![],
-        }
-    }
-
     #[test]
     fn runs_string_data_as_its_command() {
-        let outputs = exec().send(&input(json!(null)), json!("echo hi")).unwrap();
+        let outputs = exec().send(json!("echo '<a> & \"b\"'")).unwrap();
         assert_eq!(outputs.len(), 1);
-        assert_eq!(outputs[0].data, "hi");
+        assert_eq!(outputs[0].data, "<a> & \"b\"");
     }
 
     #[test]
     fn non_string_data_is_an_error_output() {
-        let outputs = exec().send(&input(json!(null)), json!({ "a": 1 })).unwrap();
+        let outputs = exec().send(json!({ "a": 1 })).unwrap();
         assert_eq!(outputs.len(), 1);
         assert!(matches!(outputs[0].level, Level::Error));
-        assert_eq!(outputs[0].input_id, Some(1));
     }
 }

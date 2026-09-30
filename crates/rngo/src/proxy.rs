@@ -48,8 +48,8 @@ impl Proxy {
                 None => input.data.clone(),
             };
 
-            let outputs = channel.target.send(input, data)?;
-            for output in outputs {
+            for mut output in channel.target.send(data)? {
+                output.input_id = Some(input.id);
                 self.run_log_writer.push_output(output);
             }
         };
@@ -209,11 +209,7 @@ mod tests {
     struct RecordingTarget(Rc<RefCell<Vec<Value>>>);
 
     impl ChannelTarget for RecordingTarget {
-        fn send(
-            &mut self,
-            _input: &Input,
-            data: Value,
-        ) -> Result<Vec<Output>, Box<dyn std::error::Error>> {
+        fn send(&mut self, data: Value) -> Result<Vec<Output>, Box<dyn std::error::Error>> {
             self.0.borrow_mut().push(data);
             Ok(vec![])
         }
@@ -282,5 +278,25 @@ mod tests {
         proxy.send(&ping).unwrap();
 
         assert_eq!(*sent.borrow(), vec![json!({ "a": 1 })]);
+    }
+
+    #[test]
+    fn target_outputs_are_tied_to_the_input() {
+        let log = Rc::new(RecordingLog::default());
+        let mut builder = Proxy::builder().run_log_writer(log.clone());
+        builder.with_channel("logger", |c| {
+            c.target(channel::target::Exec::builder())
+                .effects(vec!["ping".into()])
+        });
+        let mut proxy = builder.build().unwrap();
+
+        let mut ping = input(5);
+        ping.data = json!("echo hi");
+        proxy.send(&ping).unwrap();
+
+        let outputs = log.outputs.borrow();
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].input_id, Some(5));
+        assert_eq!(outputs[0].data, "hi");
     }
 }

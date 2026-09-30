@@ -1,7 +1,7 @@
 pub mod target;
 
 use crate::proxy::format::Format;
-use crate::{BuildError, Input, Output};
+use crate::{BuildError, Output};
 use serde_json::Value;
 use std::error::Error;
 use std::sync::mpsc::Sender;
@@ -21,9 +21,9 @@ impl Channel {
 }
 
 pub trait ChannelTarget: std::fmt::Debug {
-    /// Sends `input` on. `data` is the channel's formatted data as a string, or the input's own
-    /// `data` when the channel has no format.
-    fn send(&mut self, input: &Input, data: Value) -> Result<Vec<Output>, Box<dyn Error>>;
+    /// Sends one event's `data`: the channel's formatted data as a string, or the input's own
+    /// `data` when the channel has no format. The proxy ties returned outputs to the input.
+    fn send(&mut self, data: Value) -> Result<Vec<Output>, Box<dyn Error>>;
     fn finish(&mut self) {}
 }
 
@@ -137,7 +137,7 @@ mod tests {
     struct RecordingTarget;
 
     impl ChannelTarget for RecordingTarget {
-        fn send(&mut self, _input: &Input, _data: Value) -> Result<Vec<Output>, Box<dyn Error>> {
+        fn send(&mut self, _data: Value) -> Result<Vec<Output>, Box<dyn Error>> {
             Ok(vec![])
         }
     }
