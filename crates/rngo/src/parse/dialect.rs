@@ -50,7 +50,10 @@ impl Dialect {
                 Box::new(schema::Select::parser()),
                 Box::new(schema::Str::parser()),
             ],
-            vec![Box::new(format::SqlFormat::parser())],
+            vec![
+                Box::new(format::SqlFormat::parser()),
+                Box::new(format::TemplateFormat::parser()),
+            ],
             vec![
                 Box::new(target::Exec::parser()),
                 Box::new(target::Stream::parser()),
@@ -204,7 +207,7 @@ impl Dialect {
                     Ok(format) => {
                         channel_builder.set_format(format);
                     }
-                    Err(mut e) => errors.append(&mut e),
+                    Err(e) => errors.extend(prefix_paths(e, &["channels", key, "format"])),
                 },
                 _ => (),
             };
@@ -213,7 +216,7 @@ impl Dialect {
                 Ok(target_builder) => {
                     channel_builder.set_target(target_builder);
                 }
-                Err(mut e) => errors.append(&mut e),
+                Err(e) => errors.extend(prefix_paths(e, &["channels", key, "target"])),
             }
 
             let effects = effect_channels
@@ -326,9 +329,70 @@ impl Dialect {
     }
 }
 
+/// Prepends `prefix` to each error's path, so errors from a nested parser say where they came from.
+fn prefix_paths(errors: Vec<ParseError>, prefix: &[&str]) -> Vec<ParseError> {
+    errors
+        .into_iter()
+        .map(|ParseError::SchemaError { path, message }| {
+            let mut full: Vec<String> = prefix.iter().map(|s| s.to_string()).collect();
+            full.extend(path.unwrap_or_default());
+            ParseError::SchemaError {
+                path: Some(full),
+                message,
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn proxy_errors(channels: serde_json::Value) -> Vec<ParseError> {
+        let spec =
+            spec::from_value(serde_json::json!({ "effects": {}, "channels": channels })).unwrap();
+        match Dialect::primitive().parse_proxy(spec) {
+            Ok(_) => panic!("expected parse errors"),
+            Err(errors) => errors,
+        }
+    }
+
+    fn paths(errors: &[ParseError]) -> Vec<String> {
+        errors
+            .iter()
+            .map(|ParseError::SchemaError { path, .. }| path.clone().unwrap_or_default().join("."))
+            .collect()
+    }
+
+    #[test]
+    fn format_errors_name_the_channel() {
+        let target = serde_json::json!({ "type": "stream", "command": "cat" });
+        for format in [
+            serde_json::json!({ "type": "template" }),
+            serde_json::json!({ "type": "template", "template": 1 }),
+            serde_json::json!({ "type": "template", "template": "{{#if}}" }),
+            serde_json::json!({ "type": "nope" }),
+        ] {
+            let errors = proxy_errors(serde_json::json!({
+                "logger": { "format": format, "target": target }
+            }));
+            assert_eq!(paths(&errors).len(), 1);
+            assert!(
+                paths(&errors)[0].starts_with("channels.logger.format"),
+                "{:?}",
+                paths(&errors)
+            );
+        }
+    }
+
+    #[test]
+    fn exec_command_is_rejected_with_a_pointer_to_format() {
+        let errors = proxy_errors(serde_json::json!({
+            "logger": { "target": { "type": "exec", "command": "echo hi" } }
+        }));
+        assert_eq!(paths(&errors), vec!["channels.logger.target.command"]);
+        assert!(errors[0].to_string().contains("format"));
+    }
 
     #[test]
     fn spec_seed_is_applied_to_the_simulation_builder() {

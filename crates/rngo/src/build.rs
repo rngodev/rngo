@@ -15,7 +15,7 @@ use crate::effect::schema::{
 pub use crate::proxy::channel::target::exec::ExecBuilder;
 pub use crate::proxy::channel::target::stream::StreamBuilder;
 use crate::proxy::channel::target::{Exec, Stream};
-pub use crate::proxy::format::SqlFormat;
+pub use crate::proxy::format::{SqlFormat, TemplateFormat};
 use thiserror::Error;
 
 pub fn array() -> ArrayBuilder {

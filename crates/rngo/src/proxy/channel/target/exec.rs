@@ -1,17 +1,12 @@
 use crate::parse::ChannelTargetParser;
 use crate::proxy::channel::{ChannelTarget, ChannelTargetBuilder};
-use crate::{BuildError, Input, Level, Output, ParseError, spec};
-use chrono::Utc;
-use handlebars::Handlebars;
+use crate::{BuildError, Level, OutputSender, ParseError, TargetOutput, spec};
+use serde_json::Value;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
-use std::sync::mpsc::Sender;
 
 #[derive(Debug)]
-pub struct Exec {
-    channel_key: String,
-    hbs: Handlebars<'static>,
-}
+pub struct Exec;
 
 impl Exec {
     pub fn parser() -> ExecParser {
@@ -19,17 +14,18 @@ impl Exec {
     }
 
     pub fn builder() -> ExecBuilder {
-        ExecBuilder::default()
+        ExecBuilder
     }
 }
 
 impl ChannelTarget for Exec {
-    fn send(
-        &mut self,
-        input: &Input,
-        _data: Option<String>,
-    ) -> Result<Vec<Output>, Box<dyn std::error::Error>> {
-        let command = self.hbs.render("command", &input.data)?;
+    fn send(&mut self, data: Value) -> Result<Vec<TargetOutput>, Box<dyn std::error::Error>> {
+        let Value::String(command) = data else {
+            return Ok(vec![TargetOutput::new(
+                Level::Error,
+                format!("exec needs a string command, got: {data}"),
+            )]);
+        };
 
         let output = Command::new("sh")
             .arg("-c")
@@ -38,7 +34,6 @@ impl ChannelTarget for Exec {
             .stderr(Stdio::piped())
             .output()?;
 
-        let timestamp = Utc::now();
         let mut outputs = vec![];
 
         for (bytes, level) in [
@@ -50,27 +45,16 @@ impl ChannelTarget for Exec {
                 .map_while(Result::ok)
             {
                 if !line.is_empty() {
-                    outputs.push(Output {
-                        input_id: Some(input.id),
-                        channel: self.channel_key.clone(),
-                        level,
-                        data: line,
-                        timestamp,
-                        metadata: vec![],
-                    });
+                    outputs.push(TargetOutput::new(level, line));
                 }
             }
         }
 
         if !output.status.success() {
-            outputs.push(Output {
-                input_id: Some(input.id),
-                channel: self.channel_key.clone(),
-                level: Level::Error,
-                data: format!("command exited with {}", output.status),
-                timestamp,
-                metadata: vec![],
-            });
+            outputs.push(TargetOutput::new(
+                Level::Error,
+                format!("command exited with {}", output.status),
+            ));
         }
 
         Ok(outputs)
@@ -78,48 +62,15 @@ impl ChannelTarget for Exec {
 }
 
 #[derive(Default)]
-pub struct ExecBuilder {
-    command: Option<String>,
-}
-
-impl ExecBuilder {
-    pub fn command(mut self, value: impl Into<String>) -> Self {
-        self.set_command(value);
-        self
-    }
-
-    pub fn set_command(&mut self, value: impl Into<String>) -> &mut Self {
-        self.command = Some(value.into());
-        self
-    }
-}
+pub struct ExecBuilder;
 
 impl ChannelTargetBuilder for ExecBuilder {
     fn build(
         &self,
-        channel_key: &str,
-        _output_tx: Sender<Output>,
+        _channel_key: &str,
+        _outputs: OutputSender,
     ) -> Result<Box<dyn ChannelTarget>, Vec<BuildError>> {
-        let Some(command) = self.command.clone() else {
-            return Err(vec![BuildError::ChannelTarget {
-                channel: channel_key.to_string(),
-                message: "command not specified".into(),
-            }]);
-        };
-
-        let mut hbs = Handlebars::new();
-        hbs.register_template_string("command", &command)
-            .map_err(|_e| {
-                vec![BuildError::ChannelTarget {
-                    channel: channel_key.to_string(),
-                    message: "FIX ME must be a string".into(),
-                }]
-            })?;
-
-        Ok(Box::new(Exec {
-            channel_key: channel_key.to_string(),
-            hbs,
-        }))
+        Ok(Box::new(Exec))
     }
 }
 
@@ -134,44 +85,42 @@ impl ChannelTargetParser for ExecParser {
         &self,
         channel_target: &spec::ChannelTarget,
     ) -> Result<Box<dyn ChannelTargetBuilder>, Vec<ParseError>> {
-        let command = match channel_target.fields.get("command") {
-            Some(value) => match value.as_str() {
-                Some(command) => command,
-                None => {
-                    return Err(vec![ParseError::SchemaError {
-                        path: None,
-                        message: "FIX ME must be a string".into(),
-                    }]);
-                }
-            },
-            None => {
-                return Err(vec![ParseError::SchemaError {
-                    path: None,
-                    message: "FIX ME must be a string".into(),
-                }]);
-            }
-        };
+        if channel_target.fields.contains_key("command") {
+            return Err(vec![ParseError::SchemaError {
+                path: Some(vec!["command".into()]),
+                message: "exec no longer takes a command; set the channel's format to a template \
+                          format, or have the effect produce the command as a string, instead"
+                    .into(),
+            }]);
+        }
 
-        Ok(Box::new(ExecBuilder::default().command(command)))
+        Ok(Box::new(ExecBuilder))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use std::sync::mpsc;
 
-    #[test]
-    fn builder_without_a_command_is_an_error() {
+    fn exec() -> Box<dyn ChannelTarget> {
         let (tx, _rx) = mpsc::channel();
-        let result = ExecBuilder::default().build("logger", tx);
-        assert!(result.is_err());
+        Exec::builder()
+            .build("logger", OutputSender::new("logger", tx))
+            .unwrap()
     }
 
     #[test]
-    fn builder_with_no_channel_key_at_construction_still_builds() {
-        let (tx, _rx) = mpsc::channel();
-        let result = Exec::builder().command("echo hi").build("logger", tx);
-        assert!(result.is_ok());
+    fn runs_string_data_as_its_command() {
+        let outputs = exec().send(json!("echo '<a> & \"b\"'")).unwrap();
+        assert_eq!(outputs, vec![TargetOutput::new(Level::Info, "<a> & \"b\"")]);
+    }
+
+    #[test]
+    fn non_string_data_is_an_error_output() {
+        let outputs = exec().send(json!({ "a": 1 })).unwrap();
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].level, Level::Error);
     }
 }

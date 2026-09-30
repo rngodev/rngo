@@ -1,3 +1,5 @@
+format:
+  type: template
+  template: curl -sS -X {{data.method}} $API_BASE_URL{{data.path}}
 target:
   type: exec
-  command: curl -sS -X {{method}} $API_BASE_URL{{path}}

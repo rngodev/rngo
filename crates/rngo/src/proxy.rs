@@ -2,10 +2,11 @@ pub mod channel;
 pub mod format;
 pub mod output;
 
-use crate::{BuildError, Input, RunLogWriter, SimpleEventRunLog};
+use crate::{BuildError, Input, Level, RunLogWriter, SimpleEventRunLog, TargetOutput};
 use channel::target::Stdout;
 use channel::{Channel, ChannelBuilder};
 use output::Output;
+use serde_json::Value;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver};
@@ -29,15 +30,22 @@ impl Proxy {
         };
 
         if let Some(channel) = self.channels.get_mut(channel_key) {
-            let formatted_data = if let Some(format) = &channel.format {
-                format.format(input).ok()
-            } else {
-                None
+            let data = match channel.format.as_ref().map(|f| f.format(input)) {
+                Some(Ok(data)) => Value::String(data),
+                Some(Err(message)) => {
+                    self.run_log_writer.push_output(
+                        TargetOutput::new(Level::Error, format!("format failed: {message}"))
+                            .into_output(&channel.key, Some(input.id)),
+                    );
+                    self.drain_outputs();
+                    return Ok(());
+                }
+                None => input.data.clone(),
             };
 
-            let outputs = channel.target.send(input, formatted_data)?;
-            for output in outputs {
-                self.run_log_writer.push_output(output);
+            for output in channel.target.send(data)? {
+                self.run_log_writer
+                    .push_output(output.into_output(&channel.key, Some(input.id)));
             }
         };
 
@@ -153,5 +161,138 @@ impl ProxyBuilder {
 impl Default for ProxyBuilder {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::OutputSender;
+    use crate::log::Metadata;
+    use crate::proxy::channel::{ChannelTarget, ChannelTargetBuilder};
+    use crate::proxy::format::Format;
+    use chrono::Utc;
+    use serde_json::json;
+    use std::cell::RefCell;
+
+    #[derive(Debug, Default)]
+    struct RecordingLog {
+        outputs: RefCell<Vec<Output>>,
+    }
+
+    impl RunLogWriter for RecordingLog {
+        fn push_input(&self, _input: Input) {}
+        fn push_output(&self, output: Output) {
+            self.outputs.borrow_mut().push(output);
+        }
+        fn push_metadata(&self, _metadata: Metadata) {}
+    }
+
+    #[derive(Debug)]
+    struct FailOnEvenIds;
+
+    impl Format for FailOnEvenIds {
+        fn format(&self, event: &Input) -> Result<String, String> {
+            if event.id.is_multiple_of(2) {
+                Err("boom".into())
+            } else {
+                Ok(event.id.to_string())
+            }
+        }
+    }
+
+    #[derive(Debug)]
+    struct RecordingTarget(Rc<RefCell<Vec<Value>>>);
+
+    impl ChannelTarget for RecordingTarget {
+        fn send(&mut self, data: Value) -> Result<Vec<TargetOutput>, Box<dyn std::error::Error>> {
+            self.0.borrow_mut().push(data);
+            Ok(vec![])
+        }
+    }
+
+    struct RecordingTargetBuilder(Rc<RefCell<Vec<Value>>>);
+
+    impl ChannelTargetBuilder for RecordingTargetBuilder {
+        fn build(
+            &self,
+            _channel_key: &str,
+            _outputs: OutputSender,
+        ) -> Result<Box<dyn ChannelTarget>, Vec<BuildError>> {
+            Ok(Box::new(RecordingTarget(self.0.clone())))
+        }
+    }
+
+    fn input(id: u64) -> Input {
+        Input {
+            id,
+            effect: "ping".into(),
+            offset: 0,
+            timestamp: Utc::now().fixed_offset(),
+            data: json!(null),
+            metadata: vec![],
+        }
+    }
+
+    #[test]
+    fn format_failure_records_an_error_output_and_keeps_going() {
+        let log = Rc::new(RecordingLog::default());
+        let sent = Rc::new(RefCell::new(vec![]));
+        let mut builder = Proxy::builder().run_log_writer(log.clone());
+        builder.with_channel("logger", |c| {
+            c.format(FailOnEvenIds)
+                .target(RecordingTargetBuilder(sent.clone()))
+                .effects(vec!["ping".into()])
+        });
+        let mut proxy = builder.build().unwrap();
+
+        for id in 1..=3 {
+            proxy.send(&input(id)).unwrap();
+        }
+
+        assert_eq!(*sent.borrow(), vec![json!("1"), json!("3")]);
+        let outputs = log.outputs.borrow();
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].input_id, Some(2));
+        assert_eq!(outputs[0].channel, "logger");
+        assert!(matches!(outputs[0].level, Level::Error));
+        assert!(outputs[0].data.contains("boom"));
+    }
+
+    #[test]
+    fn unformatted_channels_send_the_input_data() {
+        let sent = Rc::new(RefCell::new(vec![]));
+        let mut builder = Proxy::builder();
+        builder.with_channel("logger", |c| {
+            c.target(RecordingTargetBuilder(sent.clone()))
+                .effects(vec!["ping".into()])
+        });
+        let mut proxy = builder.build().unwrap();
+
+        let mut ping = input(1);
+        ping.data = json!({ "a": 1 });
+        proxy.send(&ping).unwrap();
+
+        assert_eq!(*sent.borrow(), vec![json!({ "a": 1 })]);
+    }
+
+    #[test]
+    fn target_outputs_are_tied_to_the_input() {
+        let log = Rc::new(RecordingLog::default());
+        let mut builder = Proxy::builder().run_log_writer(log.clone());
+        builder.with_channel("logger", |c| {
+            c.target(channel::target::Exec::builder())
+                .effects(vec!["ping".into()])
+        });
+        let mut proxy = builder.build().unwrap();
+
+        let mut ping = input(5);
+        ping.data = json!("echo hi");
+        proxy.send(&ping).unwrap();
+
+        let outputs = log.outputs.borrow();
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].input_id, Some(5));
+        assert_eq!(outputs[0].data, "hi");
     }
 }
