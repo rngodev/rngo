@@ -1,7 +1,6 @@
 use crate::proxy::channel::{ChannelTarget, ChannelTargetBuilder};
-use crate::{BuildError, Output};
+use crate::{BuildError, OutputSender, TargetOutput};
 use serde_json::Value;
-use std::sync::mpsc::Sender;
 
 #[derive(Debug, Default)]
 pub struct Stdout {}
@@ -17,7 +16,7 @@ impl Stdout {
 }
 
 impl ChannelTarget for Stdout {
-    fn send(&mut self, data: Value) -> Result<Vec<Output>, Box<dyn std::error::Error>> {
+    fn send(&mut self, data: Value) -> Result<Vec<TargetOutput>, Box<dyn std::error::Error>> {
         let data = match data {
             Value::String(s) => s,
             other => other.to_string(),
@@ -35,7 +34,7 @@ impl ChannelTargetBuilder for StdoutBuilder {
     fn build(
         &self,
         _channel_key: &str,
-        _output_tx: Sender<Output>,
+        _outputs: OutputSender,
     ) -> Result<Box<dyn ChannelTarget>, Vec<BuildError>> {
         Ok(Box::new(Stdout::new()))
     }

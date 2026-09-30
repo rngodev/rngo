@@ -1,7 +1,7 @@
 pub mod target;
 
 use crate::proxy::format::Format;
-use crate::{BuildError, Output};
+use crate::{BuildError, Output, OutputSender, TargetOutput};
 use serde_json::Value;
 use std::error::Error;
 use std::sync::mpsc::Sender;
@@ -23,18 +23,18 @@ impl Channel {
 pub trait ChannelTarget: std::fmt::Debug {
     /// Sends one event's `data`: the channel's formatted data as a string, or the input's own
     /// `data` when the channel has no format. The proxy ties returned outputs to the input.
-    fn send(&mut self, data: Value) -> Result<Vec<Output>, Box<dyn Error>>;
+    fn send(&mut self, data: Value) -> Result<Vec<TargetOutput>, Box<dyn Error>>;
     fn finish(&mut self) {}
 }
 
 /// Built with the channel's own key passed in at build time, rather than baked in at
 /// construction - lets a target builder (e.g. [`crate::build::exec`]) be constructed generically,
-/// before the channel it'll belong to is known, mirroring how `output_tx` is threaded in.
+/// before the channel it'll belong to is known, mirroring how `outputs` is threaded in.
 pub trait ChannelTargetBuilder {
     fn build(
         &self,
         channel_key: &str,
-        output_tx: Sender<Output>,
+        outputs: OutputSender,
     ) -> Result<Box<dyn ChannelTarget>, Vec<BuildError>>;
 }
 
@@ -100,7 +100,7 @@ impl ChannelBuilder {
     pub fn build(self) -> Result<Channel, Vec<BuildError>> {
         let target = if let Some(target_builder) = self.channel_target_builder {
             if let Some(output_tx) = self.output_tx {
-                target_builder.build(&self.key, output_tx)
+                target_builder.build(&self.key, OutputSender::new(&self.key, output_tx))
             } else {
                 Err(vec![BuildError::Channel {
                     channel: self.key.clone(),
@@ -137,7 +137,7 @@ mod tests {
     struct RecordingTarget;
 
     impl ChannelTarget for RecordingTarget {
-        fn send(&mut self, _data: Value) -> Result<Vec<Output>, Box<dyn Error>> {
+        fn send(&mut self, _data: Value) -> Result<Vec<TargetOutput>, Box<dyn Error>> {
             Ok(vec![])
         }
     }
@@ -149,7 +149,7 @@ mod tests {
         fn build(
             &self,
             channel_key: &str,
-            _output_tx: Sender<Output>,
+            _outputs: OutputSender,
         ) -> Result<Box<dyn ChannelTarget>, Vec<BuildError>> {
             *self.0.borrow_mut() = Some(channel_key.to_string());
             Ok(Box::new(RecordingTarget))

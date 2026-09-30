@@ -18,6 +18,6 @@ pub use moment::Moment;
 pub use parse::Dialect;
 pub use proxy::channel::Channel;
 pub use proxy::format::Format;
-pub use proxy::output::{self, Level, Output};
+pub use proxy::output::{self, Level, Output, OutputSender, TargetOutput};
 pub use proxy::{Proxy, ProxyBuilder};
 pub use spec::ParseError;

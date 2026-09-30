@@ -2,10 +2,9 @@ pub mod channel;
 pub mod format;
 pub mod output;
 
-use crate::{BuildError, Input, Level, RunLogWriter, SimpleEventRunLog};
+use crate::{BuildError, Input, Level, RunLogWriter, SimpleEventRunLog, TargetOutput};
 use channel::target::Stdout;
 use channel::{Channel, ChannelBuilder};
-use chrono::Utc;
 use output::Output;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -34,23 +33,19 @@ impl Proxy {
             let data = match channel.format.as_ref().map(|f| f.format(input)) {
                 Some(Ok(data)) => Value::String(data),
                 Some(Err(message)) => {
-                    self.run_log_writer.push_output(Output {
-                        input_id: Some(input.id),
-                        timestamp: Utc::now(),
-                        channel: channel.key.clone(),
-                        level: Level::Error,
-                        data: format!("format failed: {message}"),
-                        metadata: vec![],
-                    });
+                    self.run_log_writer.push_output(
+                        TargetOutput::new(Level::Error, format!("format failed: {message}"))
+                            .into_output(&channel.key, Some(input.id)),
+                    );
                     self.drain_outputs();
                     return Ok(());
                 }
                 None => input.data.clone(),
             };
 
-            for mut output in channel.target.send(data)? {
-                output.input_id = Some(input.id);
-                self.run_log_writer.push_output(output);
+            for output in channel.target.send(data)? {
+                self.run_log_writer
+                    .push_output(output.into_output(&channel.key, Some(input.id)));
             }
         };
 
@@ -172,12 +167,13 @@ impl Default for ProxyBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::OutputSender;
     use crate::log::Metadata;
     use crate::proxy::channel::{ChannelTarget, ChannelTargetBuilder};
     use crate::proxy::format::Format;
+    use chrono::Utc;
     use serde_json::json;
     use std::cell::RefCell;
-    use std::sync::mpsc::Sender;
 
     #[derive(Debug, Default)]
     struct RecordingLog {
@@ -209,7 +205,7 @@ mod tests {
     struct RecordingTarget(Rc<RefCell<Vec<Value>>>);
 
     impl ChannelTarget for RecordingTarget {
-        fn send(&mut self, data: Value) -> Result<Vec<Output>, Box<dyn std::error::Error>> {
+        fn send(&mut self, data: Value) -> Result<Vec<TargetOutput>, Box<dyn std::error::Error>> {
             self.0.borrow_mut().push(data);
             Ok(vec![])
         }
@@ -221,7 +217,7 @@ mod tests {
         fn build(
             &self,
             _channel_key: &str,
-            _output_tx: Sender<Output>,
+            _outputs: OutputSender,
         ) -> Result<Box<dyn ChannelTarget>, Vec<BuildError>> {
             Ok(Box::new(RecordingTarget(self.0.clone())))
         }

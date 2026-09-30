@@ -1,11 +1,9 @@
 use crate::parse::ChannelTargetParser;
 use crate::proxy::channel::{ChannelTarget, ChannelTargetBuilder};
-use crate::{BuildError, Level, Output, ParseError, spec};
-use chrono::Utc;
+use crate::{BuildError, Level, OutputSender, ParseError, TargetOutput, spec};
 use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::mpsc::Sender;
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -33,7 +31,7 @@ impl Stream {
 }
 
 impl ChannelTarget for Stream {
-    fn send(&mut self, data: Value) -> Result<Vec<Output>, Box<dyn std::error::Error>> {
+    fn send(&mut self, data: Value) -> Result<Vec<TargetOutput>, Box<dyn std::error::Error>> {
         let Some(stdin) = self.stdin.as_mut() else {
             return Ok(vec![]);
         };
@@ -100,7 +98,7 @@ impl ChannelTargetBuilder for StreamBuilder {
     fn build(
         &self,
         channel_key: &str,
-        output_tx: Sender<Output>,
+        outputs: OutputSender,
     ) -> Result<Box<dyn ChannelTarget>, Vec<BuildError>> {
         let Some(command) = self.command.clone() else {
             return Err(vec![BuildError::ChannelTarget {
@@ -128,41 +126,11 @@ impl ChannelTargetBuilder for StreamBuilder {
         let mut reader_threads = vec![];
 
         if let Some(stdout) = child.stdout.take() {
-            let tx = output_tx.clone();
-            let channel_key = channel_key.to_string();
-            reader_threads.push(thread::spawn(move || {
-                for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-                    if !line.is_empty() {
-                        let _ = tx.send(Output {
-                            input_id: None,
-                            channel: channel_key.clone(),
-                            level: Level::Info,
-                            data: line,
-                            timestamp: Utc::now(),
-                            metadata: vec![],
-                        });
-                    }
-                }
-            }));
+            reader_threads.push(spawn_reader(stdout, Level::Info, outputs.clone()));
         }
 
         if let Some(stderr) = child.stderr.take() {
-            let tx = output_tx.clone();
-            let channel_key = channel_key.to_string();
-            reader_threads.push(thread::spawn(move || {
-                for line in BufReader::new(stderr).lines().map_while(Result::ok) {
-                    if !line.is_empty() {
-                        let _ = tx.send(Output {
-                            input_id: None,
-                            channel: channel_key.clone(),
-                            level: Level::Error,
-                            data: line,
-                            timestamp: Utc::now(),
-                            metadata: vec![],
-                        });
-                    }
-                }
-            }));
+            reader_threads.push(spawn_reader(stderr, Level::Error, outputs));
         }
 
         Ok(Box::new(Stream {
@@ -172,6 +140,20 @@ impl ChannelTargetBuilder for StreamBuilder {
             reader_threads,
         }))
     }
+}
+
+fn spawn_reader(
+    pipe: impl std::io::Read + Send + 'static,
+    level: Level,
+    outputs: OutputSender,
+) -> JoinHandle<()> {
+    thread::spawn(move || {
+        for line in BufReader::new(pipe).lines().map_while(Result::ok) {
+            if !line.is_empty() {
+                outputs.send(TargetOutput::new(level, line));
+            }
+        }
+    })
 }
 
 pub struct StreamParser {}
@@ -212,29 +194,31 @@ mod tests {
     use super::*;
     use std::sync::mpsc;
 
+    fn outputs() -> OutputSender {
+        let (tx, _rx) = mpsc::channel();
+        OutputSender::new("logger", tx)
+    }
+
     #[test]
     fn builder_without_a_command_is_an_error() {
-        let (tx, _rx) = mpsc::channel();
-        let result = StreamBuilder::default().build("logger", tx);
+        let result = StreamBuilder::default().build("logger", outputs());
         assert!(result.is_err());
     }
 
     #[test]
     fn builder_with_no_channel_key_at_construction_still_builds() {
-        let (tx, _rx) = mpsc::channel();
-        let result = Stream::builder().command("cat").build("logger", tx);
+        let result = Stream::builder().command("cat").build("logger", outputs());
         assert!(result.is_ok());
     }
 
     #[test]
     fn drop_abandons_a_reader_thread_stuck_on_an_orphaned_grandchild() {
-        let (tx, _rx) = mpsc::channel();
         let stream = StreamBuilder::default()
             // Backgrounds `sleep 5` without redirecting it, so it inherits this shell's stdout
             // pipe and keeps it open (reparented, once this shell exits) well past both grace
             // periods below - simulating a command whose kill doesn't actually close its pipe.
             .command("sleep 5 & echo done".to_string())
-            .build("test", tx)
+            .build("test", outputs())
             .unwrap();
 
         let start = Instant::now();
