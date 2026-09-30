@@ -2,6 +2,7 @@ pub mod target;
 
 use crate::proxy::format::Format;
 use crate::{BuildError, Input, Output};
+use serde_json::Value;
 use std::error::Error;
 use std::sync::mpsc::Sender;
 
@@ -20,7 +21,9 @@ impl Channel {
 }
 
 pub trait ChannelTarget: std::fmt::Debug {
-    fn send(&mut self, input: &Input, data: Option<String>) -> Result<Vec<Output>, Box<dyn Error>>;
+    /// Sends `input` on. `data` is the channel's formatted data as a string, or the input's own
+    /// `data` when the channel has no format.
+    fn send(&mut self, input: &Input, data: Value) -> Result<Vec<Output>, Box<dyn Error>>;
     fn finish(&mut self) {}
 }
 
@@ -33,11 +36,6 @@ pub trait ChannelTargetBuilder {
         channel_key: &str,
         output_tx: Sender<Output>,
     ) -> Result<Box<dyn ChannelTarget>, Vec<BuildError>>;
-
-    /// Whether the channel must have a format for this target to work.
-    fn requires_format(&self) -> bool {
-        false
-    }
 }
 
 pub struct ChannelBuilder {
@@ -101,12 +99,7 @@ impl ChannelBuilder {
 
     pub fn build(self) -> Result<Channel, Vec<BuildError>> {
         let target = if let Some(target_builder) = self.channel_target_builder {
-            if target_builder.requires_format() && self.format.is_none() {
-                Err(vec![BuildError::Channel {
-                    channel: self.key.clone(),
-                    message: "target requires a format".into(),
-                }])
-            } else if let Some(output_tx) = self.output_tx {
+            if let Some(output_tx) = self.output_tx {
                 target_builder.build(&self.key, output_tx)
             } else {
                 Err(vec![BuildError::Channel {
@@ -144,11 +137,7 @@ mod tests {
     struct RecordingTarget;
 
     impl ChannelTarget for RecordingTarget {
-        fn send(
-            &mut self,
-            _input: &Input,
-            _data: Option<String>,
-        ) -> Result<Vec<Output>, Box<dyn Error>> {
+        fn send(&mut self, _input: &Input, _data: Value) -> Result<Vec<Output>, Box<dyn Error>> {
             Ok(vec![])
         }
     }

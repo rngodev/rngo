@@ -343,6 +343,46 @@ mod tests {
     }
 
     #[test]
+    fn exec_target_runs_string_data_without_a_format() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+        let output = base.join("exec_output.txt");
+
+        fs::create_dir_all(base.join(".rngo/effects")).unwrap();
+        fs::create_dir_all(base.join(".rngo/channels")).unwrap();
+
+        write_yaml(
+            base.join(".rngo/spec.yml"),
+            &json!({
+                "seed": 1,
+                "start": "2024-01-01",
+                "end": "2024-01-04"
+            }),
+        );
+
+        let command = "echo hi >> ".to_string() + output.to_str().unwrap();
+        write_yaml(
+            base.join(".rngo/effects/ping.yml"),
+            &json!({
+                "channel": "logger",
+                "trigger": "hz(1, day)",
+                "schema": { "type": "constant", "value": command }
+            }),
+        );
+
+        write_yaml(
+            base.join(".rngo/channels/logger.yml"),
+            &json!({ "target": { "type": "exec" } }),
+        );
+
+        run(base, false, None, false, None).unwrap();
+
+        let content = fs::read_to_string(&output).unwrap();
+        assert!(content.lines().all(|line| line == "hi"));
+        assert!(content.lines().count() > 0);
+    }
+
+    #[test]
     fn exec_target_records_output_when_command_fails() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();

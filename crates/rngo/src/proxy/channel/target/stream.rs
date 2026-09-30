@@ -2,6 +2,7 @@ use crate::parse::ChannelTargetParser;
 use crate::proxy::channel::{ChannelTarget, ChannelTargetBuilder};
 use crate::{BuildError, Input, Level, Output, ParseError, spec};
 use chrono::Utc;
+use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::Sender;
@@ -34,14 +35,17 @@ impl Stream {
 impl ChannelTarget for Stream {
     fn send(
         &mut self,
-        input: &Input,
-        data: Option<String>,
+        _input: &Input,
+        data: Value,
     ) -> Result<Vec<Output>, Box<dyn std::error::Error>> {
         let Some(stdin) = self.stdin.as_mut() else {
             return Ok(vec![]);
         };
 
-        let data = data.unwrap_or_else(|| serde_json::to_string(&input.data).unwrap());
+        let data = match data {
+            Value::String(s) => s,
+            other => other.to_string(),
+        };
         writeln!(stdin, "{data}").map_err(|e| format!("channel '{}': {e}", self.channel_key))?;
 
         Ok(vec![])

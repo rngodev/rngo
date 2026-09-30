@@ -69,10 +69,10 @@ The workspace has two crates:
 
 ### Channel targets (`rngo/src/proxy/channel/target/`)
 
-`ChannelTarget` implementations, wired up by `Proxy`:
-- `stream`: spawns one long-lived subprocess per channel, writes formatted event lines to its stdin.
-- `exec`: runs a fresh `sh -c <data>` per event, where `<data>` is the event's formatted data. It requires a format (`ChannelTargetBuilder::requires_format`), so the channel fails to build without one; a `command` field on the target is rejected at parse time.
-- `stdout`: prints formatted event data to stdout; used in place of the real target when `--stdout` is passed.
+`ChannelTarget` implementations, wired up by `Proxy`. `send` gets a `serde_json::Value`: the formatted data as a string when the channel has a format, otherwise the input's own `data`.
+- `stream`: spawns one long-lived subprocess per channel, writes one line per event to its stdin (a string value as-is, anything else as JSON).
+- `exec`: runs a fresh `sh -c <data>` per event. A non-string value records an error `Output` for that input instead of running. A `command` field on the target is rejected at parse time.
+- `stdout`: prints each event's value to stdout (a string as-is, anything else as JSON); used in place of the real target when `--stdout` is passed.
 
 An effect opts into a channel by setting `channel: <channel-key>`. Formats are configured only on channels; effects know nothing about formats.
 

@@ -7,6 +7,7 @@ use channel::target::Stdout;
 use channel::{Channel, ChannelBuilder};
 use chrono::Utc;
 use output::Output;
+use serde_json::Value;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver};
@@ -30,8 +31,8 @@ impl Proxy {
         };
 
         if let Some(channel) = self.channels.get_mut(channel_key) {
-            let formatted_data = match channel.format.as_ref().map(|f| f.format(input)) {
-                Some(Ok(data)) => Some(data),
+            let data = match channel.format.as_ref().map(|f| f.format(input)) {
+                Some(Ok(data)) => Value::String(data),
                 Some(Err(message)) => {
                     self.run_log_writer.push_output(Output {
                         input_id: Some(input.id),
@@ -44,10 +45,10 @@ impl Proxy {
                     self.drain_outputs();
                     return Ok(());
                 }
-                None => None,
+                None => input.data.clone(),
             };
 
-            let outputs = channel.target.send(input, formatted_data)?;
+            let outputs = channel.target.send(input, data)?;
             for output in outputs {
                 self.run_log_writer.push_output(output);
             }
@@ -205,20 +206,20 @@ mod tests {
     }
 
     #[derive(Debug)]
-    struct RecordingTarget(Rc<RefCell<Vec<Option<String>>>>);
+    struct RecordingTarget(Rc<RefCell<Vec<Value>>>);
 
     impl ChannelTarget for RecordingTarget {
         fn send(
             &mut self,
             _input: &Input,
-            data: Option<String>,
+            data: Value,
         ) -> Result<Vec<Output>, Box<dyn std::error::Error>> {
             self.0.borrow_mut().push(data);
             Ok(vec![])
         }
     }
 
-    struct RecordingTargetBuilder(Rc<RefCell<Vec<Option<String>>>>);
+    struct RecordingTargetBuilder(Rc<RefCell<Vec<Value>>>);
 
     impl ChannelTargetBuilder for RecordingTargetBuilder {
         fn build(
@@ -257,12 +258,29 @@ mod tests {
             proxy.send(&input(id)).unwrap();
         }
 
-        assert_eq!(*sent.borrow(), vec![Some("1".into()), Some("3".into())]);
+        assert_eq!(*sent.borrow(), vec![json!("1"), json!("3")]);
         let outputs = log.outputs.borrow();
         assert_eq!(outputs.len(), 1);
         assert_eq!(outputs[0].input_id, Some(2));
         assert_eq!(outputs[0].channel, "logger");
         assert!(matches!(outputs[0].level, Level::Error));
         assert!(outputs[0].data.contains("boom"));
+    }
+
+    #[test]
+    fn unformatted_channels_send_the_input_data() {
+        let sent = Rc::new(RefCell::new(vec![]));
+        let mut builder = Proxy::builder();
+        builder.with_channel("logger", |c| {
+            c.target(RecordingTargetBuilder(sent.clone()))
+                .effects(vec!["ping".into()])
+        });
+        let mut proxy = builder.build().unwrap();
+
+        let mut ping = input(1);
+        ping.data = json!({ "a": 1 });
+        proxy.send(&ping).unwrap();
+
+        assert_eq!(*sent.borrow(), vec![json!({ "a": 1 })]);
     }
 }
