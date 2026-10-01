@@ -1,13 +1,10 @@
-mod pace;
 mod status;
 
 use console::style;
-use rngo::{Dialect, SignalOutcome, SqliteRunLog, spec};
+use rngo::{Dialect, RunLogWriter, SignalOutcome, SqliteRunLog, StopHandle, spec};
 use status::StatusWriter;
 use std::error::Error;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::{fmt, fs};
 use uuid::Uuid;
 
@@ -24,8 +21,8 @@ pub struct RunOptions<'a> {
     pub limit: Option<std::num::NonZeroU64>,
     /// Send future inputs right away instead of waiting for their timestamps.
     pub fast_forward: bool,
-    /// Set to stop the run early; it then finishes and audits what was logged.
-    pub stop: Arc<AtomicBool>,
+    /// Stops the run early; it then finishes and audits what was logged.
+    pub stop: StopHandle,
 }
 
 pub fn run(base: &Path, options: RunOptions) -> Result<bool, Box<dyn Error>> {
@@ -75,14 +72,16 @@ pub fn run(base: &Path, options: RunOptions) -> Result<bool, Box<dyn Error>> {
     let writer = StatusWriter::new(sqlite_run_log.clone(), &spec);
 
     if !fast_forward {
-        proxy_builder.set_pacer(pace::Realtime {
-            stop: stop.clone(),
-            status: writer.clone(),
+        let status = writer.clone();
+        proxy_builder.set_realtime(true).set_on_wait(move |until| {
+            status.flush();
+            status.wait(until);
         });
     }
 
     let mut proxy = proxy_builder
         .run_log_writer(writer.clone())
+        .stop_handle(stop.clone())
         .build()
         .map_err(join_errors)?;
 
@@ -94,7 +93,7 @@ pub fn run(base: &Path, options: RunOptions) -> Result<bool, Box<dyn Error>> {
 
     for input in &mut simulation {
         proxy.send(&input)?;
-        if proxy.stopped() || stop.load(Ordering::SeqCst) {
+        if stop.is_stopped() {
             break;
         }
     }
@@ -1415,12 +1414,12 @@ mod tests {
         let sent_log = base.join("sent.txt");
         write_timed_spec(base, "now + minutes(10)", &sent_log);
 
-        let stop = Arc::new(AtomicBool::new(false));
+        let stop = StopHandle::new();
         let stopper = {
             let stop = stop.clone();
             std::thread::spawn(move || {
                 std::thread::sleep(std::time::Duration::from_millis(1500));
-                stop.store(true, Ordering::SeqCst);
+                stop.stop();
             })
         };
 

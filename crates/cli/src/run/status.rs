@@ -53,12 +53,9 @@ impl StatusWriter {
         self.render(true);
     }
 
-    /// Shows that the run is waiting for an input due at `until`, or clears that state with `None`.
-    pub fn wait(&self, until: Option<DateTime<FixedOffset>>) {
-        if until.is_none() && self.waiting.get().is_none() {
-            return;
-        }
-        self.waiting.set(until);
+    /// Shows that the run is waiting for an input due at `until`, until that time passes.
+    pub fn wait(&self, until: DateTime<FixedOffset>) {
+        self.waiting.set(Some(until));
         self.dirty.set(true);
         self.render(false);
     }
@@ -82,7 +79,11 @@ impl StatusWriter {
         self.last_render.set(Some(now));
         self.dirty.set(false);
 
-        let time_line = match (self.waiting.get(), self.last_timestamp.get()) {
+        let waiting = self
+            .waiting
+            .get()
+            .filter(|until| until.to_utc() > Utc::now());
+        let time_line = match (waiting, self.last_timestamp.get()) {
             (Some(until), _) => format!(
                 "waiting: next input at {} (in {})",
                 until.format("%Y-%m-%d %H:%M:%S"),

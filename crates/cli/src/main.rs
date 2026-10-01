@@ -4,8 +4,7 @@ mod skills;
 mod ui;
 
 use clap::{Parser, Subcommand};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use rngo::StopHandle;
 
 /// Simulate code usage, record everything and analyze the results
 #[derive(Parser)]
@@ -76,14 +75,15 @@ enum SkillsCommands {
     },
 }
 
-/// Returns a flag set by the first Ctrl-C; a second Ctrl-C exits immediately.
-fn stop_on_interrupt() -> Arc<AtomicBool> {
-    let stop = Arc::new(AtomicBool::new(false));
+/// Returns a handle stopped by the first Ctrl-C; a second Ctrl-C exits immediately.
+fn stop_on_interrupt() -> StopHandle {
+    let stop = StopHandle::new();
     let handler_stop = stop.clone();
     let installed = ctrlc::set_handler(move || {
-        if handler_stop.swap(true, Ordering::SeqCst) {
+        if handler_stop.is_stopped() {
             std::process::exit(130);
         }
+        handler_stop.stop();
     });
     if let Err(e) = installed {
         eprintln!("warning: couldn't handle Ctrl-C, stopping a run won't audit it: {e}");
