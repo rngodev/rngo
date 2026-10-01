@@ -32,7 +32,6 @@ pub struct Metadata {
     pub mtype: String,
     pub input_id: Option<i64>,
     pub output_id: Option<i64>,
-    pub offset: Option<u64>,
     pub data: Option<Value>,
     pub segment: Option<String>,
 }

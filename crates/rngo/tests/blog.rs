@@ -54,9 +54,9 @@ fn assert_simulation(simulation: Simulation) {
             _ => panic!("expected null or number"),
         }
 
-        let created_at = obj["created_at"].as_i64().unwrap();
+        let created_at = obj["created_at"].as_f64().unwrap();
         assert!(
-            created_at >= 0,
+            created_at >= 0.0,
             "user created_at should be >= 0, got {created_at}"
         );
     }
@@ -95,13 +95,13 @@ fn assert_simulation(simulation: Simulation) {
             assert!(tag == "a" || tag == "b")
         });
 
-        let created_at = obj["created_at"].as_i64().unwrap();
+        let created_at = obj["created_at"].as_f64().unwrap();
         assert!(
-            created_at >= 0,
+            created_at >= 0.0,
             "post created_at should be >= 0, got {created_at}"
         );
         assert!(
-            user["created_at"].as_i64().unwrap() <= created_at,
+            user["created_at"].as_f64().unwrap() <= created_at,
             "post created_at should happen after the references user"
         )
     }

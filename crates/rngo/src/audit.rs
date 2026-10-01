@@ -48,7 +48,6 @@ impl Audit {
                 mtype: "signal".to_string(),
                 input_id: None,
                 output_id: None,
-                offset: None,
                 data: Some(data),
                 segment: None,
             });

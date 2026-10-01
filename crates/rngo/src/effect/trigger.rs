@@ -1,6 +1,7 @@
 use super::clock::Clock;
 use crate::effect::Input;
 use crate::log::RunLogReader;
+use chrono::{DateTime, FixedOffset};
 use std::rc::Rc;
 
 #[derive(Clone, Debug)]
@@ -11,7 +12,8 @@ pub enum TriggerConfig {
 }
 
 pub struct TriggerEvent {
-    pub sim_offset: u64,
+    /// Milliseconds since simulation start.
+    pub sim_offset: i64,
     pub input_event: Option<Rc<Input>>,
 }
 
@@ -20,32 +22,28 @@ pub enum Trigger {
     Effect {
         run_log_reader: Rc<dyn RunLogReader>,
         key: String,
-        last_offset: u64,
+        sim_start: DateTime<FixedOffset>,
+        last_offset: i64,
     },
     Clock {
         clock: Clock,
-        next_offset: Option<u64>,
+        next_offset: Option<i64>,
     },
 }
 
 impl Trigger {
-    pub fn next_offset(&self) -> Option<u64> {
+    pub fn next_offset(&self) -> Option<i64> {
         match &self {
             Trigger::Clock { next_offset, .. } => *next_offset,
             Trigger::Effect {
                 run_log_reader: event_run_log,
                 key,
+                sim_start,
                 last_offset,
             } => {
-                if let Some(input_event) = event_run_log.last_for_effect(key) {
-                    if &input_event.offset > last_offset {
-                        Some(input_event.offset)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
+                let input_event = event_run_log.last_for_effect(key)?;
+                let offset = (input_event.timestamp - *sim_start).num_milliseconds();
+                (offset > *last_offset).then_some(offset)
             }
         }
     }
@@ -55,12 +53,14 @@ impl Trigger {
             Trigger::Effect {
                 run_log_reader: event_run_log,
                 key,
+                sim_start,
                 last_offset,
             } => {
                 if let Some(input_event) = event_run_log.last_for_effect(key) {
-                    *last_offset = input_event.offset;
+                    let offset = (input_event.timestamp - *sim_start).num_milliseconds();
+                    *last_offset = offset;
                     Some(TriggerEvent {
-                        sim_offset: input_event.offset,
+                        sim_offset: offset,
                         input_event: Some(input_event.clone()),
                     })
                 } else {

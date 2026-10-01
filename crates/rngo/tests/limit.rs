@@ -36,7 +36,7 @@ fn unlimited_effect_keeps_running_after_limited_effect_stops() {
     assert!(
         inputs
             .iter()
-            .any(|i| i.effect == "unlimited" && i.offset > last_limited.offset),
+            .any(|i| i.effect == "unlimited" && i.timestamp > last_limited.timestamp),
         "the unlimited effect should keep producing after the limit is reached"
     );
 }

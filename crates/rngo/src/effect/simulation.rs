@@ -33,10 +33,9 @@ impl Simulation {
             mtype: "timing".to_string(),
             input_id: None,
             output_id: None,
-            offset: None,
             data: Some(serde_json::json!({
                 "key": key,
-                "timestamp": Utc::now().to_rfc3339(),
+                "timestamp": Utc::now().timestamp_millis(),
             })),
             segment: None,
         });
@@ -49,7 +48,7 @@ impl Simulation {
             }
 
             self.effects
-                .sort_unstable_by_key(|e| e.next_offset().unwrap_or(u64::MAX));
+                .sort_unstable_by_key(|e| e.next_offset().unwrap_or(i64::MAX));
 
             match self.effects.first_mut()?.next()? {
                 Ok(input) => {
@@ -323,12 +322,10 @@ mod tests {
             .collect()
     }
 
-    fn timing_timestamps(writer: &RecordedMetadata) -> Vec<chrono::DateTime<chrono::FixedOffset>> {
+    fn timing_timestamps(writer: &RecordedMetadata) -> Vec<i64> {
         timing_metadata(writer)
             .iter()
-            .map(|data| {
-                chrono::DateTime::parse_from_rfc3339(data["timestamp"].as_str().unwrap()).unwrap()
-            })
+            .map(|data| data["timestamp"].as_i64().unwrap())
             .collect()
     }
 

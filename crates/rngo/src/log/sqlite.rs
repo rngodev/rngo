@@ -33,8 +33,7 @@ impl SqliteRunLog {
                 CREATE TABLE IF NOT EXISTS inputs (
                     id INTEGER NOT NULL,
                     effect TEXT NOT NULL,
-                    offset INTEGER NOT NULL,
-                    timestamp TEXT NOT NULL,
+                    timestamp INTEGER NOT NULL,
                     data TEXT NOT NULL,
                     metadata TEXT NOT NULL
                 );
@@ -53,7 +52,6 @@ impl SqliteRunLog {
                     segment TEXT,
                     input_id INTEGER,
                     output_id INTEGER,
-                    offset INTEGER,
                     data TEXT
                 );
 
@@ -147,20 +145,18 @@ fn insert_metadata_row(
     mtype: &str,
     input_id: Option<i64>,
     output_id: Option<i64>,
-    offset: Option<u64>,
     data: Option<&serde_json::Value>,
     segment: Option<&str>,
 ) {
     connection
         .prepare_cached(
-            "INSERT INTO metadata (type, input_id, output_id, offset, data, segment) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO metadata (type, input_id, output_id, data, segment) VALUES (?1, ?2, ?3, ?4, ?5)",
         )
         .unwrap()
         .execute(rusqlite::params![
             mtype,
             input_id,
             output_id,
-            offset.map(|o| o as i64),
             data.map(|v| v.to_string()),
             segment,
         ])
@@ -173,7 +169,6 @@ fn insert_metadata(connection: &Connection, metadata: &Metadata) {
         &metadata.mtype,
         metadata.input_id,
         metadata.output_id,
-        metadata.offset,
         metadata.data.as_ref(),
         metadata.segment.as_deref(),
     );
@@ -184,14 +179,13 @@ impl RunLogWriter for SqliteRunLog {
         self.connection
             .borrow()
             .prepare_cached(
-                "INSERT INTO inputs (id, effect, offset, timestamp, data, metadata) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO inputs (id, effect, timestamp, data, metadata) VALUES (?1, ?2, ?3, ?4, ?5)",
             )
             .unwrap()
             .execute(rusqlite::params![
                 input.id as i64,
                 input.effect,
-                input.offset as i64,
-                input.timestamp.to_rfc3339(),
+                input.timestamp.timestamp_millis(),
                 serde_json::to_string(&input.data).unwrap(),
                 serde_json::to_string(&input.metadata).unwrap(),
             ])
@@ -234,8 +228,10 @@ impl RunLogWriter for SqliteRunLog {
     }
 }
 
-fn placeholder_timestamp() -> DateTime<chrono::FixedOffset> {
-    DateTime::<Utc>::UNIX_EPOCH.fixed_offset()
+fn timestamp_from_millis(millis: i64) -> DateTime<chrono::FixedOffset> {
+    DateTime::<Utc>::from_timestamp_millis(millis)
+        .unwrap_or(DateTime::<Utc>::UNIX_EPOCH)
+        .fixed_offset()
 }
 
 fn sql_value_to_json(value: SqlValue) -> Option<serde_json::Value> {
@@ -253,27 +249,26 @@ fn sql_value_to_json(value: SqlValue) -> Option<serde_json::Value> {
 fn query_last(connection: &Connection) -> Option<Rc<Input>> {
     let row = connection
         .prepare_cached(
-            "SELECT id, effect, offset, data, metadata FROM inputs ORDER BY id DESC LIMIT 1",
+            "SELECT id, effect, timestamp, data, metadata FROM inputs ORDER BY id DESC LIMIT 1",
         )
         .unwrap()
         .query_row([], |row| {
             let id: i64 = row.get(0)?;
             let effect: String = row.get(1)?;
-            let offset: i64 = row.get(2)?;
+            let timestamp: i64 = row.get(2)?;
             let data: String = row.get(3)?;
             let metadata: String = row.get(4)?;
-            Ok((id, effect, offset, data, metadata))
+            Ok((id, effect, timestamp, data, metadata))
         })
         .optional()
         .unwrap()?;
 
-    let (id, effect, offset, data, metadata) = row;
+    let (id, effect, timestamp, data, metadata) = row;
 
     Some(Rc::new(Input {
         id: id as u64,
         effect,
-        offset: offset as u64,
-        timestamp: placeholder_timestamp(),
+        timestamp: timestamp_from_millis(timestamp),
         data: serde_json::from_str(&data).unwrap(),
         metadata: serde_json::from_str(&metadata).unwrap(),
     }))
@@ -282,48 +277,46 @@ fn query_last(connection: &Connection) -> Option<Rc<Input>> {
 fn query_last_for_effect(connection: &Connection, key: &str) -> Option<Rc<Input>> {
     let row = connection
         .prepare_cached(
-            "SELECT id, offset, data, metadata FROM inputs WHERE effect = ?1 ORDER BY id DESC LIMIT 1",
+            "SELECT id, timestamp, data, metadata FROM inputs WHERE effect = ?1 ORDER BY id DESC LIMIT 1",
         )
         .unwrap()
         .query_row(rusqlite::params![key], |row| {
             let id: i64 = row.get(0)?;
-            let offset: i64 = row.get(1)?;
+            let timestamp: i64 = row.get(1)?;
             let data: String = row.get(2)?;
             let metadata: String = row.get(3)?;
-            Ok((id, offset, data, metadata))
+            Ok((id, timestamp, data, metadata))
         })
         .optional()
         .unwrap()?;
 
-    let (id, offset, data, metadata) = row;
+    let (id, timestamp, data, metadata) = row;
 
     Some(Rc::new(Input {
         id: id as u64,
         effect: key.to_string(),
-        offset: offset as u64,
-        timestamp: placeholder_timestamp(),
+        timestamp: timestamp_from_millis(timestamp),
         data: serde_json::from_str(&data).unwrap(),
         metadata: serde_json::from_str(&metadata).unwrap(),
     }))
 }
 
 fn query_by_id(connection: &Connection, key: &str, id: u64) -> Input {
-    let (offset, data, metadata) = connection
-        .prepare_cached("SELECT offset, data, metadata FROM inputs WHERE id = ?1")
+    let (timestamp, data, metadata) = connection
+        .prepare_cached("SELECT timestamp, data, metadata FROM inputs WHERE id = ?1")
         .unwrap()
         .query_row(rusqlite::params![id as i64], |row| {
-            let offset: i64 = row.get(0)?;
+            let timestamp: i64 = row.get(0)?;
             let data: String = row.get(1)?;
             let metadata: String = row.get(2)?;
-            Ok((offset, data, metadata))
+            Ok((timestamp, data, metadata))
         })
         .unwrap();
 
     Input {
         id,
         effect: key.to_string(),
-        offset: offset as u64,
-        timestamp: placeholder_timestamp(),
+        timestamp: timestamp_from_millis(timestamp),
         data: serde_json::from_str(&data).unwrap(),
         metadata: serde_json::from_str(&metadata).unwrap(),
     }
@@ -354,7 +347,6 @@ fn query_unique_for_effect(
         "_unique_reference",
         Some(input.id as i64),
         None,
-        Some(input.offset),
         None,
         Some(cursor),
     );
@@ -407,6 +399,35 @@ mod tests {
     }
 
     #[test]
+    fn reads_back_input_timestamps_as_milliseconds() {
+        let tmp = TempDir::new().unwrap();
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
+        let timestamp = DateTime::<Utc>::from_timestamp_millis(1_700_000_000_123)
+            .unwrap()
+            .fixed_offset();
+
+        run_log.push_input(Input {
+            id: 1,
+            effect: "ping".to_string(),
+            timestamp,
+            data: serde_json::json!(1),
+            metadata: vec![],
+        });
+
+        assert_eq!(run_log.last().unwrap().timestamp, timestamp);
+        assert_eq!(
+            run_log.last_for_effect("ping").unwrap().timestamp,
+            timestamp
+        );
+        let stored: i64 = run_log
+            .query("SELECT timestamp FROM inputs")
+            .unwrap()
+            .as_i64()
+            .unwrap();
+        assert_eq!(stored, 1_700_000_000_123);
+    }
+
+    #[test]
     fn writes_input_and_output_metadata_inline() {
         let tmp = TempDir::new().unwrap();
         let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
@@ -414,7 +435,6 @@ mod tests {
         run_log.push_input(Input {
             id: 1,
             effect: "ping".to_string(),
-            offset: 42,
             timestamp: Utc::now().fixed_offset(),
             data: serde_json::json!({ "a": 1 }),
             metadata: vec![SchemaMetadata {
@@ -480,7 +500,6 @@ mod tests {
             mtype: "skipped".into(),
             input_id: None,
             output_id: None,
-            offset: Some(42),
             data: None,
             segment: None,
         });
@@ -494,30 +513,20 @@ mod tests {
             .unwrap();
         assert_eq!(input_count, 0);
 
-        let (metadata_input_id, metadata_output_id, metadata_offset, metadata_type, metadata_data): (
+        let (metadata_input_id, metadata_output_id, metadata_type, metadata_data): (
             Option<i64>,
             Option<i64>,
-            i64,
             String,
             Option<String>,
         ) = conn
             .query_row(
-                "SELECT input_id, output_id, offset, type, data FROM metadata",
+                "SELECT input_id, output_id, type, data FROM metadata",
                 [],
-                |row| {
-                    Ok((
-                        row.get(0)?,
-                        row.get(1)?,
-                        row.get(2)?,
-                        row.get(3)?,
-                        row.get(4)?,
-                    ))
-                },
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .unwrap();
         assert_eq!(metadata_input_id, None);
         assert_eq!(metadata_output_id, None);
-        assert_eq!(metadata_offset, 42);
         assert_eq!(metadata_type, "skipped");
         assert_eq!(metadata_data, None);
     }
@@ -531,7 +540,6 @@ mod tests {
             mtype: "delivery_failed".into(),
             input_id: None,
             output_id: Some(7),
-            offset: None,
             data: None,
             segment: None,
         });
@@ -554,7 +562,6 @@ mod tests {
             run_log.push_input(Input {
                 id: (i + 1) as u64,
                 effect: "ping".to_string(),
-                offset: i as u64,
                 timestamp: Utc::now().fixed_offset(),
                 data: serde_json::json!(i),
                 metadata: vec![],
@@ -584,7 +591,6 @@ mod tests {
         run_log.push_input(Input {
             id: 1,
             effect: "ping".to_string(),
-            offset: 0,
             timestamp: Utc::now().fixed_offset(),
             data: serde_json::json!(1),
             metadata: vec![],
@@ -597,7 +603,6 @@ mod tests {
         run_log.push_input(Input {
             id: 2,
             effect: "ping".to_string(),
-            offset: 1,
             timestamp: Utc::now().fixed_offset(),
             data: serde_json::json!(2),
             metadata: vec![],
@@ -616,7 +621,6 @@ mod tests {
             run_log.push_input(Input {
                 id: i,
                 effect: effect.to_string(),
-                offset: i,
                 timestamp: Utc::now().fixed_offset(),
                 data: serde_json::json!(i),
                 metadata: vec![],
@@ -644,7 +648,6 @@ mod tests {
             run_log.push_input(Input {
                 id: i,
                 effect: "a".to_string(),
-                offset: i,
                 timestamp: Utc::now().fixed_offset(),
                 data: serde_json::json!(i),
                 metadata: vec![],
@@ -680,7 +683,6 @@ mod tests {
             run_log.push_input(Input {
                 id: i,
                 effect: effect.to_string(),
-                offset: i,
                 timestamp: Utc::now().fixed_offset(),
                 data: serde_json::json!(i),
                 metadata: vec![],

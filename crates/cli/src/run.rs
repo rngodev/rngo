@@ -1332,7 +1332,7 @@ mod tests {
             base.join(".rngo/signals/held-inputs.yml"),
             &json!({
                 "type": "sql",
-                "query": "SELECT COUNT(*) FROM inputs WHERE julianday(timestamp) > (SELECT julianday(data ->> 'timestamp') FROM metadata WHERE type = 'timing' AND data ->> 'key' = 'simulation_end')"
+                "query": "SELECT COUNT(*) FROM inputs WHERE timestamp > (SELECT data ->> 'timestamp' FROM metadata WHERE type = 'timing' AND data ->> 'key' = 'simulation_end')"
             }),
         );
     }

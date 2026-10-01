@@ -119,7 +119,6 @@ mod tests {
         Input {
             id: 1,
             effect: "user".to_string(),
-            offset: 0,
             timestamp: Utc::now().fixed_offset(),
             data,
             metadata: vec![],
