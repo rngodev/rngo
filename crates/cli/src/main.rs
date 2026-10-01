@@ -4,6 +4,8 @@ mod skills;
 mod ui;
 
 use clap::{Parser, Subcommand};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Simulate code usage, record everything and analyze the results
 #[derive(Parser)]
@@ -44,6 +46,9 @@ enum Commands {
         /// Cap the number of effect and error events a run produces
         #[arg(long)]
         limit: Option<std::num::NonZeroU64>,
+        /// Send events with future timestamps right away instead of waiting for their time
+        #[arg(long)]
+        fast_forward: bool,
         /// Path to a spec file (instead of building from the `.rngo` directory)
         #[arg(long)]
         spec: Option<std::path::PathBuf>,
@@ -71,6 +76,21 @@ enum SkillsCommands {
     },
 }
 
+/// Returns a flag set by the first Ctrl-C; a second Ctrl-C exits immediately.
+fn stop_on_interrupt() -> Arc<AtomicBool> {
+    let stop = Arc::new(AtomicBool::new(false));
+    let handler_stop = stop.clone();
+    let installed = ctrlc::set_handler(move || {
+        if handler_stop.swap(true, Ordering::SeqCst) {
+            std::process::exit(130);
+        }
+    });
+    if let Err(e) = installed {
+        eprintln!("warning: couldn't handle Ctrl-C, stopping a run won't audit it: {e}");
+    }
+    stop
+}
+
 fn main() {
     let cli = Cli::parse();
 
@@ -85,9 +105,20 @@ fn main() {
             stdout,
             dry_run,
             limit,
+            fast_forward,
             dir,
             spec,
-        } => match run::run(&dir, stdout, spec.as_deref(), dry_run, limit) {
+        } => match run::run(
+            &dir,
+            run::RunOptions {
+                stdout,
+                spec_path: spec.as_deref(),
+                dry_run,
+                limit,
+                fast_forward,
+                stop: stop_on_interrupt(),
+            },
+        ) {
             Ok(true) => {}
             Ok(false) => std::process::exit(1),
             Err(e) => {

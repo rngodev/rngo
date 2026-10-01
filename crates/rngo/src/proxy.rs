@@ -5,17 +5,26 @@ pub mod output;
 use crate::{BuildError, Input, Level, RunLogWriter, SimpleEventRunLog, TargetOutput};
 use channel::target::Stdout;
 use channel::{Channel, ChannelBuilder};
+use chrono::{DateTime, FixedOffset};
 use output::Output;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver};
 
+/// Decides when the proxy may send each input.
+pub trait Pacer {
+    /// Blocks until an input with `timestamp` may be sent; returns `false` to stop the proxy instead.
+    fn wait_until(&mut self, timestamp: DateTime<FixedOffset>) -> bool;
+}
+
 pub struct Proxy {
     run_log_writer: Rc<dyn RunLogWriter>,
     channels: HashMap<String, Channel>,
     effect_channels: HashMap<String, String>,
     output_rx: Receiver<Output>,
+    pacer: Option<Box<dyn Pacer>>,
+    stopped: bool,
 }
 
 impl Proxy {
@@ -23,7 +32,19 @@ impl Proxy {
         ProxyBuilder::new()
     }
 
+    /// Sends `input` to its effect's channel, first waiting on the pacer if there is one.
     pub fn send(&mut self, input: &Input) -> Result<(), Box<dyn std::error::Error>> {
+        if self.stopped {
+            return Ok(());
+        }
+
+        if let Some(pacer) = self.pacer.as_mut()
+            && !pacer.wait_until(input.timestamp)
+        {
+            self.stopped = true;
+            return Ok(());
+        }
+
         let channel_key = match self.effect_channels.get(&input.effect) {
             Some(k) => k,
             None => return Ok(()),
@@ -53,6 +74,11 @@ impl Proxy {
         Ok(())
     }
 
+    /// Whether the pacer has stopped the proxy; once stopped, `send` ignores further inputs.
+    pub fn stopped(&self) -> bool {
+        self.stopped
+    }
+
     pub fn finish(&mut self) {
         for channel in self.channels.values_mut() {
             channel.target.finish();
@@ -71,6 +97,7 @@ pub struct ProxyBuilder {
     run_log_writer: Option<Rc<dyn RunLogWriter>>,
     channel_builders: Vec<ChannelBuilder>,
     stdout: bool,
+    pacer: Option<Box<dyn Pacer>>,
 }
 
 impl ProxyBuilder {
@@ -79,11 +106,23 @@ impl ProxyBuilder {
             run_log_writer: None,
             channel_builders: vec![],
             stdout: false,
+            pacer: None,
         }
     }
 
     pub fn run_log_writer<T: RunLogWriter + 'static>(mut self, writer: Rc<T>) -> Self {
         self.run_log_writer = Some(writer as Rc<dyn RunLogWriter>);
+        self
+    }
+
+    /// Paces sends with `pacer`; without one, inputs are sent as soon as they arrive.
+    pub fn pacer(mut self, pacer: impl Pacer + 'static) -> Self {
+        self.set_pacer(pacer);
+        self
+    }
+
+    pub fn set_pacer(&mut self, pacer: impl Pacer + 'static) -> &mut Self {
+        self.pacer = Some(Box::new(pacer));
         self
     }
 
@@ -154,6 +193,8 @@ impl ProxyBuilder {
             channels,
             effect_channels,
             output_rx,
+            pacer: self.pacer,
+            stopped: false,
         })
     }
 }
@@ -294,5 +335,67 @@ mod tests {
         assert_eq!(outputs.len(), 1);
         assert_eq!(outputs[0].input_id, Some(5));
         assert_eq!(outputs[0].data, "hi");
+    }
+
+    struct RecordingPacer {
+        calls: Rc<RefCell<Vec<DateTime<FixedOffset>>>>,
+        allow: usize,
+    }
+
+    impl Pacer for RecordingPacer {
+        fn wait_until(&mut self, timestamp: DateTime<FixedOffset>) -> bool {
+            self.calls.borrow_mut().push(timestamp);
+            self.calls.borrow().len() <= self.allow
+        }
+    }
+
+    #[test]
+    fn pacer_is_consulted_before_each_send() {
+        let sent = Rc::new(RefCell::new(vec![]));
+        let calls = Rc::new(RefCell::new(vec![]));
+        let mut builder = Proxy::builder().pacer(RecordingPacer {
+            calls: calls.clone(),
+            allow: usize::MAX,
+        });
+        builder.with_channel("logger", |c| {
+            c.target(RecordingTargetBuilder(sent.clone()))
+                .effects(vec!["ping".into()])
+        });
+        let mut proxy = builder.build().unwrap();
+
+        let inputs: Vec<Input> = (1..=3).map(input).collect();
+        for input in &inputs {
+            proxy.send(input).unwrap();
+        }
+
+        let timestamps: Vec<_> = inputs.iter().map(|i| i.timestamp).collect();
+        assert_eq!(*calls.borrow(), timestamps);
+        assert_eq!(sent.borrow().len(), 3);
+        assert!(!proxy.stopped());
+    }
+
+    #[test]
+    fn stopping_pacer_stops_the_proxy() {
+        let sent = Rc::new(RefCell::new(vec![]));
+        let calls = Rc::new(RefCell::new(vec![]));
+        let mut builder = Proxy::builder().pacer(RecordingPacer {
+            calls: calls.clone(),
+            allow: 1,
+        });
+        builder.with_channel("logger", |c| {
+            c.target(RecordingTargetBuilder(sent.clone()))
+                .effects(vec!["ping".into()])
+        });
+        let mut proxy = builder.build().unwrap();
+
+        for id in 1..=3 {
+            let mut ping = input(id);
+            ping.data = json!(id);
+            proxy.send(&ping).unwrap();
+        }
+
+        assert_eq!(*sent.borrow(), vec![json!(1)]);
+        assert_eq!(calls.borrow().len(), 2);
+        assert!(proxy.stopped());
     }
 }

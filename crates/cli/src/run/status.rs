@@ -1,4 +1,4 @@
-use chrono::{DateTime, FixedOffset};
+use chrono::{DateTime, FixedOffset, TimeDelta, Utc};
 use console::{Term, style};
 use rngo::spec::Spec;
 use rngo::{Input, Metadata, Output, RunLogWriter};
@@ -21,6 +21,7 @@ pub struct StatusWriter {
     term: Term,
     stats: RefCell<BTreeMap<String, ChannelStats>>,
     last_timestamp: Cell<Option<DateTime<FixedOffset>>>,
+    waiting: Cell<Option<DateTime<FixedOffset>>>,
     rendered_lines: Cell<usize>,
     last_render: Cell<Option<Instant>>,
     dirty: Cell<bool>,
@@ -40,6 +41,7 @@ impl StatusWriter {
             term: Term::stderr(),
             stats: RefCell::new(BTreeMap::new()),
             last_timestamp: Cell::new(None),
+            waiting: Cell::new(None),
             rendered_lines: Cell::new(0),
             last_render: Cell::new(None),
             dirty: Cell::new(false),
@@ -47,7 +49,18 @@ impl StatusWriter {
     }
 
     pub fn finish(&self) {
+        self.waiting.set(None);
         self.render(true);
+    }
+
+    /// Shows that the run is waiting for an input due at `until`, or clears that state with `None`.
+    pub fn wait(&self, until: Option<DateTime<FixedOffset>>) {
+        if until.is_none() && self.waiting.get().is_none() {
+            return;
+        }
+        self.waiting.set(until);
+        self.dirty.set(true);
+        self.render(false);
     }
 
     fn render(&self, force: bool) {
@@ -69,15 +82,22 @@ impl StatusWriter {
         self.last_render.set(Some(now));
         self.dirty.set(false);
 
-        let time = match self.last_timestamp.get() {
-            Some(timestamp) => timestamp.format("%Y-%m-%d %H:%M:%S").to_string(),
-            None => "-".to_string(),
+        let time_line = match (self.waiting.get(), self.last_timestamp.get()) {
+            (Some(until), _) => format!(
+                "waiting: next input at {} (in {})",
+                until.format("%Y-%m-%d %H:%M:%S"),
+                format_remaining(until.to_utc() - Utc::now())
+            ),
+            (None, Some(timestamp)) => {
+                format!("time: {}", timestamp.format("%Y-%m-%d %H:%M:%S"))
+            }
+            (None, None) => "time: -".to_string(),
         };
 
         let stats = self.stats.borrow();
         let mut lines = Vec::with_capacity(stats.len() + 2);
         lines.push(style("Simulation").bold().for_stderr().to_string());
-        lines.push(format!("time: {time}"));
+        lines.push(time_line);
         for (channel, channel_stats) in stats.iter() {
             lines.push(format!(
                 "{channel}: {} effects, {} outputs",
@@ -91,6 +111,18 @@ impl StatusWriter {
             let _ = self.term.write_line(line);
         }
         self.rendered_lines.set(lines.len());
+    }
+}
+
+fn format_remaining(remaining: TimeDelta) -> String {
+    let secs = remaining.num_seconds().max(0);
+    let (h, m, s) = (secs / 3_600, secs % 3_600 / 60, secs % 60);
+    if h > 0 {
+        format!("{h}h{m:02}m{s:02}s")
+    } else if m > 0 {
+        format!("{m}m{s:02}s")
+    } else {
+        format!("{s}s")
     }
 }
 
