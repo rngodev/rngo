@@ -78,7 +78,6 @@ pub fn run(base: &Path, options: RunOptions) -> Result<bool, Box<dyn Error>> {
         proxy_builder.set_pacer(pace::Realtime {
             stop: stop.clone(),
             status: writer.clone(),
-            run_log: sqlite_run_log.clone(),
         });
     }
 

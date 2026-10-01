@@ -164,6 +164,10 @@ impl RunLogWriter for StatusWriter {
         self.render(false);
         self.child.push_metadata(metadata);
     }
+
+    fn flush(&self) {
+        self.child.flush();
+    }
 }
 
 impl Drop for StatusWriter {

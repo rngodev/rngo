@@ -228,6 +228,10 @@ impl RunLogWriter for SqliteRunLog {
         insert_metadata(&self.connection.borrow(), &metadata);
         self.record();
     }
+
+    fn flush(&self) {
+        self.commit();
+    }
 }
 
 fn placeholder_timestamp() -> DateTime<chrono::FixedOffset> {
