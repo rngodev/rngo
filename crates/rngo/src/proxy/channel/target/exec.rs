@@ -3,7 +3,7 @@ use crate::proxy::channel::{ChannelTarget, ChannelTargetBuilder};
 use crate::{BuildError, Level, OutputSender, ParseError, TargetOutput, spec};
 use serde_json::Value;
 use std::io::{BufRead, BufReader};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 #[derive(Debug)]
 pub struct Exec;
@@ -27,9 +27,7 @@ impl ChannelTarget for Exec {
             )]);
         };
 
-        let output = Command::new("sh")
-            .arg("-c")
-            .arg(&command)
+        let output = super::shell(&command)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()?;

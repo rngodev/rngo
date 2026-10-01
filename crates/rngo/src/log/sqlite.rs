@@ -34,6 +34,7 @@ impl SqliteRunLog {
                     id INTEGER NOT NULL,
                     effect TEXT NOT NULL,
                     offset INTEGER NOT NULL,
+                    timestamp TEXT NOT NULL,
                     data TEXT NOT NULL,
                     metadata TEXT NOT NULL
                 );
@@ -183,13 +184,14 @@ impl RunLogWriter for SqliteRunLog {
         self.connection
             .borrow()
             .prepare_cached(
-                "INSERT INTO inputs (id, effect, offset, data, metadata) VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO inputs (id, effect, offset, timestamp, data, metadata) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             )
             .unwrap()
             .execute(rusqlite::params![
                 input.id as i64,
                 input.effect,
                 input.offset as i64,
+                input.timestamp.to_rfc3339(),
                 serde_json::to_string(&input.data).unwrap(),
                 serde_json::to_string(&input.metadata).unwrap(),
             ])
@@ -225,6 +227,10 @@ impl RunLogWriter for SqliteRunLog {
     fn push_metadata(&self, metadata: Metadata) {
         insert_metadata(&self.connection.borrow(), &metadata);
         self.record();
+    }
+
+    fn flush(&self) {
+        self.commit();
     }
 }
 

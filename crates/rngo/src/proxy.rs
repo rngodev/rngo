@@ -1,21 +1,32 @@
 pub mod channel;
 pub mod format;
 pub mod output;
+mod stop;
 
 use crate::{BuildError, Input, Level, RunLogWriter, SimpleEventRunLog, TargetOutput};
 use channel::target::Stdout;
 use channel::{Channel, ChannelBuilder};
+use chrono::{DateTime, FixedOffset, Utc};
 use output::Output;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver};
+use std::time::Duration;
+pub use stop::StopHandle;
+
+const WAIT_TICK: Duration = Duration::from_secs(1);
+
+type OnWait = Box<dyn FnMut(DateTime<FixedOffset>)>;
 
 pub struct Proxy {
     run_log_writer: Rc<dyn RunLogWriter>,
     channels: HashMap<String, Channel>,
     effect_channels: HashMap<String, String>,
     output_rx: Receiver<Output>,
+    realtime: bool,
+    on_wait: Option<OnWait>,
+    stop: StopHandle,
 }
 
 impl Proxy {
@@ -23,7 +34,13 @@ impl Proxy {
         ProxyBuilder::new()
     }
 
+    /// Sends `input` to its effect's channel. In realtime mode, first waits until its timestamp.
+    /// Does nothing once stopped.
     pub fn send(&mut self, input: &Input) -> Result<(), Box<dyn std::error::Error>> {
+        if self.stop.is_stopped() || (self.realtime && !self.wait_until(input.timestamp)) {
+            return Ok(());
+        }
+
         let channel_key = match self.effect_channels.get(&input.effect) {
             Some(k) => k,
             None => return Ok(()),
@@ -53,6 +70,33 @@ impl Proxy {
         Ok(())
     }
 
+    /// A handle that can stop this proxy from any thread.
+    pub fn stop_handle(&self) -> StopHandle {
+        self.stop.clone()
+    }
+
+    /// Blocks until `timestamp` has passed, calling `on_wait` about once a second meanwhile;
+    /// returns `false` if stopped first.
+    fn wait_until(&mut self, timestamp: DateTime<FixedOffset>) -> bool {
+        loop {
+            let Some(remaining) = (timestamp.to_utc() - Utc::now())
+                .to_std()
+                .ok()
+                .filter(|d| !d.is_zero())
+            else {
+                return true;
+            };
+
+            if let Some(on_wait) = self.on_wait.as_mut() {
+                on_wait(timestamp);
+            }
+
+            if self.stop.wait_timeout(remaining.min(WAIT_TICK)) {
+                return false;
+            }
+        }
+    }
+
     pub fn finish(&mut self) {
         for channel in self.channels.values_mut() {
             channel.target.finish();
@@ -71,6 +115,9 @@ pub struct ProxyBuilder {
     run_log_writer: Option<Rc<dyn RunLogWriter>>,
     channel_builders: Vec<ChannelBuilder>,
     stdout: bool,
+    realtime: bool,
+    on_wait: Option<OnWait>,
+    stop: StopHandle,
 }
 
 impl ProxyBuilder {
@@ -79,11 +126,48 @@ impl ProxyBuilder {
             run_log_writer: None,
             channel_builders: vec![],
             stdout: false,
+            realtime: false,
+            on_wait: None,
+            stop: StopHandle::new(),
         }
     }
 
     pub fn run_log_writer<T: RunLogWriter + 'static>(mut self, writer: Rc<T>) -> Self {
         self.run_log_writer = Some(writer as Rc<dyn RunLogWriter>);
+        self
+    }
+
+    /// When true, holds each input until its timestamp has passed; otherwise sends it right away.
+    pub fn realtime(mut self, value: bool) -> Self {
+        self.set_realtime(value);
+        self
+    }
+
+    pub fn set_realtime(&mut self, value: bool) -> &mut Self {
+        self.realtime = value;
+        self
+    }
+
+    /// Called with the awaited timestamp when a realtime wait starts and about once a second
+    /// while it lasts.
+    pub fn on_wait(mut self, f: impl FnMut(DateTime<FixedOffset>) + 'static) -> Self {
+        self.set_on_wait(f);
+        self
+    }
+
+    pub fn set_on_wait(&mut self, f: impl FnMut(DateTime<FixedOffset>) + 'static) -> &mut Self {
+        self.on_wait = Some(Box::new(f));
+        self
+    }
+
+    /// Uses `handle` to stop the built proxy, so it can be shared before the proxy exists.
+    pub fn stop_handle(mut self, handle: StopHandle) -> Self {
+        self.set_stop_handle(handle);
+        self
+    }
+
+    pub fn set_stop_handle(&mut self, handle: StopHandle) -> &mut Self {
+        self.stop = handle;
         self
     }
 
@@ -154,6 +238,9 @@ impl ProxyBuilder {
             channels,
             effect_channels,
             output_rx,
+            realtime: self.realtime,
+            on_wait: self.on_wait,
+            stop: self.stop,
         })
     }
 }
@@ -171,9 +258,10 @@ mod tests {
     use crate::log::Metadata;
     use crate::proxy::channel::{ChannelTarget, ChannelTargetBuilder};
     use crate::proxy::format::Format;
-    use chrono::Utc;
+    use chrono::TimeDelta;
     use serde_json::json;
     use std::cell::RefCell;
+    use std::time::Instant;
 
     #[derive(Debug, Default)]
     struct RecordingLog {
@@ -294,5 +382,76 @@ mod tests {
         assert_eq!(outputs.len(), 1);
         assert_eq!(outputs[0].input_id, Some(5));
         assert_eq!(outputs[0].data, "hi");
+    }
+
+    fn recording_proxy(builder: ProxyBuilder, sent: &Rc<RefCell<Vec<Value>>>) -> Proxy {
+        let mut builder = builder;
+        builder.with_channel("logger", |c| {
+            c.target(RecordingTargetBuilder(sent.clone()))
+                .effects(vec!["ping".into()])
+        });
+        builder.build().unwrap()
+    }
+
+    #[test]
+    fn realtime_holds_future_inputs_until_due() {
+        let sent = Rc::new(RefCell::new(vec![]));
+        let waits = Rc::new(RefCell::new(vec![]));
+        let waits_hook = waits.clone();
+        let builder = Proxy::builder()
+            .realtime(true)
+            .on_wait(move |until| waits_hook.borrow_mut().push(until));
+        let mut proxy = recording_proxy(builder, &sent);
+
+        let mut past = input(1);
+        past.timestamp -= TimeDelta::seconds(10);
+        let mut future = input(2);
+        future.timestamp += TimeDelta::milliseconds(300);
+
+        let started = Instant::now();
+        proxy.send(&past).unwrap();
+        assert!(waits.borrow().is_empty(), "past inputs aren't held");
+        proxy.send(&future).unwrap();
+
+        assert!(Utc::now() >= future.timestamp.to_utc());
+        assert!(started.elapsed() >= Duration::from_millis(250));
+        assert_eq!(waits.borrow().first(), Some(&future.timestamp));
+        assert_eq!(sent.borrow().len(), 2);
+    }
+
+    #[test]
+    fn stop_interrupts_a_wait_and_ignores_later_inputs() {
+        let sent = Rc::new(RefCell::new(vec![]));
+        let mut proxy = recording_proxy(Proxy::builder().realtime(true), &sent);
+        let handle = proxy.stop_handle();
+
+        let stopper = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(100));
+            handle.stop();
+        });
+
+        let mut future = input(1);
+        future.timestamp += TimeDelta::minutes(10);
+        let started = Instant::now();
+        proxy.send(&future).unwrap();
+        stopper.join().unwrap();
+
+        assert!(started.elapsed() < Duration::from_secs(5));
+        proxy.send(&input(2)).unwrap();
+        assert!(sent.borrow().is_empty());
+    }
+
+    #[test]
+    fn stop_handle_can_be_shared_before_build() {
+        let sent = Rc::new(RefCell::new(vec![]));
+        let handle = StopHandle::new();
+        let mut proxy = recording_proxy(Proxy::builder().stop_handle(handle.clone()), &sent);
+
+        proxy.send(&input(1)).unwrap();
+        handle.stop();
+        proxy.send(&input(2)).unwrap();
+
+        assert_eq!(sent.borrow().len(), 1);
+        assert!(proxy.stop_handle().is_stopped());
     }
 }

@@ -1,20 +1,40 @@
 mod status;
 
 use console::style;
-use rngo::{Dialect, SignalOutcome, SqliteRunLog, spec};
+use rngo::{Dialect, RunLogWriter, SignalOutcome, SqliteRunLog, StopHandle, spec};
 use status::StatusWriter;
 use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::{fmt, fs};
 use uuid::Uuid;
 
-pub fn run(
-    base: &Path,
-    stdout: bool,
-    spec_path: Option<&Path>,
-    dry_run: bool,
-    limit: Option<std::num::NonZeroU64>,
-) -> Result<bool, Box<dyn Error>> {
+/// Options for a single `rngo run`.
+#[derive(Default)]
+pub struct RunOptions<'a> {
+    /// Print events to stdout instead of sending them to channel targets.
+    pub stdout: bool,
+    /// Load this spec file instead of the `.rngo` directory.
+    pub spec_path: Option<&'a Path>,
+    /// Only check that the simulation builds.
+    pub dry_run: bool,
+    /// Cap on total effect attempts.
+    pub limit: Option<std::num::NonZeroU64>,
+    /// Send future inputs right away instead of waiting for their timestamps.
+    pub fast_forward: bool,
+    /// Stops the run early; it then finishes and audits what was logged.
+    pub stop: StopHandle,
+}
+
+pub fn run(base: &Path, options: RunOptions) -> Result<bool, Box<dyn Error>> {
+    let RunOptions {
+        stdout,
+        spec_path,
+        dry_run,
+        limit,
+        fast_forward,
+        stop,
+    } = options;
+
     let _ = dotenvy::from_path(base.join(".env"));
 
     let spec = match spec_path {
@@ -51,8 +71,17 @@ pub fn run(
     let reader = sqlite_run_log.clone();
     let writer = StatusWriter::new(sqlite_run_log.clone(), &spec);
 
+    if !fast_forward {
+        let status = writer.clone();
+        proxy_builder.set_realtime(true).set_on_wait(move |until| {
+            status.flush();
+            status.wait(until);
+        });
+    }
+
     let mut proxy = proxy_builder
         .run_log_writer(writer.clone())
+        .stop_handle(stop.clone())
         .build()
         .map_err(join_errors)?;
 
@@ -64,6 +93,9 @@ pub fn run(
 
     for input in &mut simulation {
         proxy.send(&input)?;
+        if stop.is_stopped() {
+            break;
+        }
     }
 
     simulation.finish();
@@ -333,7 +365,7 @@ mod tests {
             }),
         );
 
-        run(base, false, None, false, None).unwrap();
+        run(base, RunOptions::default()).unwrap();
 
         let content = fs::read_to_string(&output).unwrap();
         assert!(
@@ -375,7 +407,7 @@ mod tests {
             &json!({ "target": { "type": "exec" } }),
         );
 
-        run(base, false, None, false, None).unwrap();
+        run(base, RunOptions::default()).unwrap();
 
         let content = fs::read_to_string(&output).unwrap();
         assert!(content.lines().all(|line| line == "hi"));
@@ -431,7 +463,7 @@ mod tests {
             }),
         );
 
-        run(base, false, None, false, None).unwrap();
+        run(base, RunOptions::default()).unwrap();
 
         let (_, passed) = signal_outcome(base, "has-failure-output");
         assert!(passed);
@@ -489,7 +521,7 @@ mod tests {
             }),
         );
 
-        run(base, false, None, false, None).unwrap();
+        run(base, RunOptions::default()).unwrap();
 
         let (value, passed) = signal_outcome(base, "matches-effect-count");
         assert!(
@@ -539,7 +571,7 @@ mod tests {
             }),
         );
 
-        run(base, false, None, false, None).unwrap();
+        run(base, RunOptions::default()).unwrap();
 
         let content = fs::read_to_string(&output).unwrap();
         assert!(
@@ -587,7 +619,7 @@ mod tests {
             }),
         );
 
-        run(base, false, None, false, None).unwrap();
+        run(base, RunOptions::default()).unwrap();
 
         let content = fs::read_to_string(&output).unwrap();
         let first = content
@@ -639,7 +671,7 @@ mod tests {
             }),
         );
 
-        run(base, false, None, false, None).unwrap();
+        run(base, RunOptions::default()).unwrap();
 
         let content = fs::read_to_string(&output).unwrap();
         assert!(
@@ -693,7 +725,14 @@ mod tests {
             }),
         );
 
-        run(base, false, Some(&spec_path), false, None).unwrap();
+        run(
+            base,
+            RunOptions {
+                spec_path: Some(&spec_path),
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
         let content = fs::read_to_string(&output).unwrap();
         assert!(
@@ -758,7 +797,7 @@ mod tests {
             }),
         );
 
-        run(base, false, None, false, None).unwrap();
+        run(base, RunOptions::default()).unwrap();
 
         let content = fs::read_to_string(&output).unwrap();
         let lines: Vec<_> = content.lines().collect();
@@ -814,7 +853,7 @@ mod tests {
             }),
         );
 
-        run(base, false, None, false, None).unwrap();
+        run(base, RunOptions::default()).unwrap();
 
         let (has_events_value, has_events_passed) = signal_outcome(base, "hasEvents");
         assert!(has_events_passed);
@@ -863,7 +902,7 @@ mod tests {
             }),
         );
 
-        run(base, false, None, false, None).unwrap();
+        run(base, RunOptions::default()).unwrap();
 
         let (_, passed) = signal_outcome(base, "has-events");
         assert!(passed);
@@ -905,7 +944,7 @@ mod tests {
             }),
         );
 
-        let passed = run(base, false, None, false, None).unwrap();
+        let passed = run(base, RunOptions::default()).unwrap();
         assert!(!passed, "run should fail when a signal's expect fails");
     }
 
@@ -947,7 +986,7 @@ mod tests {
             }),
         );
 
-        let passed = run(base, false, None, false, None).unwrap();
+        let passed = run(base, RunOptions::default()).unwrap();
         assert!(!passed, "run should fail when a signal errors");
     }
 
@@ -1000,7 +1039,7 @@ mod tests {
             }),
         );
 
-        run(base, false, None, false, None).unwrap();
+        run(base, RunOptions::default()).unwrap();
 
         let (value, passed) = signal_outcome(base, "tail-outputs");
         assert!(
@@ -1050,7 +1089,14 @@ mod tests {
             }),
         );
 
-        let passed = run(base, false, None, true, None).unwrap();
+        let passed = run(
+            base,
+            RunOptions {
+                dry_run: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
         assert!(passed, "dry run of a valid spec should succeed");
         assert!(
@@ -1092,7 +1138,13 @@ mod tests {
             }),
         );
 
-        let result = run(base, false, None, true, None);
+        let result = run(
+            base,
+            RunOptions {
+                dry_run: true,
+                ..Default::default()
+            },
+        );
 
         assert!(
             result.is_err(),
@@ -1129,7 +1181,14 @@ mod tests {
             }),
         );
 
-        let error = run(base, false, None, true, None).unwrap_err();
+        let error = run(
+            base,
+            RunOptions {
+                dry_run: true,
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
 
         assert!(
             error.to_string().contains("effects.ping.limit"),
@@ -1180,10 +1239,10 @@ mod tests {
 
         run(
             base,
-            false,
-            None,
-            false,
-            Some(std::num::NonZeroU64::new(3).unwrap()),
+            RunOptions {
+                limit: std::num::NonZeroU64::new(3),
+                ..Default::default()
+            },
         )
         .unwrap();
 
@@ -1229,12 +1288,162 @@ mod tests {
             }),
         );
 
-        assert!(run(base, false, None, false, None).unwrap());
+        assert!(run(base, RunOptions::default()).unwrap());
 
         let (_, passed) = signal_outcome(base, "simulation-times");
         assert!(
             passed,
             "signals should be able to read the simulation start and end times"
+        );
+    }
+
+    fn write_timed_spec(base: &Path, end: &str, sent_log: &Path) {
+        fs::create_dir_all(base.join(".rngo/effects")).unwrap();
+        fs::create_dir_all(base.join(".rngo/channels")).unwrap();
+        fs::create_dir_all(base.join(".rngo/signals")).unwrap();
+
+        write_yaml(
+            base.join(".rngo/spec.yml"),
+            &json!({ "seed": 1, "start": "now", "end": end }),
+        );
+
+        write_yaml(
+            base.join(".rngo/effects/ping.yml"),
+            &json!({
+                "channel": "logger",
+                "trigger": "hz(1, second)",
+                "schema": { "type": "constant", "value": 1 }
+            }),
+        );
+
+        let command = format!(
+            "echo \"{{{{timestamp}}}} $(date +%s)\" >> {}",
+            sent_log.to_str().unwrap()
+        );
+        write_yaml(
+            base.join(".rngo/channels/logger.yml"),
+            &json!({
+                "format": { "type": "template", "template": command },
+                "target": { "type": "exec" }
+            }),
+        );
+
+        write_yaml(
+            base.join(".rngo/signals/held-inputs.yml"),
+            &json!({
+                "type": "sql",
+                "query": "SELECT COUNT(*) FROM inputs WHERE julianday(timestamp) > (SELECT julianday(data ->> 'timestamp') FROM metadata WHERE type = 'timing' AND data ->> 'key' = 'simulation_end')"
+            }),
+        );
+    }
+
+    /// Each line is `(input timestamp, wall-clock second it was sent)`.
+    fn read_sent_log(path: &Path) -> Vec<(chrono::DateTime<chrono::FixedOffset>, i64)> {
+        fs::read_to_string(path)
+            .unwrap_or_default()
+            .lines()
+            .map(|line| {
+                let (timestamp, sent) = line.split_once(' ').unwrap();
+                (
+                    chrono::DateTime::parse_from_rfc3339(timestamp).unwrap(),
+                    sent.parse().unwrap(),
+                )
+            })
+            .collect()
+    }
+
+    fn input_count(base: &Path) -> i64 {
+        rusqlite::Connection::open(base.join(".rngo/runs/last/log.sqlite"))
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM inputs", [], |row| row.get(0))
+            .unwrap()
+    }
+
+    #[test]
+    fn future_inputs_are_sent_once_their_time_arrives() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+        let sent_log = base.join("sent.txt");
+        write_timed_spec(base, "now + seconds(3)", &sent_log);
+
+        run(base, RunOptions::default()).unwrap();
+
+        let sent = read_sent_log(&sent_log);
+        assert!(!sent.is_empty());
+        for (timestamp, sent_at) in &sent {
+            assert!(
+                timestamp.timestamp() <= *sent_at,
+                "input at {timestamp} was sent early, at {sent_at}"
+            );
+        }
+        assert!(sent.windows(2).all(|w| w[0].0 <= w[1].0));
+    }
+
+    #[test]
+    fn fast_forward_sends_future_inputs_right_away() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+        let sent_log = base.join("sent.txt");
+        write_timed_spec(base, "now + minutes(10)", &sent_log);
+
+        let started = std::time::Instant::now();
+        run(
+            base,
+            RunOptions {
+                fast_forward: true,
+                limit: std::num::NonZeroU64::new(10),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+        let sent = read_sent_log(&sent_log);
+        assert_eq!(sent.len(), 10);
+        assert!(
+            sent.iter()
+                .any(|(timestamp, sent_at)| timestamp.timestamp() > *sent_at),
+            "some inputs should have been sent before their time"
+        );
+    }
+
+    #[test]
+    fn stopping_a_waiting_run_still_audits_it() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+        let sent_log = base.join("sent.txt");
+        write_timed_spec(base, "now + minutes(10)", &sent_log);
+
+        let stop = StopHandle::new();
+        let stopper = {
+            let stop = stop.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(1500));
+                stop.stop();
+            })
+        };
+
+        let started = std::time::Instant::now();
+        run(
+            base,
+            RunOptions {
+                stop,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        stopper.join().unwrap();
+
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+
+        let sent = read_sent_log(&sent_log).len() as i64;
+        let (held, _) = signal_outcome(base, "held-inputs");
+        let held = held.as_i64().unwrap();
+        assert!(held <= 1, "at most the one waiting input is held");
+        assert_eq!(
+            input_count(base) - held,
+            sent,
+            "every input logged before the stop was sent"
         );
     }
 }

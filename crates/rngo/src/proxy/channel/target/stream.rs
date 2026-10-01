@@ -3,7 +3,7 @@ use crate::proxy::channel::{ChannelTarget, ChannelTargetBuilder};
 use crate::{BuildError, Level, OutputSender, ParseError, TargetOutput, spec};
 use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, ChildStdin, Stdio};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -107,9 +107,7 @@ impl ChannelTargetBuilder for StreamBuilder {
             }]);
         };
 
-        let mut child = Command::new("sh")
-            .arg("-c")
-            .arg(&command)
+        let mut child = super::shell(&command)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

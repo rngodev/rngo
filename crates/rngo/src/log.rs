@@ -15,6 +15,8 @@ pub trait RunLogWriter: std::fmt::Debug {
     fn push_input(&self, input: Input);
     fn push_output(&self, output: Output);
     fn push_metadata(&self, metadata: Metadata);
+    /// Persists any buffered writes; a no-op for writers that don't buffer.
+    fn flush(&self) {}
 }
 
 pub trait RunLogReader: std::fmt::Debug {
