@@ -41,7 +41,7 @@ impl SqliteRunLog {
                 CREATE TABLE IF NOT EXISTS outputs (
                     channel TEXT NOT NULL,
                     input_id INTEGER,
-                    timestamp TEXT NOT NULL,
+                    timestamp INTEGER NOT NULL,
                     level TEXT NOT NULL,
                     data TEXT NOT NULL,
                     metadata TEXT NOT NULL
@@ -208,7 +208,7 @@ impl RunLogWriter for SqliteRunLog {
             .unwrap()
             .execute(rusqlite::params![
                 output.input_id.map(|id| id as i64),
-                output.timestamp.to_rfc3339(),
+                output.timestamp.timestamp_millis(),
                 output.channel,
                 match output.level {
                     Level::Error => "error",
@@ -448,9 +448,10 @@ mod tests {
                 data: Some(serde_json::json!({ "message": "partial value" })),
             }],
         });
+        let output_timestamp = DateTime::<Utc>::from_timestamp_millis(1_700_000_000_456).unwrap();
         run_log.push_output(Output {
             input_id: Some(1),
-            timestamp: Utc::now(),
+            timestamp: output_timestamp,
             channel: "logger".to_string(),
             level: Level::Info,
             data: "hello".to_string(),
@@ -483,6 +484,10 @@ mod tests {
             })
             .unwrap();
         assert_eq!(output_data, "hello");
+        let stored_output_timestamp: i64 = conn
+            .query_row("SELECT timestamp FROM outputs", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(stored_output_timestamp, 1_700_000_000_456);
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&output_metadata).unwrap(),
             serde_json::json!([{ "type": "error", "attribute": null, "data": { "message": "delivery failed" } }])
