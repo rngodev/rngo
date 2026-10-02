@@ -11,7 +11,6 @@ fn input(id: u64, effect: &str) -> Input {
     Input {
         id,
         effect: effect.to_string(),
-        offset: id,
         timestamp: chrono::Utc::now().fixed_offset(),
         data: serde_json::json!({
             "id": id,

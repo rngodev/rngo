@@ -26,7 +26,7 @@ pub struct Effect {
     run_log_reader: Rc<dyn RunLogReader>,
     trigger: Trigger,
     schema: Box<dyn Schema>,
-    end_offset: u64,
+    end_offset: i64,
     limit: Option<u64>,
     produced: u64,
     sim_start: DateTime<FixedOffset>,
@@ -38,7 +38,8 @@ impl Effect {
         EffectBuilder::new(key)
     }
 
-    pub fn next_offset(&self) -> Option<u64> {
+    /// Milliseconds since simulation start at which this effect next fires.
+    pub fn next_offset(&self) -> Option<i64> {
         if self.limit.is_some_and(|limit| self.produced >= limit) {
             return None;
         }
@@ -64,8 +65,7 @@ impl Iterator for Effect {
             simulation_start: self.sim_start,
             simulation_end: self.sim_end,
         };
-        let offset = trigger_event.sim_offset;
-        let timestamp = self.sim_start + TimeDelta::seconds(trigger_event.sim_offset as i64);
+        let timestamp = self.sim_start + TimeDelta::milliseconds(trigger_event.sim_offset);
 
         let result = self.schema.next(&context);
 
@@ -76,7 +76,6 @@ impl Iterator for Effect {
             Some(Ok(Input {
                 id: last_id + 1,
                 effect: self.key.clone(),
-                offset,
                 timestamp,
                 data,
                 metadata: result.metadata,
@@ -84,7 +83,6 @@ impl Iterator for Effect {
         } else {
             Some(Err(SkippedInput {
                 effect: self.key.clone(),
-                offset,
                 timestamp,
                 metadata: result.metadata,
             }))
@@ -96,7 +94,6 @@ impl Iterator for Effect {
 pub struct Input {
     pub id: u64,
     pub effect: String,
-    pub offset: u64,
     pub timestamp: DateTime<FixedOffset>,
     pub data: Value,
     pub metadata: Vec<SchemaMetadata>,
@@ -105,7 +102,6 @@ pub struct Input {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkippedInput {
     pub effect: String,
-    pub offset: u64,
     pub timestamp: DateTime<FixedOffset>,
     pub metadata: Vec<SchemaMetadata>,
 }
@@ -114,18 +110,17 @@ impl From<SkippedInput> for Metadata {
     fn from(skipped: SkippedInput) -> Self {
         let SkippedInput {
             effect,
-            offset,
+            timestamp,
             metadata,
-            ..
         } = skipped;
 
         Metadata {
             mtype: "skipped".to_string(),
             input_id: None,
             output_id: None,
-            offset: Some(offset),
             data: Some(serde_json::json!({ "effect": effect, "metadata": metadata })),
             segment: None,
+            timestamp: Some(timestamp),
         }
     }
 }
@@ -298,8 +293,8 @@ impl EffectBuilder {
         let sim_end = self.sim_end.unwrap_or(now);
         let effect_end = self.end.map(|m| m.resolve(now)).unwrap_or(sim_end);
         let effect_start = self.start.map(|m| m.resolve(now)).unwrap_or(sim_start);
-        let end_offset = (effect_end - sim_start).num_seconds().max(0) as u64;
-        let start_offset = (effect_start - sim_start).num_seconds().max(0) as u64;
+        let end_offset = (effect_end - sim_start).num_milliseconds().max(0);
+        let start_offset = (effect_start - sim_start).num_milliseconds().max(0);
 
         let mut errors: Vec<BuildError> = vec![];
 
@@ -339,6 +334,7 @@ impl EffectBuilder {
             TriggerConfig::Effect { key } => Ok(Trigger::Effect {
                 run_log_reader: run_log_reader.clone(),
                 key,
+                sim_start,
                 last_offset: 0,
             }),
             TriggerConfig::ClockHertz(hertz) => Clock::builder()

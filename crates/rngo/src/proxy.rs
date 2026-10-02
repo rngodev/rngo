@@ -315,7 +315,6 @@ mod tests {
         Input {
             id,
             effect: "ping".into(),
-            offset: 0,
             timestamp: Utc::now().fixed_offset(),
             data: json!(null),
             metadata: vec![],

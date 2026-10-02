@@ -4,6 +4,7 @@ mod sqlite;
 
 use crate::Output;
 use crate::effect::Input;
+use chrono::{DateTime, FixedOffset};
 use rand_pcg::Pcg32;
 use serde_json::Value;
 use std::rc::Rc;
@@ -32,7 +33,8 @@ pub struct Metadata {
     pub mtype: String,
     pub input_id: Option<i64>,
     pub output_id: Option<i64>,
-    pub offset: Option<u64>,
     pub data: Option<Value>,
     pub segment: Option<String>,
+    /// When the metadata's subject occurred in simulation time, e.g. a skipped attempt.
+    pub timestamp: Option<DateTime<FixedOffset>>,
 }

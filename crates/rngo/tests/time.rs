@@ -1,15 +1,30 @@
 mod common;
 
+use chrono::{DateTime, FixedOffset, TimeDelta};
 use common::BuildErrorTestExt;
 use rngo::build::*;
-use rngo::{BuildError, Dialect, EffectKey, Simulation};
+use rngo::{BuildError, Dialect, EffectKey, Moment, Simulation};
 use serde_json::Value;
 
-fn effect_offsets(sim: Simulation, take: usize) -> Vec<u64> {
-    sim.map(|input| input.offset).take(take).collect()
+fn start() -> DateTime<FixedOffset> {
+    DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap()
 }
 
-/// The default simulation window is 30 days (start = -30d, end = now).
+fn offsets_in_seconds(sim: Simulation, take: usize) -> Vec<i64> {
+    sim.map(|input| (input.timestamp - start()).num_seconds())
+        .take(take)
+        .collect()
+}
+
+fn fixed_window() -> rngo::SimulationBuilder {
+    let mut builder = Simulation::builder();
+    builder
+        .set_start(Moment::Absolute(start()))
+        .set_end(Moment::Absolute(start() + TimeDelta::days(30)));
+    builder
+}
+
+/// The simulation window is 30 days.
 /// Offsets are cumulative seconds from the start, so all events should
 /// have offset <= 30 * 86_400 = 2_592_000.
 ///
@@ -17,11 +32,11 @@ fn effect_offsets(sim: Simulation, take: usize) -> Vec<u64> {
 /// the simulation ~60 days into the future — well past the end.
 #[test]
 fn simulation_respects_end_time() {
-    let mut builder = Simulation::builder();
+    let mut builder = fixed_window();
     builder.with_effect("events", |e| e.schema(constant().value(Value::Null)));
 
-    let offsets = effect_offsets(builder.build().unwrap(), 60);
-    let window_secs: u64 = 30 * 86_400;
+    let offsets = offsets_in_seconds(builder.build().unwrap(), 60);
+    let window_secs: i64 = 30 * 86_400;
 
     let out_of_bounds: Vec<_> = offsets
         .iter()
@@ -40,20 +55,16 @@ fn simulation_respects_end_time() {
 /// even though the simulation window begins earlier.
 #[test]
 fn effect_respects_start_time() {
-    use chrono::TimeDelta;
-    use rngo::Moment;
-
-    let mut builder = Simulation::builder();
-    // Simulation: -30d to now. Effect starts at -15d (halfway through).
+    let mut builder = fixed_window();
     builder.with_effect("events", |e| {
-        e.start(Moment::Relative(TimeDelta::days(-15)))
+        e.start(Moment::Absolute(start() + TimeDelta::days(15)))
             .schema(constant().value(Value::Null))
     });
 
-    let offsets = effect_offsets(builder.build().unwrap(), 60);
+    let offsets = offsets_in_seconds(builder.build().unwrap(), 60);
 
     // Effect start is 15 days into the 30-day window = 15 * 86_400 seconds.
-    let effect_start_offset: u64 = 15 * 86_400;
+    let effect_start_offset: i64 = 15 * 86_400;
 
     let too_early: Vec<_> = offsets
         .iter()
@@ -93,10 +104,12 @@ fn effect_respects_end_time_via_spec() {
         .build()
         .unwrap();
 
-    let offsets: Vec<u64> = sim.map(|input| input.offset).collect();
+    let offsets: Vec<i64> = sim
+        .map(|input| (input.timestamp - start()).num_seconds())
+        .collect();
 
     // 2024-01-01 to 2024-06-01 = 31+29+31+30+31 = 152 days (2024 is a leap year)
-    let effect_end_offset: u64 = 152 * 86_400;
+    let effect_end_offset: i64 = 152 * 86_400;
 
     assert!(
         !offsets.is_empty(),
@@ -140,13 +153,15 @@ fn effect_respects_both_start_and_end() {
         .build()
         .unwrap();
 
-    let offsets: Vec<u64> = sim.map(|input| input.offset).collect();
+    let offsets: Vec<i64> = sim
+        .map(|input| (input.timestamp - start()).num_seconds())
+        .collect();
 
     // 2024 is a leap year.
     // 2024-04-01 is day 92 (31+29+31+1), so offset = 91 days from Jan 1.
     // 2024-09-30 is day 274 (31+29+31+30+31+30+31+31+30), so offset = 273 days.
-    let effect_start_offset: u64 = 91 * 86_400;
-    let effect_end_offset: u64 = 273 * 86_400;
+    let effect_start_offset: i64 = 91 * 86_400;
+    let effect_end_offset: i64 = 273 * 86_400;
 
     assert!(
         !offsets.is_empty(),
@@ -180,9 +195,6 @@ fn effect_respects_both_start_and_end() {
 
 #[test]
 fn effect_start_before_simulation_start_is_error() {
-    use chrono::TimeDelta;
-    use rngo::Moment;
-
     let mut builder = Simulation::builder();
     // Simulation: -30d to now. Effect tries to start before the simulation at -60d.
     builder.with_effect("events", |e| {
@@ -208,9 +220,6 @@ fn effect_start_before_simulation_start_is_error() {
 
 #[test]
 fn effect_end_after_simulation_end_is_error() {
-    use chrono::TimeDelta;
-    use rngo::Moment;
-
     let mut builder = Simulation::builder();
     // Simulation: -30d to now. Effect tries to end after the simulation at +1d.
     builder.with_effect("events", |e| {

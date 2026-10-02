@@ -34,7 +34,7 @@ impl Schema for Context {
                 None => error_result("no value for trigger"),
             },
             ContextPath::SimOffset => SchemaResult {
-                value: Some(context.trigger.sim_offset.into()),
+                value: Some((context.trigger.sim_offset as f64 / 1000.0).into()),
                 metadata: vec![],
             },
             ContextPath::SimStart => SchemaResult {
@@ -47,7 +47,7 @@ impl Schema for Context {
             },
             ContextPath::ClockNow => {
                 let now = context.simulation_start
-                    + chrono::Duration::seconds(context.trigger.sim_offset as i64);
+                    + chrono::Duration::milliseconds(context.trigger.sim_offset);
                 SchemaResult {
                     value: Some(now.to_rfc3339().into()),
                     metadata: vec![],

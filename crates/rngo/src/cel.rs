@@ -83,7 +83,7 @@ pub trait CelContextExt {
         start: DateTime<FixedOffset>,
         end: DateTime<FixedOffset>,
     ) -> &mut Self;
-    fn with_offset(&mut self, offset: i64) -> &mut Self;
+    fn with_offset(&mut self, offset: f64) -> &mut Self;
 }
 
 impl CelContextExt for Context<'static> {
@@ -143,7 +143,7 @@ impl CelContextExt for Context<'static> {
         self
     }
 
-    fn with_offset(&mut self, offset: i64) -> &mut Self {
+    fn with_offset(&mut self, offset: f64) -> &mut Self {
         let _ = self.add_variable("offset", offset);
         self
     }
@@ -279,18 +279,18 @@ mod tests {
     #[test]
     fn with_offset_sets_variable() {
         let mut ctx = Context::default();
-        ctx.with_offset(42);
+        ctx.with_offset(42.0);
 
-        assert_eq!(eval(&ctx, "offset"), Value::Int(42));
+        assert_eq!(eval(&ctx, "offset"), Value::Float(42.0));
     }
 
     #[test]
     fn with_offset_can_be_updated() {
         let mut ctx = Context::default();
-        ctx.with_offset(10);
-        ctx.with_offset(99);
+        ctx.with_offset(10.0);
+        ctx.with_offset(99.0);
 
-        assert_eq!(eval(&ctx, "offset"), Value::Int(99));
+        assert_eq!(eval(&ctx, "offset"), Value::Float(99.0));
     }
 
     #[test]

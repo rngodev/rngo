@@ -94,7 +94,6 @@ mod tests {
             run_log.push_input(Input {
                 id: i,
                 effect: "a".to_string(),
-                offset: i,
                 timestamp: Utc::now().fixed_offset(),
                 data: serde_json::json!(i),
                 metadata: vec![],
@@ -129,7 +128,6 @@ mod tests {
             run_log.push_input(Input {
                 id: i,
                 effect: effect.to_string(),
-                offset: i,
                 timestamp: Utc::now().fixed_offset(),
                 data: serde_json::json!(i),
                 metadata: vec![],
@@ -216,7 +214,6 @@ mod tests {
             run_log.push_input(Input {
                 id: i,
                 effect: effect.to_string(),
-                offset: i,
                 timestamp: Utc::now().fixed_offset(),
                 data: serde_json::json!(i),
                 metadata: vec![],
