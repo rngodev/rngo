@@ -50,6 +50,7 @@ impl SqliteRunLog {
                 CREATE TABLE IF NOT EXISTS metadata (
                     type TEXT NOT NULL,
                     segment TEXT,
+                    timestamp INTEGER,
                     input_id INTEGER,
                     output_id INTEGER,
                     data TEXT
@@ -147,10 +148,11 @@ fn insert_metadata_row(
     output_id: Option<i64>,
     data: Option<&serde_json::Value>,
     segment: Option<&str>,
+    timestamp: Option<DateTime<chrono::FixedOffset>>,
 ) {
     connection
         .prepare_cached(
-            "INSERT INTO metadata (type, input_id, output_id, data, segment) VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO metadata (type, input_id, output_id, data, segment, timestamp) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         )
         .unwrap()
         .execute(rusqlite::params![
@@ -159,6 +161,7 @@ fn insert_metadata_row(
             output_id,
             data.map(|v| v.to_string()),
             segment,
+            timestamp.map(|t| t.timestamp_millis()),
         ])
         .unwrap();
 }
@@ -171,6 +174,7 @@ fn insert_metadata(connection: &Connection, metadata: &Metadata) {
         metadata.output_id,
         metadata.data.as_ref(),
         metadata.segment.as_deref(),
+        metadata.timestamp,
     );
 }
 
@@ -349,6 +353,7 @@ fn query_unique_for_effect(
         None,
         None,
         Some(cursor),
+        None,
     );
 
     Some(Rc::new(input))
@@ -502,6 +507,11 @@ mod tests {
             output_id: None,
             data: None,
             segment: None,
+            timestamp: Some(
+                DateTime::<Utc>::from_timestamp_millis(1_700_000_000_123)
+                    .unwrap()
+                    .fixed_offset(),
+            ),
         });
 
         run_log.commit();
@@ -528,6 +538,10 @@ mod tests {
         assert_eq!(metadata_input_id, None);
         assert_eq!(metadata_output_id, None);
         assert_eq!(metadata_type, "skipped");
+        let metadata_timestamp: Option<i64> = conn
+            .query_row("SELECT timestamp FROM metadata", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(metadata_timestamp, Some(1_700_000_000_123));
         assert_eq!(metadata_data, None);
     }
 
@@ -542,6 +556,7 @@ mod tests {
             output_id: Some(7),
             data: None,
             segment: None,
+            timestamp: None,
         });
 
         run_log.commit();

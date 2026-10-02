@@ -38,6 +38,7 @@ impl Simulation {
                 "timestamp": Utc::now().timestamp_millis(),
             })),
             segment: None,
+            timestamp: None,
         });
     }
 

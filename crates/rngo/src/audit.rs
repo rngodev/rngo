@@ -50,6 +50,7 @@ impl Audit {
                 output_id: None,
                 data: Some(data),
                 segment: None,
+                timestamp: None,
             });
         }
 

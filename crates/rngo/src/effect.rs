@@ -118,12 +118,9 @@ impl From<SkippedInput> for Metadata {
             mtype: "skipped".to_string(),
             input_id: None,
             output_id: None,
-            data: Some(serde_json::json!({
-                "effect": effect,
-                "timestamp": timestamp.timestamp_millis(),
-                "metadata": metadata,
-            })),
+            data: Some(serde_json::json!({ "effect": effect, "metadata": metadata })),
             segment: None,
+            timestamp: Some(timestamp),
         }
     }
 }
