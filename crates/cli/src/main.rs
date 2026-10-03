@@ -75,7 +75,7 @@ enum SkillsCommands {
     },
 }
 
-/// Returns a handle stopped by the first Ctrl-C; a second Ctrl-C exits immediately.
+/// Returns a handle stopped by the first Ctrl-C or SIGTERM; a second signal exits immediately.
 fn stop_on_interrupt() -> StopHandle {
     let stop = StopHandle::new();
     let handler_stop = stop.clone();
@@ -86,7 +86,7 @@ fn stop_on_interrupt() -> StopHandle {
         handler_stop.stop();
     });
     if let Err(e) = installed {
-        eprintln!("warning: couldn't handle Ctrl-C, stopping a run won't audit it: {e}");
+        eprintln!("warning: couldn't handle interrupts, stopping a run won't audit it: {e}");
     }
     stop
 }

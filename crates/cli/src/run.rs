@@ -142,7 +142,7 @@ pub fn run(base: &Path, options: RunOptions) -> Result<bool, Box<dyn Error>> {
         }
     }
 
-    Ok(audit_report.passed())
+    Ok(audit_report.passed() && !stop.is_stopped())
 }
 
 fn load_spec_file(path: &Path) -> Result<spec::Spec, Box<dyn Error>> {
@@ -1424,7 +1424,7 @@ mod tests {
         };
 
         let started = std::time::Instant::now();
-        run(
+        let succeeded = run(
             base,
             RunOptions {
                 stop,
@@ -1433,6 +1433,8 @@ mod tests {
         )
         .unwrap();
         stopper.join().unwrap();
+
+        assert!(!succeeded, "an interrupted run reports failure");
 
         assert!(started.elapsed() < std::time::Duration::from_secs(5));
 
