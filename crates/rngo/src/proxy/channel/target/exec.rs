@@ -1,6 +1,7 @@
 use crate::parse::ChannelTargetParser;
 use crate::proxy::channel::{ChannelTarget, ChannelTargetBuilder};
-use crate::{BuildError, Level, OutputSender, ParseError, TargetOutput, spec};
+use crate::proxy::output::{OutputSender, TargetOutput};
+use crate::{BuildError, Level, ParseError, spec};
 use serde_json::Value;
 use std::io::{BufRead, BufReader};
 use std::process::Stdio;

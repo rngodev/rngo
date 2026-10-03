@@ -1,17 +1,18 @@
 pub mod target;
 
+use crate::BuildError;
 use crate::proxy::format::Format;
-use crate::{BuildError, Output, OutputSender, TargetOutput};
+use crate::proxy::output::{Output, OutputSender, TargetOutput};
 use serde_json::Value;
 use std::error::Error;
 use std::sync::mpsc::Sender;
 
 #[derive(Debug)]
 pub struct Channel {
-    pub key: String,
-    pub format: Option<Box<dyn Format>>,
-    pub target: Box<dyn ChannelTarget>,
-    pub effects: Vec<String>,
+    pub(super) key: String,
+    pub(super) format: Option<Box<dyn Format>>,
+    pub(super) target: Box<dyn ChannelTarget>,
+    pub(super) effects: Vec<String>,
 }
 
 impl Channel {

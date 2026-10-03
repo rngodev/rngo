@@ -1,8 +1,7 @@
-use crate::Output;
 use crate::effect::Input;
 use crate::log::pool::InputPool;
 use crate::log::{Metadata, RunLogReader, RunLogWriter};
-use crate::proxy::output::Level;
+use crate::{Level, Output};
 use chrono::{DateTime, Utc};
 use rand_pcg::Pcg32;
 use rusqlite::types::Value as SqlValue;
