@@ -45,9 +45,9 @@ enum Commands {
         /// Cap the number of effect and error events a run produces
         #[arg(long)]
         limit: Option<std::num::NonZeroU64>,
-        /// Send events with future timestamps right away instead of waiting for their time
+        /// Wait for each event's timestamp before sending it instead of sending right away
         #[arg(long)]
-        fast_forward: bool,
+        realtime: bool,
         /// Path to a spec file (instead of building from the `.rngo` directory)
         #[arg(long)]
         spec: Option<std::path::PathBuf>,
@@ -105,7 +105,7 @@ fn main() {
             stdout,
             dry_run,
             limit,
-            fast_forward,
+            realtime,
             dir,
             spec,
         } => match run::run(
@@ -115,7 +115,7 @@ fn main() {
                 spec_path: spec.as_deref(),
                 dry_run,
                 limit,
-                fast_forward,
+                realtime,
                 stop: stop_on_interrupt(),
             },
         ) {
