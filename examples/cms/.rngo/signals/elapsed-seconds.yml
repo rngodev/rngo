@@ -1,6 +1,6 @@
 type: sql
 query: >
-  select round((julianday(e.data ->> 'timestamp') - julianday(s.data ->> 'timestamp')) * 86400, 3)
+  select round((e.data ->> 'timestamp' - s.data ->> 'timestamp') / 1000.0, 3)
   from metadata s
   join metadata e
     on e.type = 'timing' and e.data ->> 'key' = 'simulation_end'
