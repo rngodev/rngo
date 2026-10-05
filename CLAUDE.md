@@ -84,7 +84,7 @@ An effect opts into a channel by setting `channel: <channel-key>`. Formats are c
 ### Formats (`rngo/src/proxy/format/`)
 
 - `sql`: renders each event as an `INSERT` statement.
-- `template`: renders a Handlebars `template` against the whole serialized `Input` (`id`, `effect`, `timestamp`, `data`, `metadata`), with HTML escaping off and a `json` helper that serializes its one argument.
+- `template`: renders a Handlebars `template` against the whole serialized `Input` (`id`, `effect.key`, `timestamp`, `data`, `metadata`), with HTML escaping off and a `json` helper that serializes its one argument.
 
 If a format fails for an event, `Proxy::send` pushes an error-level `Output` for that input and channel, skips the target, and carries on with the run. Format and target parse errors are prefixed with `channels.<key>.format` / `channels.<key>.target` in `Dialect::parse_proxy`, so parsers return paths relative to their own node. A `stream` channel with no effects writing to it is still spawned for the run's duration, but only as an output source (e.g. tailing a log file) - its stdout/stderr lines still become `Output` events, just with no associated effect.
 

@@ -614,7 +614,7 @@ mod tests {
         write_yaml(
             base.join(".rngo/channels/logger.yml"),
             &json!({
-                "format": { "type": "template", "template": "{{effect}} {{data.tag}} {{json data}}" },
+                "format": { "type": "template", "template": "{{effect.key}} {{data.tag}} {{json data}}" },
                 "target": { "type": "stream", "command": command }
             }),
         );

@@ -3,6 +3,8 @@ use handlebars::{
     RenderErrorReason,
 };
 
+use serde_json::json;
+
 use crate::effect::Input;
 use crate::parse::FormatParser;
 use crate::proxy::format::Format;
@@ -10,8 +12,8 @@ use crate::{ParseError, spec};
 
 const TEMPLATE_NAME: &str = "template";
 
-/// Formats each event by rendering a Handlebars template against the whole `Input`, without
-/// HTML escaping and with a `json` helper that serializes its one argument.
+/// Formats each event by rendering a Handlebars template against the whole `Input` (with the
+/// effect exposed as `effect.key`), without HTML escaping and with a `json` helper that serializes its one argument.
 #[derive(Debug)]
 pub struct TemplateFormat {
     hbs: Handlebars<'static>,
@@ -56,8 +58,10 @@ fn json_helper(
 
 impl Format for TemplateFormat {
     fn format(&self, event: &Input) -> Result<String, String> {
+        let mut context = serde_json::to_value(event).map_err(|e| e.to_string())?;
+        context["effect"] = json!({ "key": event.effect });
         self.hbs
-            .render(TEMPLATE_NAME, event)
+            .render(TEMPLATE_NAME, &context)
             .map_err(|e| e.to_string())
     }
 }
@@ -99,7 +103,7 @@ impl FormatParser for TemplateFormatParser {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use serde_json::{Value, json};
+    use serde_json::Value;
 
     fn event(data: Value) -> Input {
         Input {
@@ -124,7 +128,7 @@ mod tests {
     #[test]
     fn renders_against_the_whole_event() {
         let output = render(
-            "{{effect}} {{id}} {{data.name}}",
+            "{{effect.key}} {{id}} {{data.name}}",
             json!({ "name": "alice" }),
         );
         assert_eq!(output.unwrap(), "user 7 alice");
@@ -167,7 +171,7 @@ mod tests {
 
     #[test]
     fn parser_builds_a_format() {
-        let format = parse(json!({ "type": "template", "template": "{{effect}}" })).unwrap();
+        let format = parse(json!({ "type": "template", "template": "{{effect.key}}" })).unwrap();
         assert_eq!(format.format(&event(json!(null))).unwrap(), "user");
     }
 
