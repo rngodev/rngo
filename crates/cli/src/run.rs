@@ -19,8 +19,8 @@ pub struct RunOptions<'a> {
     pub dry_run: bool,
     /// Cap on total effect attempts.
     pub limit: Option<std::num::NonZeroU64>,
-    /// Send future inputs right away instead of waiting for their timestamps.
-    pub fast_forward: bool,
+    /// Wait for each input's timestamp before sending it instead of sending right away.
+    pub realtime: bool,
     /// Stops the run early; it then finishes and audits what was logged.
     pub stop: StopHandle,
 }
@@ -31,7 +31,7 @@ pub fn run(base: &Path, options: RunOptions) -> Result<bool, Box<dyn Error>> {
         spec_path,
         dry_run,
         limit,
-        fast_forward,
+        realtime,
         stop,
     } = options;
 
@@ -71,7 +71,7 @@ pub fn run(base: &Path, options: RunOptions) -> Result<bool, Box<dyn Error>> {
     let reader = sqlite_run_log.clone();
     let writer = StatusWriter::new(sqlite_run_log.clone(), &spec);
 
-    if !fast_forward {
+    if realtime {
         let status = writer.clone();
         proxy_builder.set_realtime(true).set_on_wait(move |until| {
             status.flush();
@@ -142,7 +142,7 @@ pub fn run(base: &Path, options: RunOptions) -> Result<bool, Box<dyn Error>> {
         }
     }
 
-    Ok(audit_report.passed())
+    Ok(audit_report.passed() && !stop.is_stopped())
 }
 
 fn load_spec_file(path: &Path) -> Result<spec::Spec, Box<dyn Error>> {
@@ -614,7 +614,7 @@ mod tests {
         write_yaml(
             base.join(".rngo/channels/logger.yml"),
             &json!({
-                "format": { "type": "template", "template": "{{effect}} {{data.tag}} {{json data}}" },
+                "format": { "type": "template", "template": "{{effect.key}} {{data.tag}} {{json data}}" },
                 "target": { "type": "stream", "command": command }
             }),
         );
@@ -1366,7 +1366,14 @@ mod tests {
         let sent_log = base.join("sent.txt");
         write_timed_spec(base, "now + seconds(3)", &sent_log);
 
-        run(base, RunOptions::default()).unwrap();
+        run(
+            base,
+            RunOptions {
+                realtime: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
         let sent = read_sent_log(&sent_log);
         assert!(!sent.is_empty());
@@ -1380,7 +1387,7 @@ mod tests {
     }
 
     #[test]
-    fn fast_forward_sends_future_inputs_right_away() {
+    fn future_inputs_are_sent_right_away_by_default() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
         let sent_log = base.join("sent.txt");
@@ -1390,7 +1397,6 @@ mod tests {
         run(
             base,
             RunOptions {
-                fast_forward: true,
                 limit: std::num::NonZeroU64::new(10),
                 ..Default::default()
             },
@@ -1424,15 +1430,18 @@ mod tests {
         };
 
         let started = std::time::Instant::now();
-        run(
+        let succeeded = run(
             base,
             RunOptions {
+                realtime: true,
                 stop,
                 ..Default::default()
             },
         )
         .unwrap();
         stopper.join().unwrap();
+
+        assert!(!succeeded, "an interrupted run reports failure");
 
         assert!(started.elapsed() < std::time::Duration::from_secs(5));
 

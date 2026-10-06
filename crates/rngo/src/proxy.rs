@@ -3,11 +3,11 @@ pub mod format;
 pub mod output;
 mod stop;
 
-use crate::{BuildError, Input, Level, RunLogWriter, SimpleEventRunLog, TargetOutput};
+use crate::{BuildError, Input, Level, RunLogWriter, SimpleEventRunLog};
 use channel::target::Stdout;
 use channel::{Channel, ChannelBuilder};
 use chrono::{DateTime, FixedOffset, Utc};
-use output::Output;
+use output::{Output, TargetOutput};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -254,10 +254,10 @@ impl Default for ProxyBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::OutputSender;
     use crate::log::Metadata;
     use crate::proxy::channel::{ChannelTarget, ChannelTargetBuilder};
     use crate::proxy::format::Format;
+    use crate::proxy::output::OutputSender;
     use chrono::TimeDelta;
     use serde_json::json;
     use std::cell::RefCell;

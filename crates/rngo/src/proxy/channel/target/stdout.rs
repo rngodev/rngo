@@ -1,5 +1,6 @@
+use crate::BuildError;
 use crate::proxy::channel::{ChannelTarget, ChannelTargetBuilder};
-use crate::{BuildError, OutputSender, TargetOutput};
+use crate::proxy::output::{OutputSender, TargetOutput};
 use serde_json::Value;
 
 #[derive(Debug, Default)]
