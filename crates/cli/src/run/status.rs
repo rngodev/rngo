@@ -11,7 +11,7 @@ const RENDER_INTERVAL: Duration = Duration::from_millis(50);
 
 #[derive(Default)]
 struct ChannelStats {
-    effects: u64,
+    inputs: u64,
     outputs: u64,
 }
 
@@ -100,9 +100,10 @@ impl StatusWriter {
         lines.push(style("Simulation").bold().for_stderr().to_string());
         lines.push(time_line);
         for (channel, channel_stats) in stats.iter() {
-            lines.push(format!(
-                "{channel}: {} effects, {} outputs",
-                channel_stats.effects, channel_stats.outputs
+            lines.push(channel_line(
+                channel,
+                channel_stats.inputs,
+                channel_stats.outputs,
             ));
         }
         drop(stats);
@@ -113,6 +114,22 @@ impl StatusWriter {
         }
         self.rendered_lines.set(lines.len());
     }
+}
+
+fn count(n: u64, noun: &str) -> String {
+    if n == 1 {
+        format!("{n} {noun}")
+    } else {
+        format!("{n} {noun}s")
+    }
+}
+
+fn channel_line(channel: &str, inputs: u64, outputs: u64) -> String {
+    format!(
+        "{channel}: {}, {}",
+        count(inputs, "input"),
+        count(outputs, "output")
+    )
 }
 
 fn format_remaining(remaining: TimeDelta) -> String {
@@ -141,7 +158,7 @@ impl RunLogWriter for StatusWriter {
                 .borrow_mut()
                 .entry(channel.clone())
                 .or_default()
-                .effects += 1;
+                .inputs += 1;
         }
 
         self.dirty.set(true);
@@ -174,5 +191,17 @@ impl RunLogWriter for StatusWriter {
 impl Drop for StatusWriter {
     fn drop(&mut self) {
         self.finish();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn channel_line_pluralizes_counts() {
+        assert_eq!(channel_line("api", 0, 0), "api: 0 inputs, 0 outputs");
+        assert_eq!(channel_line("api", 1, 1), "api: 1 input, 1 output");
+        assert_eq!(channel_line("db", 31270, 2), "db: 31270 inputs, 2 outputs");
     }
 }
