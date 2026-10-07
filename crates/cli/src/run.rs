@@ -17,7 +17,7 @@ pub struct RunOptions<'a> {
     pub spec_path: Option<&'a Path>,
     /// Only check that the simulation builds.
     pub dry_run: bool,
-    /// Cap on total effect attempts.
+    /// Cap on total input attempts.
     pub limit: Option<std::num::NonZeroU64>,
     /// Wait for each input's timestamp before sending it instead of sending right away.
     pub realtime: bool,
