@@ -2,7 +2,7 @@ mod common;
 
 use common::ParseErrorTestExt;
 use rngo::build::*;
-use rngo::{Dialect, Input, RunLogWriter, SimpleEventRunLog, Simulation};
+use rngo::{Dialect, Input, Simulation};
 use std::num::NonZeroU64;
 
 fn count_for(inputs: &[Input], effect: &str) -> usize {
@@ -48,8 +48,6 @@ fn unlimited_effect_keeps_running_after_limited_effect_stops() {
 
 #[test]
 fn dependent_effect_stops_after_upstream_limit() {
-    let run_log = SimpleEventRunLog::new();
-
     let mut simulation_builder = Simulation::builder();
     simulation_builder
         .with_effect("upstream", |e| {
@@ -62,16 +60,7 @@ fn dependent_effect_stops_after_upstream_limit() {
                 .schema(constant().value(2))
         });
 
-    let inputs: Vec<_> = simulation_builder
-        .run_log_reader(run_log.clone())
-        .build()
-        .unwrap()
-        .map(|item| {
-            let input = item.unwrap();
-            run_log.push_input(input.clone());
-            input
-        })
-        .collect();
+    let inputs: Vec<_> = simulation_builder.standalone().unwrap().flatten().collect();
 
     assert_eq!(count_for(&inputs, "upstream"), 4);
     assert_eq!(count_for(&inputs, "downstream"), 4);

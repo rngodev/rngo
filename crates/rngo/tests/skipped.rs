@@ -1,5 +1,5 @@
 use rngo::build::*;
-use rngo::{Input, Metadata, RunLogWriter, SimpleEventRunLog, Simulation, SqliteRunLog};
+use rngo::{Input, Metadata, RunLogWriter, Simulation, SqliteRunLog};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
@@ -65,8 +65,6 @@ fn reference_with_no_prior_events_is_skipped_not_logged() {
 
 #[test]
 fn object_with_a_skipped_property_is_itself_skipped() {
-    let run_log = SimpleEventRunLog::new();
-
     let mut simulation_builder = Simulation::builder();
     simulation_builder.with_effect("derived", |e| {
         e.trigger_hertz(1.0).schema(
@@ -79,13 +77,9 @@ fn object_with_a_skipped_property_is_itself_skipped() {
     // `.limit(5)` bounds total attempts, not real inputs - without it, an effect that always
     // skips would keep yielding skipped attempts until the simulation's time window itself runs
     // out, rather than stopping quickly.
-    let simulation = simulation_builder
-        .run_log_reader(run_log.clone())
-        .limit(5)
-        .build()
-        .unwrap();
+    let simulation = simulation_builder.limit(5).standalone().unwrap();
 
-    let events = log_all(simulation, run_log.as_ref());
+    let events: Vec<_> = simulation.flatten().collect();
 
     assert!(
         events.is_empty(),
@@ -95,8 +89,6 @@ fn object_with_a_skipped_property_is_itself_skipped() {
 
 #[test]
 fn array_with_a_skipped_item_is_itself_skipped() {
-    let run_log = SimpleEventRunLog::new();
-
     let mut simulation_builder = Simulation::builder();
     simulation_builder.with_effect("derived", |e| {
         e.trigger_hertz(1.0).schema(
@@ -107,13 +99,9 @@ fn array_with_a_skipped_item_is_itself_skipped() {
         )
     });
 
-    let simulation = simulation_builder
-        .run_log_reader(run_log.clone())
-        .limit(5)
-        .build()
-        .unwrap();
+    let simulation = simulation_builder.limit(5).standalone().unwrap();
 
-    let events = log_all(simulation, run_log.as_ref());
+    let events: Vec<_> = simulation.flatten().collect();
 
     assert!(
         events.is_empty(),

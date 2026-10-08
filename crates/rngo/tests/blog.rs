@@ -1,26 +1,17 @@
 mod common;
 
 use rngo::build::*;
-use rngo::{Dialect, RunLogWriter, SimpleEventRunLog, Simulation, SimulationBuilder};
+use rngo::{Dialect, Simulation, SimulationBuilder};
 use serde_json::Value;
 
-/// The simulation no longer logs what it yields, so the inputs are written back to the run log
-/// here as they're consumed. That way "post" - which references "user" - sees prior "user" data
-/// instead of every attempt being skipped for lack of anything to resolve. A "post" fired before
-/// any "user" exists is skipped rather than yielded, so only real inputs are collected.
+/// A standalone simulation logs the inputs it yields, so "post" - which references "user" - sees
+/// prior "user" data instead of every attempt being skipped for lack of anything to resolve. A
+/// "post" fired before any "user" exists is skipped rather than yielded, so only real inputs are
+/// collected.
 fn assert_simulation(simulation_builder: SimulationBuilder) {
-    let log = SimpleEventRunLog::new();
-    let simulation = simulation_builder
-        .run_log_reader(log.clone())
-        .build()
-        .unwrap();
-
-    let events: Vec<_> = simulation
-        .inspect(|item| {
-            if let Ok(input) = item {
-                log.push_input(input.clone());
-            }
-        })
+    let events: Vec<_> = simulation_builder
+        .standalone()
+        .unwrap()
         .flatten()
         .take(60)
         .collect();

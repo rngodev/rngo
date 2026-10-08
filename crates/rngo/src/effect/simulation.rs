@@ -1,7 +1,8 @@
-use crate::RunLogReader;
 use crate::build::{BuildError, SimulationKey};
 use crate::effect::{Effect, EffectBuilder, Input, SkippedInput};
+use crate::log::SimpleEventRunLog;
 use crate::moment::Moment;
+use crate::{RunLogReader, RunLogWriter};
 use chrono::{TimeDelta, Utc};
 use std::rc::Rc;
 
@@ -31,6 +32,32 @@ impl Iterator for Simulation {
 
         let item = self.effects.first_mut()?.next()?;
         self.emitted += 1;
+        Some(item)
+    }
+}
+
+/// A [`Simulation`] that owns an in-memory log and writes each input it yields to it.
+#[derive(Debug)]
+pub struct StandaloneSimulation {
+    simulation: Simulation,
+    log: Rc<SimpleEventRunLog>,
+}
+
+impl StandaloneSimulation {
+    /// The log the inputs are written to, which the simulation's effects read from.
+    pub fn run_log(&self) -> &Rc<SimpleEventRunLog> {
+        &self.log
+    }
+}
+
+impl Iterator for StandaloneSimulation {
+    type Item = Result<Input, SkippedInput>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let item = self.simulation.next()?;
+        if let Ok(input) = &item {
+            self.log.push_input(input.clone());
+        }
         Some(item)
     }
 }
@@ -110,6 +137,13 @@ impl SimulationBuilder {
         let builder = f(builder);
         self.effect_builders.push(builder);
         self
+    }
+
+    /// Builds a [`StandaloneSimulation`] over a new in-memory log, replacing any run log reader set.
+    pub fn standalone(self) -> Result<StandaloneSimulation, Vec<BuildError>> {
+        let log = SimpleEventRunLog::new();
+        let simulation = self.run_log_reader(log.clone()).build()?;
+        Ok(StandaloneSimulation { simulation, log })
     }
 
     pub fn build(self) -> Result<Simulation, Vec<BuildError>> {
@@ -233,5 +267,28 @@ mod tests {
                 ..
             }]
         ));
+    }
+
+    #[test]
+    fn standalone_logs_inputs_so_later_effects_can_read_them() {
+        use crate::RunLogReader;
+
+        let mut simulation_builder = super::Simulation::builder();
+        simulation_builder
+            .with_effect("upstream", |e| {
+                e.trigger_hertz(1.0)
+                    .limit(std::num::NonZeroU64::new(3).unwrap())
+                    .schema(AlternatingSchemaBuilder)
+            })
+            .with_effect("downstream", |e| {
+                e.trigger_effect("upstream".into())
+                    .schema(AlternatingSchemaBuilder)
+            });
+
+        let mut simulation = simulation_builder.standalone().unwrap();
+        let yielded = simulation.by_ref().flatten().count();
+
+        assert!(yielded > 0);
+        assert!(simulation.run_log().last().is_some());
     }
 }
