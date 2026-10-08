@@ -1,7 +1,21 @@
 use rngo::build::*;
-use rngo::{SimpleEventRunLog, Simulation, SqliteRunLog};
+use rngo::{Input, Metadata, RunLogWriter, SimpleEventRunLog, Simulation, SqliteRunLog};
 use rusqlite::Connection;
 use tempfile::TempDir;
+
+fn log_all(simulation: Simulation, log: &impl RunLogWriter) -> Vec<Input> {
+    let mut inputs = vec![];
+    for item in simulation {
+        match item {
+            Ok(input) => {
+                log.push_input(input.clone());
+                inputs.push(input);
+            }
+            Err(skipped) => log.push_metadata(Metadata::from(skipped)),
+        }
+    }
+    inputs
+}
 
 #[test]
 fn reference_with_no_prior_events_is_skipped_not_logged() {
@@ -15,14 +29,12 @@ fn reference_with_no_prior_events_is_skipped_not_logged() {
     });
 
     let simulation = simulation_builder
-        .run_log(run_log.clone())
+        .run_log_reader(run_log.clone())
         .limit(5)
         .build()
         .unwrap();
 
-    // `Simulation` now writes every real input, and every skipped occurrence's metadata, to the
-    // run log itself as it iterates (see `Simulation::next`).
-    let input_count = simulation.count();
+    let input_count = log_all(simulation, run_log.as_ref()).len();
 
     assert_eq!(
         input_count, 0,
@@ -68,12 +80,12 @@ fn object_with_a_skipped_property_is_itself_skipped() {
     // skips would keep yielding skipped attempts until the simulation's time window itself runs
     // out, rather than stopping quickly.
     let simulation = simulation_builder
-        .run_log(run_log)
+        .run_log_reader(run_log.clone())
         .limit(5)
         .build()
         .unwrap();
 
-    let events: Vec<_> = simulation.collect();
+    let events = log_all(simulation, run_log.as_ref());
 
     assert!(
         events.is_empty(),
@@ -96,12 +108,12 @@ fn array_with_a_skipped_item_is_itself_skipped() {
     });
 
     let simulation = simulation_builder
-        .run_log(run_log)
+        .run_log_reader(run_log.clone())
         .limit(5)
         .build()
         .unwrap();
 
-    let events: Vec<_> = simulation.collect();
+    let events = log_all(simulation, run_log.as_ref());
 
     assert!(
         events.is_empty(),

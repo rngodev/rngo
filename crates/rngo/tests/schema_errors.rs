@@ -29,7 +29,10 @@ fn builder() {
             )
         });
 
-    let errors = simulation_builder.build().unwrap_err();
+    let errors = simulation_builder
+        .run_log_reader(rngo::SimpleEventRunLog::new())
+        .build()
+        .unwrap_err();
 
     let number_error = errors
         .iter()

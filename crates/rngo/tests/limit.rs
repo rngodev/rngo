@@ -2,7 +2,7 @@ mod common;
 
 use common::ParseErrorTestExt;
 use rngo::build::*;
-use rngo::{Dialect, Input, SimpleEventRunLog, Simulation};
+use rngo::{Dialect, Input, RunLogWriter, SimpleEventRunLog, Simulation};
 use std::num::NonZeroU64;
 
 fn count_for(inputs: &[Input], effect: &str) -> usize {
@@ -27,7 +27,12 @@ fn unlimited_effect_keeps_running_after_limited_effect_stops() {
                 .schema(constant().value(1))
         });
 
-    let inputs: Vec<_> = simulation_builder.build().unwrap().collect();
+    let inputs: Vec<_> = simulation_builder
+        .run_log_reader(rngo::SimpleEventRunLog::new())
+        .build()
+        .unwrap()
+        .flatten()
+        .collect();
 
     assert_eq!(count_for(&inputs, "limited"), 3);
     assert!(count_for(&inputs, "unlimited") > 3);
@@ -58,9 +63,14 @@ fn dependent_effect_stops_after_upstream_limit() {
         });
 
     let inputs: Vec<_> = simulation_builder
-        .run_log(run_log)
+        .run_log_reader(run_log.clone())
         .build()
         .unwrap()
+        .map(|item| {
+            let input = item.unwrap();
+            run_log.push_input(input.clone());
+            input
+        })
         .collect();
 
     assert_eq!(count_for(&inputs, "upstream"), 4);
@@ -76,7 +86,13 @@ fn run_limit_lower_than_effect_limit_wins() {
             .schema(constant().value(1))
     });
 
-    let inputs: Vec<_> = simulation_builder.limit(4).build().unwrap().collect();
+    let inputs: Vec<_> = simulation_builder
+        .limit(4)
+        .run_log_reader(rngo::SimpleEventRunLog::new())
+        .build()
+        .unwrap()
+        .flatten()
+        .collect();
 
     assert_eq!(inputs.len(), 4);
 }
@@ -90,7 +106,13 @@ fn effect_limit_lower_than_run_limit_wins() {
             .schema(constant().value(1))
     });
 
-    let inputs: Vec<_> = simulation_builder.limit(10).build().unwrap().collect();
+    let inputs: Vec<_> = simulation_builder
+        .limit(10)
+        .run_log_reader(rngo::SimpleEventRunLog::new())
+        .build()
+        .unwrap()
+        .flatten()
+        .collect();
 
     assert_eq!(inputs.len(), 4);
 }
@@ -113,8 +135,10 @@ fn spec_limit_is_applied() {
     let inputs: Vec<_> = Dialect::primitive()
         .parse_simulation_json(value)
         .unwrap()
+        .run_log_reader(rngo::SimpleEventRunLog::new())
         .build()
         .unwrap()
+        .flatten()
         .collect();
 
     assert_eq!(inputs.len(), 5);

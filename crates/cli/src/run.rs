@@ -61,7 +61,10 @@ pub fn run(base: &Path, options: RunOptions) -> Result<bool, Box<dyn Error>> {
     }
 
     if dry_run {
-        simulation_builder.build().map_err(join_errors)?;
+        simulation_builder
+            .run_log_reader(rngo::SimpleEventRunLog::new())
+            .build()
+            .map_err(join_errors)?;
         return Ok(true);
     }
 
@@ -85,20 +88,21 @@ pub fn run(base: &Path, options: RunOptions) -> Result<bool, Box<dyn Error>> {
         .build()
         .map_err(join_errors)?;
 
-    let mut simulation = simulation_builder
+    let simulation = simulation_builder
         .run_log_reader(reader.clone())
-        .run_log_writer(writer.clone())
         .build()
         .map_err(join_errors)?;
 
-    for input in &mut simulation {
-        proxy.send(&input)?;
+    for item in simulation {
+        match item {
+            Ok(input) => proxy.send(&input)?,
+            Err(skipped) => writer.push_metadata(skipped.into()),
+        }
         if stop.is_stopped() {
             break;
         }
     }
 
-    simulation.finish();
     proxy.finish();
     writer.finish();
 

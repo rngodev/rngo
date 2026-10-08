@@ -1,5 +1,5 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use rngo::{Dialect, SimpleEventRunLog, Simulation, SimulationBuilder, SqliteRunLog};
+use rngo::{Dialect, RunLogWriter, SimpleEventRunLog, Simulation, SimulationBuilder, SqliteRunLog};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
@@ -72,6 +72,15 @@ fn builder(spec: &Value, limit: u64) -> SimulationBuilder {
         .limit(limit)
 }
 
+fn drain(simulation: Simulation, log: &impl RunLogWriter) -> usize {
+    let mut count = 0;
+    for input in simulation.flatten() {
+        log.push_input(input);
+        count += 1;
+    }
+    count
+}
+
 fn bench_spec(c: &mut Criterion, name: &str, spec: Value, sizes: &[u64]) {
     let mut group = c.benchmark_group(format!("simulation/{name}"));
     group.sample_size(10);
@@ -82,12 +91,14 @@ fn bench_spec(c: &mut Criterion, name: &str, spec: Value, sizes: &[u64]) {
         group.bench_with_input(BenchmarkId::new("memory", size), &size, |b, &size| {
             b.iter_batched(
                 || {
-                    builder(&spec, size)
-                        .run_log(SimpleEventRunLog::new())
+                    let log = SimpleEventRunLog::new();
+                    let simulation = builder(&spec, size)
+                        .run_log_reader(log.clone())
                         .build()
-                        .unwrap()
+                        .unwrap();
+                    (log, simulation)
                 },
-                Simulation::count,
+                |(log, simulation)| drain(simulation, log.as_ref()),
                 BatchSize::PerIteration,
             );
         });
@@ -97,14 +108,16 @@ fn bench_spec(c: &mut Criterion, name: &str, spec: Value, sizes: &[u64]) {
                 || {
                     let tmp = TempDir::new().unwrap();
                     let log = SqliteRunLog::new(tmp.path().to_path_buf());
-                    let simulation = builder(&spec, size).run_log(log.clone()).build().unwrap();
+                    let simulation = builder(&spec, size)
+                        .run_log_reader(log.clone())
+                        .build()
+                        .unwrap();
                     (tmp, log, simulation)
                 },
-                |(tmp, log, mut simulation)| {
-                    let count = simulation.by_ref().count();
-                    simulation.finish();
+                |(tmp, log, simulation)| {
+                    let count = drain(simulation, log.as_ref());
                     log.commit();
-                    (tmp, log, simulation, count)
+                    (tmp, log, count)
                 },
                 BatchSize::PerIteration,
             );

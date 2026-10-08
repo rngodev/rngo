@@ -1,16 +1,29 @@
 mod common;
 
 use rngo::build::*;
-use rngo::{Dialect, Simulation};
+use rngo::{Dialect, RunLogWriter, SimpleEventRunLog, Simulation, SimulationBuilder};
 use serde_json::Value;
 
-/// `Simulation` writes each input it produces back into its run log as it's yielded (see
-/// `SimulationBuilder::run_log`), so "post" - which references "user" - sees prior "user" data as
-/// soon as it's emitted instead of every attempt being skipped for lack of anything to resolve. A
-/// "post" fired before any "user" exists is skipped rather than yielded (its metadata just goes to
-/// the run log - see `Simulation::next`), so plain `take(60)` is enough to get 60 real inputs.
-fn assert_simulation(simulation: Simulation) {
-    let events: Vec<_> = simulation.take(60).collect();
+/// The simulation no longer logs what it yields, so the inputs are written back to the run log
+/// here as they're consumed. That way "post" - which references "user" - sees prior "user" data
+/// instead of every attempt being skipped for lack of anything to resolve. A "post" fired before
+/// any "user" exists is skipped rather than yielded, so only real inputs are collected.
+fn assert_simulation(simulation_builder: SimulationBuilder) {
+    let log = SimpleEventRunLog::new();
+    let simulation = simulation_builder
+        .run_log_reader(log.clone())
+        .build()
+        .unwrap();
+
+    let events: Vec<_> = simulation
+        .inspect(|item| {
+            if let Ok(input) = item {
+                log.push_input(input.clone());
+            }
+        })
+        .flatten()
+        .take(60)
+        .collect();
 
     let user_events: Vec<_> = events
         .iter()
@@ -149,8 +162,7 @@ fn builder() {
             )
         });
 
-    let simulation = simulation_builder.build().unwrap();
-    assert_simulation(simulation);
+    assert_simulation(simulation_builder);
 }
 
 #[test]
@@ -208,6 +220,5 @@ fn spec() {
 
     let value: serde_json::Value = serde_json::from_str(json).unwrap();
     let simulation_builder = Dialect::primitive().parse_simulation_json(value).unwrap();
-    let simulation = simulation_builder.build().unwrap();
-    assert_simulation(simulation);
+    assert_simulation(simulation_builder);
 }

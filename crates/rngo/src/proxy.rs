@@ -3,7 +3,7 @@ pub mod format;
 pub mod output;
 mod stop;
 
-use crate::{BuildError, Input, Level, RunLogWriter, SimpleEventRunLog};
+use crate::{BuildError, Input, Level, Metadata, RunLogWriter, SimpleEventRunLog};
 use channel::target::Stdout;
 use channel::{Channel, ChannelBuilder};
 use chrono::{DateTime, FixedOffset, Utc};
@@ -27,6 +27,8 @@ pub struct Proxy {
     realtime: bool,
     on_wait: Option<OnWait>,
     stop: StopHandle,
+    started: bool,
+    finished: bool,
 }
 
 impl Proxy {
@@ -34,9 +36,16 @@ impl Proxy {
         ProxyBuilder::new()
     }
 
-    /// Sends `input` to its effect's channel. In realtime mode, first waits until its timestamp.
-    /// Does nothing once stopped.
+    /// Logs `input`, then sends it to its effect's channel. In realtime mode, first waits until its
+    /// timestamp. Once stopped, only logs. The first call records the `simulation_start` timing.
     pub fn send(&mut self, input: &Input) -> Result<(), Box<dyn std::error::Error>> {
+        if !self.started {
+            self.started = true;
+            self.record_timing("simulation_start");
+        }
+
+        self.run_log_writer.push_input(input.clone());
+
         if self.stop.is_stopped() || (self.realtime && !self.wait_until(input.timestamp)) {
             return Ok(());
         }
@@ -97,11 +106,31 @@ impl Proxy {
         }
     }
 
+    /// Records the `simulation_end` timing (if anything was sent) and drains the channel targets.
     pub fn finish(&mut self) {
+        if self.started && !self.finished {
+            self.finished = true;
+            self.record_timing("simulation_end");
+        }
+
         for channel in self.channels.values_mut() {
             channel.target.finish();
         }
         self.drain_outputs();
+    }
+
+    fn record_timing(&self, key: &str) {
+        self.run_log_writer.push_metadata(Metadata {
+            mtype: "timing".to_string(),
+            input_id: None,
+            output_id: None,
+            data: Some(serde_json::json!({
+                "key": key,
+                "timestamp": Utc::now().timestamp_millis(),
+            })),
+            segment: None,
+            timestamp: None,
+        });
     }
 
     fn drain_outputs(&mut self) {
@@ -241,6 +270,8 @@ impl ProxyBuilder {
             realtime: self.realtime,
             on_wait: self.on_wait,
             stop: self.stop,
+            started: false,
+            finished: false,
         })
     }
 }
@@ -266,6 +297,7 @@ mod tests {
     #[derive(Debug, Default)]
     struct RecordingLog {
         outputs: RefCell<Vec<Output>>,
+        metadata: RefCell<Vec<Metadata>>,
     }
 
     impl RunLogWriter for RecordingLog {
@@ -273,7 +305,9 @@ mod tests {
         fn push_output(&self, output: Output) {
             self.outputs.borrow_mut().push(output);
         }
-        fn push_metadata(&self, _metadata: Metadata) {}
+        fn push_metadata(&self, metadata: Metadata) {
+            self.metadata.borrow_mut().push(metadata);
+        }
     }
 
     #[derive(Debug)]
@@ -452,5 +486,32 @@ mod tests {
 
         assert_eq!(sent.borrow().len(), 1);
         assert!(proxy.stop_handle().is_stopped());
+    }
+
+    #[test]
+    fn records_start_and_end_timing() {
+        let log = Rc::new(RecordingLog::default());
+        let mut proxy = Proxy::builder()
+            .run_log_writer(log.clone())
+            .build()
+            .unwrap();
+
+        proxy.finish();
+        assert!(log.metadata.borrow().is_empty(), "nothing sent, no timing");
+
+        proxy.send(&input(1)).unwrap();
+        proxy.finish();
+        proxy.finish();
+
+        let kinds: Vec<_> = log
+            .metadata
+            .borrow()
+            .iter()
+            .map(|m| match &m.data {
+                Some(data) if m.mtype == "timing" => data["key"].as_str().unwrap().to_string(),
+                _ => m.mtype.clone(),
+            })
+            .collect();
+        assert_eq!(kinds, ["simulation_start", "simulation_end"]);
     }
 }

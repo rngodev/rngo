@@ -1,4 +1,4 @@
-use rngo::{Dialect, SqliteRunLog};
+use rngo::{Dialect, RunLogWriter, SqliteRunLog};
 use serde_json::json;
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -78,19 +78,22 @@ fn spec() -> serde_json::Value {
 fn measure(limit: u64) -> (usize, usize) {
     let tmp = TempDir::new().unwrap();
     let log = SqliteRunLog::new(tmp.path().to_path_buf());
-    let mut simulation = Dialect::primitive()
+    let simulation = Dialect::primitive()
         .parse_simulation_json(spec())
         .unwrap()
         .limit(limit)
-        .run_log(log.clone())
+        .run_log_reader(log.clone())
         .build()
         .unwrap();
 
     let baseline = CURRENT.load(Ordering::Relaxed);
     PEAK.store(baseline, Ordering::Relaxed);
 
-    let inputs = simulation.by_ref().count();
-    simulation.finish();
+    let mut inputs = 0;
+    for input in simulation.flatten() {
+        log.push_input(input);
+        inputs += 1;
+    }
     log.commit();
 
     (inputs, PEAK.load(Ordering::Relaxed) - baseline)
