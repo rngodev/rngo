@@ -36,19 +36,19 @@ impl Proxy {
         ProxyBuilder::new()
     }
 
-    /// Logs `input`, then sends it to its effect's channel. In realtime mode, first waits until its
-    /// timestamp. Once stopped, only logs. The first call records the `simulation_start` timing.
+    /// Logs `input` and sends it to its effect's channel. In realtime mode, first waits until its
+    /// timestamp. Once stopped, does nothing. The first call records the `simulation_start` timing.
     pub fn send(&mut self, input: &Input) -> Result<(), Box<dyn std::error::Error>> {
         if !self.started {
             self.started = true;
             self.record_timing("simulation_start");
         }
 
-        self.run_log_writer.push_input(input.clone());
-
         if self.stop.is_stopped() || (self.realtime && !self.wait_until(input.timestamp)) {
             return Ok(());
         }
+
+        self.run_log_writer.push_input(input.clone());
 
         let channel_key = match self.effect_channels.get(&input.effect) {
             Some(k) => k,
@@ -296,12 +296,15 @@ mod tests {
 
     #[derive(Debug, Default)]
     struct RecordingLog {
+        inputs: RefCell<Vec<Input>>,
         outputs: RefCell<Vec<Output>>,
         metadata: RefCell<Vec<Metadata>>,
     }
 
     impl RunLogWriter for RecordingLog {
-        fn push_input(&self, _input: Input) {}
+        fn push_input(&self, input: Input) {
+            self.inputs.borrow_mut().push(input);
+        }
         fn push_output(&self, output: Output) {
             self.outputs.borrow_mut().push(output);
         }
@@ -513,5 +516,21 @@ mod tests {
             })
             .collect();
         assert_eq!(kinds, ["simulation_start", "simulation_end"]);
+    }
+
+    #[test]
+    fn logs_inputs_unless_stopped() {
+        let log = Rc::new(RecordingLog::default());
+        let mut proxy = Proxy::builder()
+            .run_log_writer(log.clone())
+            .build()
+            .unwrap();
+
+        proxy.send(&input(1)).unwrap();
+        proxy.stop_handle().stop();
+        proxy.send(&input(2)).unwrap();
+
+        let ids: Vec<_> = log.inputs.borrow().iter().map(|i| i.id).collect();
+        assert_eq!(ids, [1]);
     }
 }

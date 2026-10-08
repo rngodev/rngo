@@ -1451,10 +1451,9 @@ mod tests {
 
         let sent = read_sent_log(&sent_log).len() as i64;
         let (held, _) = signal_outcome(base, "held-inputs");
-        let held = held.as_i64().unwrap();
-        assert!(held <= 1, "at most the one waiting input is held");
+        assert_eq!(held.as_i64().unwrap(), 0, "the waiting input is not logged");
         assert_eq!(
-            input_count(base) - held,
+            input_count(base),
             sent,
             "every input logged before the stop was sent"
         );
