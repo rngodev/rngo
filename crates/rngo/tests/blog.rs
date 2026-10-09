@@ -1,16 +1,20 @@
 mod common;
 
 use rngo::build::*;
-use rngo::{Dialect, Simulation};
+use rngo::{Dialect, Simulation, SimulationBuilder};
 use serde_json::Value;
 
-/// `Simulation` writes each input it produces back into its run log as it's yielded (see
-/// `SimulationBuilder::run_log`), so "post" - which references "user" - sees prior "user" data as
-/// soon as it's emitted instead of every attempt being skipped for lack of anything to resolve. A
-/// "post" fired before any "user" exists is skipped rather than yielded (its metadata just goes to
-/// the run log - see `Simulation::next`), so plain `take(60)` is enough to get 60 real inputs.
-fn assert_simulation(simulation: Simulation) {
-    let events: Vec<_> = simulation.take(60).collect();
+/// A standalone simulation logs the inputs it yields, so "post" - which references "user" - sees
+/// prior "user" data instead of every attempt being skipped for lack of anything to resolve. A
+/// "post" fired before any "user" exists is skipped rather than yielded, so only real inputs are
+/// collected.
+fn assert_simulation(simulation_builder: SimulationBuilder) {
+    let events: Vec<_> = simulation_builder
+        .standalone()
+        .unwrap()
+        .flatten()
+        .take(60)
+        .collect();
 
     let user_events: Vec<_> = events
         .iter()
@@ -149,8 +153,7 @@ fn builder() {
             )
         });
 
-    let simulation = simulation_builder.build().unwrap();
-    assert_simulation(simulation);
+    assert_simulation(simulation_builder);
 }
 
 #[test]
@@ -208,6 +211,5 @@ fn spec() {
 
     let value: serde_json::Value = serde_json::from_str(json).unwrap();
     let simulation_builder = Dialect::primitive().parse_simulation_json(value).unwrap();
-    let simulation = simulation_builder.build().unwrap();
-    assert_simulation(simulation);
+    assert_simulation(simulation_builder);
 }

@@ -1,6 +1,6 @@
 use crate::build::{BuildError, SimulationKey};
-use crate::effect::{Effect, EffectBuilder, Input};
-use crate::log::{Metadata, SimpleEventRunLog};
+use crate::effect::{Effect, EffectBuilder, Input, SkippedInput};
+use crate::log::SimpleEventRunLog;
 use crate::moment::Moment;
 use crate::{RunLogReader, RunLogWriter};
 use chrono::{TimeDelta, Utc};
@@ -9,87 +9,58 @@ use std::rc::Rc;
 #[derive(Debug)]
 pub struct Simulation {
     effects: Vec<Effect>,
-    writer: Rc<dyn RunLogWriter>,
     limit: Option<u64>,
     emitted: u64,
-    started: bool,
-    finished: bool,
 }
 
 impl Simulation {
     pub fn builder() -> SimulationBuilder {
         SimulationBuilder::new()
     }
-
-    pub fn finish(&mut self) {
-        if self.started && !self.finished {
-            self.finished = true;
-            self.record_timing("simulation_end");
-        }
-    }
-
-    fn record_timing(&self, key: &str) {
-        self.writer.push_metadata(Metadata {
-            mtype: "timing".to_string(),
-            input_id: None,
-            output_id: None,
-            data: Some(serde_json::json!({
-                "key": key,
-                "timestamp": Utc::now().timestamp_millis(),
-            })),
-            segment: None,
-            timestamp: None,
-        });
-    }
-
-    fn advance(&mut self) -> Option<Input> {
-        loop {
-            if self.limit.is_some_and(|limit| self.emitted >= limit) {
-                return None;
-            }
-
-            self.effects
-                .sort_unstable_by_key(|e| e.next_offset().unwrap_or(i64::MAX));
-
-            match self.effects.first_mut()?.next()? {
-                Ok(input) => {
-                    self.emitted += 1;
-                    self.writer.push_input(input.clone());
-                    return Some(input);
-                }
-                Err(skipped_input) => {
-                    self.emitted += 1;
-                    self.writer.push_metadata(skipped_input.into());
-                }
-            }
-        }
-    }
 }
 
 impl Iterator for Simulation {
-    type Item = Input;
+    type Item = Result<Input, SkippedInput>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.finished {
+        if self.limit.is_some_and(|limit| self.emitted >= limit) {
             return None;
         }
 
-        if !self.started {
-            self.started = true;
-            self.record_timing("simulation_start");
-        }
+        self.effects
+            .sort_unstable_by_key(|e| e.next_offset().unwrap_or(i64::MAX));
 
-        let input = self.advance();
-        if input.is_none() {
-            self.finish();
+        let item = self.effects.first_mut()?.next()?;
+        if item.is_ok() {
+            self.emitted += 1;
         }
-        input
+        Some(item)
     }
 }
 
-impl Drop for Simulation {
-    fn drop(&mut self) {
-        self.finish();
+/// A [`Simulation`] that owns an in-memory log and writes each input it yields to it.
+#[derive(Debug)]
+pub struct StandaloneSimulation {
+    simulation: Simulation,
+    log: Rc<SimpleEventRunLog>,
+}
+
+impl StandaloneSimulation {
+    /// The log the inputs are written to, which the simulation's effects read from.
+    pub fn run_log(&self) -> &Rc<SimpleEventRunLog> {
+        &self.log
+    }
+}
+
+impl Iterator for StandaloneSimulation {
+    type Item = Result<Input, SkippedInput>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let item = self.simulation.next()?;
+        if let Ok(input) = &item {
+            self.log.push_input(input.clone());
+        }
+        Some(item)
     }
 }
 
@@ -99,7 +70,6 @@ pub struct SimulationBuilder {
     pub start: Moment,
     pub end: Moment,
     run_log_reader: Option<Rc<dyn RunLogReader>>,
-    run_log_writer: Option<Rc<dyn RunLogWriter>>,
     effect_builders: Vec<EffectBuilder>,
     limit: Option<u64>,
 }
@@ -111,7 +81,6 @@ impl SimulationBuilder {
             start: Moment::Relative(TimeDelta::days(-30)),
             end: Moment::Relative(TimeDelta::zero()),
             run_log_reader: None,
-            run_log_writer: None,
             effect_builders: vec![],
             limit: None,
         }
@@ -120,15 +89,6 @@ impl SimulationBuilder {
     pub fn run_log_reader<T: RunLogReader + 'static>(mut self, reader: Rc<T>) -> Self {
         self.run_log_reader = Some(reader as Rc<dyn RunLogReader>);
         self
-    }
-
-    pub fn run_log_writer<T: RunLogWriter + 'static>(mut self, writer: Rc<T>) -> Self {
-        self.run_log_writer = Some(writer as Rc<dyn RunLogWriter>);
-        self
-    }
-
-    pub fn run_log<T: RunLogReader + RunLogWriter + 'static>(self, run_log: Rc<T>) -> Self {
-        self.run_log_reader(run_log.clone()).run_log_writer(run_log)
     }
 
     pub fn limit(mut self, limit: u64) -> Self {
@@ -181,6 +141,13 @@ impl SimulationBuilder {
         self
     }
 
+    /// Builds a [`StandaloneSimulation`] over a new in-memory log, replacing any run log reader set.
+    pub fn standalone(self) -> Result<StandaloneSimulation, Vec<BuildError>> {
+        let log = SimpleEventRunLog::new();
+        let simulation = self.run_log_reader(log.clone()).build()?;
+        Ok(StandaloneSimulation { simulation, log })
+    }
+
     pub fn build(self) -> Result<Simulation, Vec<BuildError>> {
         let mut errors = vec![];
         let now = Utc::now().fixed_offset();
@@ -194,15 +161,12 @@ impl SimulationBuilder {
             });
         }
 
-        let (run_log_reader, run_log_writer) = match (self.run_log_reader, self.run_log_writer) {
-            (Some(reader), Some(writer)) => (reader, writer),
-            _ => {
-                let default_run_log = SimpleEventRunLog::new();
-                (
-                    default_run_log.clone() as Rc<dyn RunLogReader>,
-                    default_run_log as Rc<dyn RunLogWriter>,
-                )
-            }
+        let Some(run_log_reader) = self.run_log_reader else {
+            errors.push(BuildError::Simulation {
+                key: SimulationKey::RunLogReader,
+                message: "run_log_reader was not set".into(),
+            });
+            return Err(errors);
         };
 
         let mut effects = vec![];
@@ -224,11 +188,8 @@ impl SimulationBuilder {
         if errors.is_empty() {
             Ok(Simulation {
                 effects,
-                writer: run_log_writer,
                 limit: self.limit,
                 emitted: 0,
-                started: false,
-                finished: false,
             })
         } else {
             Err(errors)
@@ -279,102 +240,60 @@ mod tests {
     }
 
     #[test]
-    fn limit_counts_effects_and_errors_together() {
-        let mut simulation_builder = super::Simulation::builder();
+    fn limit_counts_only_inputs() {
+        let mut simulation_builder =
+            super::Simulation::builder().run_log_reader(crate::SimpleEventRunLog::new());
 
         simulation_builder.with_effect("alternating", |e| {
             e.trigger_hertz(1000.0).schema(AlternatingSchemaBuilder)
         });
 
-        let inputs: Vec<_> = simulation_builder.limit(5).build().unwrap().collect();
+        let items: Vec<_> = simulation_builder.limit(5).build().unwrap().collect();
 
         assert_eq!(
-            inputs.len(),
-            3,
-            "limit should count both real and skipped attempts toward the cap"
+            items.iter().filter(|item| item.is_ok()).count(),
+            5,
+            "limit should cap real inputs"
+        );
+        assert!(
+            items.iter().any(|item| item.is_err()),
+            "skipped attempts should not count toward the cap"
         );
     }
 
-    #[derive(Debug, Default)]
-    struct RecordedMetadata(std::cell::RefCell<Vec<crate::Metadata>>);
+    #[test]
+    fn build_without_a_run_log_reader_is_an_error() {
+        let errors = super::Simulation::builder().build().unwrap_err();
 
-    impl crate::RunLogWriter for RecordedMetadata {
-        fn push_input(&self, _input: crate::Input) {}
-        fn push_output(&self, _output: crate::Output) {}
-        fn push_metadata(&self, metadata: crate::Metadata) {
-            self.0.borrow_mut().push(metadata);
-        }
-    }
-
-    fn timing_metadata(writer: &RecordedMetadata) -> Vec<serde_json::Value> {
-        writer
-            .0
-            .borrow()
-            .iter()
-            .filter(|metadata| metadata.mtype == "timing")
-            .map(|metadata| metadata.data.clone().unwrap())
-            .collect()
-    }
-
-    fn timing_keys(writer: &RecordedMetadata) -> Vec<String> {
-        timing_metadata(writer)
-            .iter()
-            .map(|data| data["key"].as_str().unwrap().to_string())
-            .collect()
-    }
-
-    fn timing_timestamps(writer: &RecordedMetadata) -> Vec<i64> {
-        timing_metadata(writer)
-            .iter()
-            .map(|data| data["timestamp"].as_i64().unwrap())
-            .collect()
-    }
-
-    fn simulation_with(writer: std::rc::Rc<RecordedMetadata>) -> super::Simulation {
-        let mut simulation_builder = super::Simulation::builder()
-            .run_log_reader(crate::SimpleEventRunLog::new())
-            .run_log_writer(writer);
-
-        simulation_builder.with_effect("alternating", |e| {
-            e.trigger_hertz(1000.0).schema(AlternatingSchemaBuilder)
-        });
-
-        simulation_builder.limit(5).build().unwrap()
+        assert!(matches!(
+            errors.as_slice(),
+            [BuildError::Simulation {
+                key: crate::SimulationKey::RunLogReader,
+                ..
+            }]
+        ));
     }
 
     #[test]
-    fn records_start_and_end_timing_when_exhausted() {
-        let writer = std::rc::Rc::new(RecordedMetadata::default());
-        let mut simulation = simulation_with(writer.clone());
+    fn standalone_logs_inputs_so_later_effects_can_read_them() {
+        use crate::RunLogReader;
 
-        assert!(timing_keys(&writer).is_empty());
-        assert_eq!(simulation.by_ref().count(), 3);
-        assert_eq!(timing_keys(&writer), ["simulation_start", "simulation_end"]);
+        let mut simulation_builder = super::Simulation::builder();
+        simulation_builder
+            .with_effect("upstream", |e| {
+                e.trigger_hertz(1.0)
+                    .limit(std::num::NonZeroU64::new(3).unwrap())
+                    .schema(AlternatingSchemaBuilder)
+            })
+            .with_effect("downstream", |e| {
+                e.trigger_effect("upstream".into())
+                    .schema(AlternatingSchemaBuilder)
+            });
 
-        let times = timing_timestamps(&writer);
-        assert!(times[0] <= times[1]);
+        let mut simulation = simulation_builder.standalone().unwrap();
+        let yielded = simulation.by_ref().flatten().count();
 
-        assert!(simulation.next().is_none());
-        drop(simulation);
-        assert_eq!(timing_keys(&writer), ["simulation_start", "simulation_end"]);
-    }
-
-    #[test]
-    fn records_end_timing_when_dropped_early() {
-        let writer = std::rc::Rc::new(RecordedMetadata::default());
-        let mut simulation = simulation_with(writer.clone());
-
-        simulation.next();
-        assert_eq!(timing_keys(&writer), ["simulation_start"]);
-
-        drop(simulation);
-        assert_eq!(timing_keys(&writer), ["simulation_start", "simulation_end"]);
-    }
-
-    #[test]
-    fn does_not_record_timing_when_never_started() {
-        let writer = std::rc::Rc::new(RecordedMetadata::default());
-        drop(simulation_with(writer.clone()));
-        assert!(timing_keys(&writer).is_empty());
+        assert!(yielded > 0);
+        assert!(simulation.run_log().last().is_some());
     }
 }

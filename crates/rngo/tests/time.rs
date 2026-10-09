@@ -11,7 +11,8 @@ fn start() -> DateTime<FixedOffset> {
 }
 
 fn offsets_in_seconds(sim: Simulation, take: usize) -> Vec<i64> {
-    sim.map(|input| (input.timestamp - start()).num_seconds())
+    sim.flatten()
+        .map(|input| (input.timestamp - start()).num_seconds())
         .take(take)
         .collect()
 }
@@ -35,7 +36,13 @@ fn simulation_respects_end_time() {
     let mut builder = fixed_window();
     builder.with_effect("events", |e| e.schema(constant().value(Value::Null)));
 
-    let offsets = offsets_in_seconds(builder.build().unwrap(), 60);
+    let offsets = offsets_in_seconds(
+        builder
+            .run_log_reader(rngo::SimpleEventRunLog::new())
+            .build()
+            .unwrap(),
+        60,
+    );
     let window_secs: i64 = 30 * 86_400;
 
     let out_of_bounds: Vec<_> = offsets
@@ -61,7 +68,13 @@ fn effect_respects_start_time() {
             .schema(constant().value(Value::Null))
     });
 
-    let offsets = offsets_in_seconds(builder.build().unwrap(), 60);
+    let offsets = offsets_in_seconds(
+        builder
+            .run_log_reader(rngo::SimpleEventRunLog::new())
+            .build()
+            .unwrap(),
+        60,
+    );
 
     // Effect start is 15 days into the 30-day window = 15 * 86_400 seconds.
     let effect_start_offset: i64 = 15 * 86_400;
@@ -101,10 +114,12 @@ fn effect_respects_end_time_via_spec() {
     let sim = Dialect::primitive()
         .parse_simulation_json(spec)
         .unwrap()
+        .run_log_reader(rngo::SimpleEventRunLog::new())
         .build()
         .unwrap();
 
     let offsets: Vec<i64> = sim
+        .flatten()
         .map(|input| (input.timestamp - start()).num_seconds())
         .collect();
 
@@ -150,10 +165,12 @@ fn effect_respects_both_start_and_end() {
     let sim = Dialect::primitive()
         .parse_simulation_json(spec)
         .unwrap()
+        .run_log_reader(rngo::SimpleEventRunLog::new())
         .build()
         .unwrap();
 
     let offsets: Vec<i64> = sim
+        .flatten()
         .map(|input| (input.timestamp - start()).num_seconds())
         .collect();
 
@@ -202,7 +219,10 @@ fn effect_start_before_simulation_start_is_error() {
             .schema(constant().value(Value::Null))
     });
 
-    let errors = builder.build().unwrap_err();
+    let errors = builder
+        .run_log_reader(rngo::SimpleEventRunLog::new())
+        .build()
+        .unwrap_err();
     let error = errors
         .iter()
         .find(|e| matches!(e, BuildError::Effect { effect, .. } if effect == "events"))
@@ -227,7 +247,10 @@ fn effect_end_after_simulation_end_is_error() {
             .schema(constant().value(Value::Null))
     });
 
-    let errors = builder.build().unwrap_err();
+    let errors = builder
+        .run_log_reader(rngo::SimpleEventRunLog::new())
+        .build()
+        .unwrap_err();
     let error = errors
         .iter()
         .find(|e| matches!(e, BuildError::Effect { effect, .. } if effect == "events"))
@@ -263,6 +286,7 @@ fn effect_bounds_outside_simulation_via_spec_are_errors() {
     let errors = Dialect::primitive()
         .parse_simulation_json(spec)
         .unwrap()
+        .run_log_reader(rngo::SimpleEventRunLog::new())
         .build()
         .unwrap_err();
 

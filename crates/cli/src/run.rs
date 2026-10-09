@@ -17,7 +17,7 @@ pub struct RunOptions<'a> {
     pub spec_path: Option<&'a Path>,
     /// Only check that the simulation builds.
     pub dry_run: bool,
-    /// Cap on total input attempts.
+    /// Cap on the number of inputs produced.
     pub limit: Option<std::num::NonZeroU64>,
     /// Wait for each input's timestamp before sending it instead of sending right away.
     pub realtime: bool,
@@ -61,7 +61,10 @@ pub fn run(base: &Path, options: RunOptions) -> Result<bool, Box<dyn Error>> {
     }
 
     if dry_run {
-        simulation_builder.build().map_err(join_errors)?;
+        simulation_builder
+            .run_log_reader(rngo::SimpleEventRunLog::new())
+            .build()
+            .map_err(join_errors)?;
         return Ok(true);
     }
 
@@ -85,20 +88,21 @@ pub fn run(base: &Path, options: RunOptions) -> Result<bool, Box<dyn Error>> {
         .build()
         .map_err(join_errors)?;
 
-    let mut simulation = simulation_builder
+    let simulation = simulation_builder
         .run_log_reader(reader.clone())
-        .run_log_writer(writer.clone())
         .build()
         .map_err(join_errors)?;
 
-    for input in &mut simulation {
-        proxy.send(&input)?;
+    for item in simulation {
+        match item {
+            Ok(input) => proxy.send(&input)?,
+            Err(skipped) => writer.push_metadata(skipped.into()),
+        }
         if stop.is_stopped() {
             break;
         }
     }
 
-    simulation.finish();
     proxy.finish();
     writer.finish();
 
@@ -1447,10 +1451,9 @@ mod tests {
 
         let sent = read_sent_log(&sent_log).len() as i64;
         let (held, _) = signal_outcome(base, "held-inputs");
-        let held = held.as_i64().unwrap();
-        assert!(held <= 1, "at most the one waiting input is held");
+        assert_eq!(held.as_i64().unwrap(), 0, "the waiting input is not logged");
         assert_eq!(
-            input_count(base) - held,
+            input_count(base),
             sent,
             "every input logged before the stop was sent"
         );
