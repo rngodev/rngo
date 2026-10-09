@@ -31,7 +31,9 @@ impl Iterator for Simulation {
             .sort_unstable_by_key(|e| e.next_offset().unwrap_or(i64::MAX));
 
         let item = self.effects.first_mut()?.next()?;
-        self.emitted += 1;
+        if item.is_ok() {
+            self.emitted += 1;
+        }
         Some(item)
     }
 }
@@ -238,7 +240,7 @@ mod tests {
     }
 
     #[test]
-    fn limit_counts_effects_and_errors_together() {
+    fn limit_counts_only_inputs() {
         let mut simulation_builder =
             super::Simulation::builder().run_log_reader(crate::SimpleEventRunLog::new());
 
@@ -249,11 +251,14 @@ mod tests {
         let items: Vec<_> = simulation_builder.limit(5).build().unwrap().collect();
 
         assert_eq!(
-            items.len(),
+            items.iter().filter(|item| item.is_ok()).count(),
             5,
-            "limit should count both real and skipped attempts toward the cap"
+            "limit should cap real inputs"
         );
-        assert_eq!(items.iter().filter(|item| item.is_ok()).count(), 3);
+        assert!(
+            items.iter().any(|item| item.is_err()),
+            "skipped attempts should not count toward the cap"
+        );
     }
 
     #[test]

@@ -1,7 +1,12 @@
+use chrono::TimeDelta;
 use rngo::build::*;
-use rngo::{Input, Metadata, RunLogWriter, Simulation, SqliteRunLog};
+use rngo::{Input, Metadata, Moment, RunLogWriter, Simulation, SqliteRunLog};
 use rusqlite::Connection;
 use tempfile::TempDir;
+
+fn short_window() -> Moment {
+    Moment::Relative(TimeDelta::seconds(-5))
+}
 
 fn log_all(simulation: Simulation, log: &impl RunLogWriter) -> Vec<Input> {
     let mut inputs = vec![];
@@ -30,7 +35,7 @@ fn reference_with_no_prior_events_is_skipped_not_logged() {
 
     let simulation = simulation_builder
         .run_log_reader(run_log.clone())
-        .limit(5)
+        .start(short_window())
         .build()
         .unwrap();
 
@@ -74,10 +79,12 @@ fn object_with_a_skipped_property_is_itself_skipped() {
         )
     });
 
-    // `.limit(5)` bounds total attempts, not real inputs - without it, an effect that always
-    // skips would keep yielding skipped attempts until the simulation's time window itself runs
-    // out, rather than stopping quickly.
-    let simulation = simulation_builder.limit(5).standalone().unwrap();
+    // `.limit` only counts real inputs, so an effect that always skips runs until the simulation's
+    // time window ends; keep the window short.
+    let simulation = simulation_builder
+        .start(short_window())
+        .standalone()
+        .unwrap();
 
     let events: Vec<_> = simulation.flatten().collect();
 
@@ -99,7 +106,10 @@ fn array_with_a_skipped_item_is_itself_skipped() {
         )
     });
 
-    let simulation = simulation_builder.limit(5).standalone().unwrap();
+    let simulation = simulation_builder
+        .start(short_window())
+        .standalone()
+        .unwrap();
 
     let events: Vec<_> = simulation.flatten().collect();
 

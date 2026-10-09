@@ -42,7 +42,7 @@ enum Commands {
         /// Check that the simulation can be built without generating or persisting anything
         #[arg(long)]
         dry_run: bool,
-        /// Cap the number of inputs a run attempts to produce
+        /// Cap the number of inputs a run produces
         #[arg(long)]
         limit: Option<std::num::NonZeroU64>,
         /// Wait for each event's timestamp before sending it instead of sending right away

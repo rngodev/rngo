@@ -73,7 +73,7 @@ fn spec() -> serde_json::Value {
     })
 }
 
-/// Runs the spec on a `SqliteRunLog` for `limit` effect attempts, returning the number of inputs
+/// Runs the spec on a `SqliteRunLog` for `limit` inputs, returning the number of inputs
 /// produced and the peak heap bytes allocated during the run (excluding setup).
 fn measure(limit: u64) -> (usize, usize) {
     let tmp = TempDir::new().unwrap();
