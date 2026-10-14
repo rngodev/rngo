@@ -1,7 +1,7 @@
 mod status;
 
 use console::style;
-use rngo::{Dialect, RunLogWriter, SignalOutcome, SqliteRunLog, StopHandle, spec};
+use rngo::{Dialect, ProbeOutcome, RunLogWriter, Signal, SqliteRunLog, StopHandle, spec};
 use status::StatusWriter;
 use std::error::Error;
 use std::path::{Path, PathBuf};
@@ -119,20 +119,22 @@ pub fn run(base: &Path, options: RunOptions) -> Result<bool, Box<dyn Error>> {
 
         for (key, outcome) in &audit_report.outcomes {
             match outcome {
-                SignalOutcome::Error { error } => {
-                    println!("{key}: error - {error}");
+                ProbeOutcome::Error { error } => println!("{key}: error - {error}"),
+                ProbeOutcome::Signals(signals) if signals.is_empty() => {
+                    println!("{key}: no signals");
                 }
-                SignalOutcome::Success { value, eval } => match eval {
-                    Some(eval) => {
-                        if eval.passed {
-                            println!("{key}: {value} (passed)");
-                        } else {
-                            let expectation = eval.expectation.clone();
-                            println!("{key}: {value} (failed - expected '{expectation}')");
+                ProbeOutcome::Signals(signals) => {
+                    println!("{key}:");
+                    for Signal { value, eval } in signals {
+                        match eval {
+                            Some(eval) if eval.passed => println!("  {value} (passed)"),
+                            Some(eval) => {
+                                println!("  {value} (failed - expected '{}')", eval.expectation)
+                            }
+                            None => println!("  {value}"),
                         }
                     }
-                    None => println!("{key}: {value}"),
-                },
+                }
             }
         }
 
@@ -235,13 +237,13 @@ fn load_spec(base: &Path) -> Result<spec::Spec, Box<dyn Error>> {
         }
     }
 
-    if !spec["signals"].is_object() {
-        spec["signals"] = serde_json::json!({});
+    if !spec["probes"].is_object() {
+        spec["probes"] = serde_json::json!({});
     }
 
-    let signals_dir = base.join(".rngo/signals");
-    if signals_dir.is_dir() {
-        let mut paths: Vec<_> = fs::read_dir(&signals_dir)?
+    let probes_dir = base.join(".rngo/probes");
+    if probes_dir.is_dir() {
+        let mut paths: Vec<_> = fs::read_dir(&probes_dir)?
             .filter_map(|e| e.ok())
             .map(|e| e.path())
             .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("yml"))
@@ -254,8 +256,8 @@ fn load_spec(base: &Path) -> Result<spec::Spec, Box<dyn Error>> {
                 .and_then(|s| s.to_str())
                 .ok_or_else(|| format!("invalid filename: {}", path.display()))?
                 .to_string();
-            let signal: serde_json::Value = serde_yaml::from_str(&fs::read_to_string(&path)?)?;
-            spec["signals"][key] = signal;
+            let probe: serde_json::Value = serde_yaml::from_str(&fs::read_to_string(&path)?)?;
+            spec["probes"][key] = probe;
         }
     }
 
@@ -311,21 +313,21 @@ mod tests {
         fs::write(path, serde_yaml::to_string(value).unwrap()).unwrap();
     }
 
-    fn signal_outcome(base: &Path, key: &str) -> (serde_json::Value, bool) {
+    fn probe_outcome(base: &Path, key: &str) -> (serde_json::Value, bool) {
         let connection =
             rusqlite::Connection::open(base.join(".rngo/runs/last/log.sqlite")).unwrap();
-        let mut statement = connection
-            .prepare("SELECT data FROM metadata WHERE type = 'signal'")
-            .unwrap();
-        let outcome = statement
-            .query_map([], |row| row.get::<_, String>(0))
-            .unwrap()
-            .map(|data| serde_json::from_str::<serde_json::Value>(&data.unwrap()).unwrap())
-            .find(|outcome| outcome["key"] == key)
-            .unwrap_or_else(|| panic!("no signal metadata found for key {key}"));
+        let (value, passed) = connection
+            .query_row(
+                "SELECT value, passed FROM signals WHERE probe = ?1",
+                [key],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<bool>>(1)?)),
+            )
+            .unwrap_or_else(|_| panic!("no signal found for probe {key}"));
 
-        let passed = outcome["eval"]["passed"].as_bool().unwrap_or(false);
-        (outcome["value"].clone(), passed)
+        (
+            serde_json::from_str(&value).unwrap(),
+            passed.unwrap_or(false),
+        )
     }
 
     #[test]
@@ -425,7 +427,7 @@ mod tests {
 
         fs::create_dir_all(base.join(".rngo/effects")).unwrap();
         fs::create_dir_all(base.join(".rngo/channels")).unwrap();
-        fs::create_dir_all(base.join(".rngo/signals")).unwrap();
+        fs::create_dir_all(base.join(".rngo/probes")).unwrap();
 
         write_yaml(
             base.join(".rngo/spec.yml"),
@@ -437,7 +439,7 @@ mod tests {
         );
 
         write_yaml(
-            base.join(".rngo/signals/has-failure-output.yml"),
+            base.join(".rngo/probes/has-failure-output.yml"),
             &json!({
                 "type": "sql",
                 "query": "SELECT COUNT(*) FROM outputs WHERE data LIKE 'command exited with%'",
@@ -469,7 +471,7 @@ mod tests {
 
         run(base, RunOptions::default()).unwrap();
 
-        let (_, passed) = signal_outcome(base, "has-failure-output");
+        let (_, passed) = probe_outcome(base, "has-failure-output");
         assert!(passed);
     }
 
@@ -480,7 +482,7 @@ mod tests {
 
         fs::create_dir_all(base.join(".rngo/effects")).unwrap();
         fs::create_dir_all(base.join(".rngo/channels")).unwrap();
-        fs::create_dir_all(base.join(".rngo/signals")).unwrap();
+        fs::create_dir_all(base.join(".rngo/probes")).unwrap();
 
         write_yaml(
             base.join(".rngo/spec.yml"),
@@ -495,7 +497,7 @@ mod tests {
         // outputs recorded should match the number of effects exactly - including the one
         // produced by the very last event, which arrives only after the subprocess is closed.
         write_yaml(
-            base.join(".rngo/signals/matches-effect-count.yml"),
+            base.join(".rngo/probes/matches-effect-count.yml"),
             &json!({
                 "type": "sql",
                 "query": "SELECT (SELECT COUNT(*) FROM inputs) - (SELECT COUNT(*) FROM outputs)",
@@ -527,7 +529,7 @@ mod tests {
 
         run(base, RunOptions::default()).unwrap();
 
-        let (value, passed) = signal_outcome(base, "matches-effect-count");
+        let (value, passed) = probe_outcome(base, "matches-effect-count");
         assert!(
             passed,
             "expected output count to match effect count, got {value}"
@@ -817,7 +819,7 @@ mod tests {
     }
 
     #[test]
-    fn signals_are_evaluated_and_written_to_run_dir() {
+    fn probes_are_evaluated_and_written_to_run_dir() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
@@ -829,7 +831,7 @@ mod tests {
                 "seed": 1,
                 "start": "2024-01-01",
                 "end": "2024-01-04",
-                "signals": {
+                "probes": {
                     "hasEvents": {
                         "type": "sql",
                         "query": "SELECT COUNT(*) FROM inputs",
@@ -859,21 +861,21 @@ mod tests {
 
         run(base, RunOptions::default()).unwrap();
 
-        let (has_events_value, has_events_passed) = signal_outcome(base, "hasEvents");
+        let (has_events_value, has_events_passed) = probe_outcome(base, "hasEvents");
         assert!(has_events_passed);
         assert!(has_events_value.as_i64().unwrap() >= 1);
 
-        let (_, too_many_passed) = signal_outcome(base, "tooMany");
+        let (_, too_many_passed) = probe_outcome(base, "tooMany");
         assert!(!too_many_passed);
     }
 
     #[test]
-    fn signals_dir_yml_files_are_merged_into_spec() {
+    fn probes_dir_yml_files_are_merged_into_spec() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
         fs::create_dir_all(base.join(".rngo/effects")).unwrap();
-        fs::create_dir_all(base.join(".rngo/signals")).unwrap();
+        fs::create_dir_all(base.join(".rngo/probes")).unwrap();
 
         write_yaml(
             base.join(".rngo/spec.yml"),
@@ -885,7 +887,7 @@ mod tests {
         );
 
         write_yaml(
-            base.join(".rngo/signals/has-events.yml"),
+            base.join(".rngo/probes/has-events.yml"),
             &json!({
                 "type": "sql",
                 "query": "SELECT COUNT(*) FROM inputs",
@@ -908,12 +910,12 @@ mod tests {
 
         run(base, RunOptions::default()).unwrap();
 
-        let (_, passed) = signal_outcome(base, "has-events");
+        let (_, passed) = probe_outcome(base, "has-events");
         assert!(passed);
     }
 
     #[test]
-    fn run_returns_false_when_a_signal_fails() {
+    fn run_returns_false_when_a_probe_fails() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
@@ -925,7 +927,7 @@ mod tests {
                 "seed": 1,
                 "start": "2024-01-01",
                 "end": "2024-01-04",
-                "signals": {
+                "probes": {
                     "tooMany": {
                         "type": "sql",
                         "query": "SELECT COUNT(*) FROM inputs",
@@ -949,11 +951,11 @@ mod tests {
         );
 
         let passed = run(base, RunOptions::default()).unwrap();
-        assert!(!passed, "run should fail when a signal's expect fails");
+        assert!(!passed, "run should fail when a probe's expect fails");
     }
 
     #[test]
-    fn run_returns_false_when_a_signal_errors() {
+    fn run_returns_false_when_a_probe_errors() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
@@ -965,12 +967,12 @@ mod tests {
                 "seed": 1,
                 "start": "2024-01-01",
                 "end": "2024-01-04",
-                "signals": {
+                "probes": {
                     "notABool": {
                         "type": "sql",
                         "query": "SELECT COUNT(*) FROM inputs",
                         // `expect` compiles fine but evaluates to a number, not a bool, so this
-                        // signal errors at evaluation time rather than failing an assertion.
+                        // probe errors at evaluation time rather than failing an assertion.
                         "expect": "result"
                     }
                 }
@@ -991,7 +993,7 @@ mod tests {
         );
 
         let passed = run(base, RunOptions::default()).unwrap();
-        assert!(!passed, "run should fail when a signal errors");
+        assert!(!passed, "run should fail when a probe errors");
     }
 
     #[test]
@@ -1001,7 +1003,7 @@ mod tests {
 
         fs::create_dir_all(base.join(".rngo/effects")).unwrap();
         fs::create_dir_all(base.join(".rngo/channels")).unwrap();
-        fs::create_dir_all(base.join(".rngo/signals")).unwrap();
+        fs::create_dir_all(base.join(".rngo/probes")).unwrap();
 
         write_yaml(
             base.join(".rngo/spec.yml"),
@@ -1035,7 +1037,7 @@ mod tests {
         );
 
         write_yaml(
-            base.join(".rngo/signals/tail-outputs.yml"),
+            base.join(".rngo/probes/tail-outputs.yml"),
             &json!({
                 "type": "sql",
                 "query": "SELECT COUNT(*) FROM outputs WHERE input_id IS NULL AND channel = 'tail'",
@@ -1045,7 +1047,7 @@ mod tests {
 
         run(base, RunOptions::default()).unwrap();
 
-        let (value, passed) = signal_outcome(base, "tail-outputs");
+        let (value, passed) = probe_outcome(base, "tail-outputs");
         assert!(
             passed,
             "expected 2 outputs from the effect-less channel, got {value}"
@@ -1259,12 +1261,12 @@ mod tests {
     }
 
     #[test]
-    fn signals_can_read_simulation_timing() {
+    fn probes_can_read_simulation_timing() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
         fs::create_dir_all(base.join(".rngo/effects")).unwrap();
-        fs::create_dir_all(base.join(".rngo/signals")).unwrap();
+        fs::create_dir_all(base.join(".rngo/probes")).unwrap();
 
         write_yaml(
             base.join(".rngo/spec.yml"),
@@ -1284,7 +1286,7 @@ mod tests {
         );
 
         write_yaml(
-            base.join(".rngo/signals/simulation-times.yml"),
+            base.join(".rngo/probes/simulation-times.yml"),
             &json!({
                 "type": "sql",
                 "query": "SELECT COUNT(*) FROM metadata WHERE type = 'timing' AND data ->> 'key' IN ('simulation_start', 'simulation_end')",
@@ -1294,17 +1296,17 @@ mod tests {
 
         assert!(run(base, RunOptions::default()).unwrap());
 
-        let (_, passed) = signal_outcome(base, "simulation-times");
+        let (_, passed) = probe_outcome(base, "simulation-times");
         assert!(
             passed,
-            "signals should be able to read the simulation start and end times"
+            "probes should be able to read the simulation start and end times"
         );
     }
 
     fn write_timed_spec(base: &Path, end: &str, sent_log: &Path) {
         fs::create_dir_all(base.join(".rngo/effects")).unwrap();
         fs::create_dir_all(base.join(".rngo/channels")).unwrap();
-        fs::create_dir_all(base.join(".rngo/signals")).unwrap();
+        fs::create_dir_all(base.join(".rngo/probes")).unwrap();
 
         write_yaml(
             base.join(".rngo/spec.yml"),
@@ -1333,7 +1335,7 @@ mod tests {
         );
 
         write_yaml(
-            base.join(".rngo/signals/held-inputs.yml"),
+            base.join(".rngo/probes/held-inputs.yml"),
             &json!({
                 "type": "sql",
                 "query": "SELECT COUNT(*) FROM inputs WHERE timestamp > (SELECT data ->> 'timestamp' FROM metadata WHERE type = 'timing' AND data ->> 'key' = 'simulation_end')"
@@ -1450,7 +1452,7 @@ mod tests {
         assert!(started.elapsed() < std::time::Duration::from_secs(5));
 
         let sent = read_sent_log(&sent_log).len() as i64;
-        let (held, _) = signal_outcome(base, "held-inputs");
+        let (held, _) = probe_outcome(base, "held-inputs");
         assert_eq!(held.as_i64().unwrap(), 0, "the waiting input is not logged");
         assert_eq!(
             input_count(base),

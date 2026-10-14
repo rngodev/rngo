@@ -8,7 +8,7 @@ mod parse;
 mod proxy;
 pub mod spec;
 
-pub use audit::signal::{self, Signal, SignalBuilder, SignalOutcome};
+pub use audit::probe::{self, Probe, ProbeBuilder, ProbeOutcome, Signal, SignalEval};
 pub use audit::{Audit, AuditBuilder, AuditReport};
 pub use build::{BuildError, EffectKey, SchemaEdge, SimulationKey};
 pub use effect::simulation::{Simulation, SimulationBuilder, StandaloneSimulation};

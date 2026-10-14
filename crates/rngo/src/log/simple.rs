@@ -1,3 +1,4 @@
+use crate::audit::probe::Signal;
 use crate::log::pool::InputPool;
 use crate::log::{Metadata, RunLogReader, RunLogWriter};
 use crate::{Input, Output};
@@ -10,6 +11,7 @@ pub struct SimpleEventRunLog {
     inputs: RefCell<Vec<Rc<Input>>>,
     outputs: RefCell<Vec<Output>>,
     metadata: RefCell<Vec<Metadata>>,
+    signals: RefCell<Vec<(String, Signal)>>,
     pool: RefCell<InputPool<Rc<Input>>>,
 }
 
@@ -70,6 +72,10 @@ impl RunLogWriter for SimpleEventRunLog {
 
     fn push_metadata(&self, metadata: Metadata) {
         self.metadata.borrow_mut().push(metadata);
+    }
+
+    fn push_signal(&self, probe: &str, signal: Signal) {
+        self.signals.borrow_mut().push((probe.to_string(), signal));
     }
 }
 

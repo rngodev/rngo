@@ -112,18 +112,18 @@ Finally, we can build an `Audit` and set some expectations for the inputs and ou
 
 ```rust
 let audit = rngo::Audit::builder()
-    .with_signal("some-inputs",
-        sql_signal()
+    .with_probe("some-inputs",
+        sql_probe()
             .query("SELECT count(*) FROM inputs;")
             .expect("result > 0")
     )
-    .with_signal("no-psql-errors",
-        sql_signal()
+    .with_probe("no-psql-errors",
+        sql_probe()
             .query("SELECT count(*) FROM outputs WHERE channel = 'db'")
             .expect("result == 0")
     )
-    .with_signal("minimal-log-errors",
-        sql_signal()
+    .with_probe("minimal-log-errors",
+        sql_probe()
             .query("SELECT count(*) FROM outputs WHERE channel = 'log' AND data LIKE 'ERROR%'")
             .expect("result < 20")
     )
@@ -207,7 +207,7 @@ You can also define the above in JSON (or YAML) spec - it would look like this:
             "target": { "type": "stream", "command": "tail -F logs/app.log" }
         }
     },
-    "signals": {
+    "probes": {
         "some-inputs": {
             "type": "sql",
             "query": "SELECT count(*) FROM inputs;",

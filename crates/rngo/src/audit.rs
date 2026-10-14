@@ -1,27 +1,27 @@
 use crate::build::BuildError;
 use crate::log::Metadata;
-pub mod signal;
+pub mod probe;
 
 use crate::{RunLogReader, RunLogWriter};
 use indexmap::IndexMap;
-use signal::{Signal, SignalBuilder, SignalOutcome};
+use probe::{Probe, ProbeBuilder, ProbeOutcome, Signal};
 use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct Audit {
-    signals: IndexMap<String, Box<dyn Signal>>,
+    probes: IndexMap<String, Box<dyn Probe>>,
     run_log_reader: Rc<dyn RunLogReader>,
     run_log_writer: Rc<dyn RunLogWriter>,
 }
 
 impl Audit {
     pub(crate) fn new(
-        signals: IndexMap<String, Box<dyn Signal>>,
+        probes: IndexMap<String, Box<dyn Probe>>,
         run_log_reader: Rc<dyn RunLogReader>,
         run_log_writer: Rc<dyn RunLogWriter>,
     ) -> Self {
         Audit {
-            signals,
+            probes,
             run_log_reader,
             run_log_writer,
         }
@@ -32,26 +32,30 @@ impl Audit {
     }
 
     pub fn run(&self) -> AuditReport {
-        let outcomes: IndexMap<String, SignalOutcome> = self
-            .signals
+        let outcomes: IndexMap<String, ProbeOutcome> = self
+            .probes
             .iter()
-            .map(|(key, signal)| (key.clone(), signal.evaluate(self.run_log_reader.as_ref())))
+            .map(|(key, probe)| (key.clone(), probe.evaluate(self.run_log_reader.as_ref())))
             .collect();
 
         for (key, outcome) in &outcomes {
-            let mut data = serde_json::to_value(outcome).unwrap();
-            if let serde_json::Value::Object(map) = &mut data {
-                map.insert("key".to_string(), serde_json::Value::String(key.clone()));
+            match outcome {
+                ProbeOutcome::Signals(signals) => {
+                    for signal in signals {
+                        self.run_log_writer.push_signal(key, signal.clone());
+                    }
+                }
+                ProbeOutcome::Error { error } => {
+                    self.run_log_writer.push_metadata(Metadata {
+                        mtype: "probe_error".to_string(),
+                        input_id: None,
+                        output_id: None,
+                        data: Some(serde_json::json!({ "key": key, "error": error })),
+                        segment: None,
+                        timestamp: None,
+                    });
+                }
             }
-
-            self.run_log_writer.push_metadata(Metadata {
-                mtype: "signal".to_string(),
-                input_id: None,
-                output_id: None,
-                data: Some(data),
-                segment: None,
-                timestamp: None,
-            });
         }
 
         AuditReport { outcomes }
@@ -59,7 +63,7 @@ impl Audit {
 }
 
 pub struct AuditBuilder {
-    signal_builders: Vec<(String, Box<dyn SignalBuilder>)>,
+    probe_builders: Vec<(String, Box<dyn ProbeBuilder>)>,
     run_log_reader: Option<Rc<dyn RunLogReader>>,
     run_log_writer: Option<Rc<dyn RunLogWriter>>,
 }
@@ -67,27 +71,27 @@ pub struct AuditBuilder {
 impl AuditBuilder {
     pub fn new() -> Self {
         AuditBuilder {
-            signal_builders: vec![],
+            probe_builders: vec![],
             run_log_reader: None,
             run_log_writer: None,
         }
     }
 
-    pub fn with_signal(
+    pub fn with_probe(
         mut self,
         key: impl Into<String>,
-        builder: impl SignalBuilder + 'static,
+        builder: impl ProbeBuilder + 'static,
     ) -> Self {
-        self.set_signal(key, builder);
+        self.set_probe(key, builder);
         self
     }
 
-    pub fn set_signal(
+    pub fn set_probe(
         &mut self,
         key: impl Into<String>,
-        builder: impl SignalBuilder + 'static,
+        builder: impl ProbeBuilder + 'static,
     ) -> &mut Self {
-        self.signal_builders.push((key.into(), Box::new(builder)));
+        self.probe_builders.push((key.into(), Box::new(builder)));
         self
     }
 
@@ -111,12 +115,12 @@ impl AuditBuilder {
 
     pub fn build(self) -> Result<Audit, Vec<BuildError>> {
         let mut errors = vec![];
-        let mut signals = IndexMap::new();
+        let mut probes = IndexMap::new();
 
-        for (key, builder) in self.signal_builders {
+        for (key, builder) in self.probe_builders {
             match builder.build(&key) {
-                Ok(signal) => {
-                    signals.insert(key, signal);
+                Ok(probe) => {
+                    probes.insert(key, probe);
                 }
                 Err(mut e) => errors.append(&mut e),
             }
@@ -124,7 +128,7 @@ impl AuditBuilder {
 
         // Unlike `SimulationBuilder`, which writes the run it produces to whatever run log it's
         // given (or a throwaway default), an `Audit` only ever reads and annotates a run log some
-        // other process already populated - defaulting here would silently evaluate every signal
+        // other process already populated - defaulting here would silently evaluate every probe
         // against an empty log instead of surfacing the missing wiring.
         let run_log = match (self.run_log_reader, self.run_log_writer) {
             (Some(reader), Some(writer)) => Some((reader, writer)),
@@ -141,7 +145,7 @@ impl AuditBuilder {
         }
 
         let (run_log_reader, run_log_writer) = run_log.expect("checked above");
-        Ok(Audit::new(signals, run_log_reader, run_log_writer))
+        Ok(Audit::new(probes, run_log_reader, run_log_writer))
     }
 }
 
@@ -153,61 +157,41 @@ impl Default for AuditBuilder {
 
 #[derive(Debug)]
 pub struct AuditReport {
-    pub outcomes: IndexMap<String, SignalOutcome>,
+    pub outcomes: IndexMap<String, ProbeOutcome>,
 }
 
 impl AuditReport {
     pub fn passed(&self) -> bool {
-        self.outcomes
-            .iter()
-            .filter(|(_, outcome)| match outcome {
-                SignalOutcome::Success { eval, .. } => {
-                    !eval.as_ref().map(|e| e.passed).unwrap_or(true)
-                }
-                SignalOutcome::Error { .. } => true,
-            })
-            .count()
-            == 0
+        self.fail_count() == 0 && self.error_count() == 0
+    }
+
+    fn signals(&self) -> impl Iterator<Item = &Signal> {
+        self.outcomes.values().flat_map(|outcome| match outcome {
+            ProbeOutcome::Signals(signals) => signals.as_slice(),
+            ProbeOutcome::Error { .. } => &[],
+        })
     }
 
     pub fn eval_count(&self) -> usize {
-        self.outcomes
-            .iter()
-            .filter(|(_, outcome)| match outcome {
-                SignalOutcome::Success { eval, .. } => eval.is_some(),
-                _ => false,
-            })
+        self.signals()
+            .filter(|signal| signal.eval.is_some())
             .count()
     }
 
     pub fn pass_count(&self) -> usize {
-        self.outcomes
-            .iter()
-            .filter(|(_, outcome)| match outcome {
-                SignalOutcome::Success { eval, .. } => {
-                    eval.as_ref().map(|e| e.passed).unwrap_or(false)
-                }
-                _ => false,
-            })
+        self.signals()
+            .filter(|signal| signal.eval.is_some() && signal.passed())
             .count()
     }
 
     pub fn fail_count(&self) -> usize {
-        self.outcomes
-            .iter()
-            .filter(|(_, outcome)| match outcome {
-                SignalOutcome::Success { eval, .. } => {
-                    !eval.as_ref().map(|e| e.passed).unwrap_or(true)
-                }
-                _ => false,
-            })
-            .count()
+        self.signals().filter(|signal| !signal.passed()).count()
     }
 
     pub fn error_count(&self) -> usize {
         self.outcomes
-            .iter()
-            .filter(|(_, outcome)| matches!(outcome, SignalOutcome::Error { .. }))
+            .values()
+            .filter(|outcome| matches!(outcome, ProbeOutcome::Error { .. }))
             .count()
     }
 }
@@ -216,15 +200,15 @@ impl AuditReport {
 mod tests {
     use super::*;
     use crate::{Input, RunLogReader, RunLogWriter};
-    use signal::SignalEval;
+    use probe::{Signal, SignalEval};
     use std::cell::RefCell;
     use std::rc::Rc;
 
     #[derive(Debug)]
-    struct MockSignal(SignalOutcome);
+    struct MockProbe(ProbeOutcome);
 
-    impl Signal for MockSignal {
-        fn evaluate(&self, _run_log: &dyn RunLogReader) -> SignalOutcome {
+    impl Probe for MockProbe {
+        fn evaluate(&self, _run_log: &dyn RunLogReader) -> ProbeOutcome {
             self.0.clone()
         }
     }
@@ -235,6 +219,7 @@ mod tests {
     #[derive(Debug, Default)]
     struct MockRunLog {
         metadata: RefCell<Vec<Metadata>>,
+        signals: RefCell<Vec<(String, Signal)>>,
     }
 
     impl RunLogReader for MockRunLog {
@@ -276,32 +261,40 @@ mod tests {
         fn push_metadata(&self, metadata: Metadata) {
             self.metadata.borrow_mut().push(metadata);
         }
+
+        fn push_signal(&self, probe: &str, signal: Signal) {
+            self.signals.borrow_mut().push((probe.to_string(), signal));
+        }
     }
 
-    fn success(passed: bool) -> SignalOutcome {
-        SignalOutcome::Success {
+    fn success(passed: bool) -> ProbeOutcome {
+        ProbeOutcome::Signals(vec![Signal {
             value: serde_json::json!(1),
             eval: Some(SignalEval {
                 expectation: "result == 1".to_string(),
                 passed,
             }),
-        }
+        }])
     }
 
-    fn success_without_expect() -> SignalOutcome {
-        SignalOutcome::Success {
+    fn success_without_expect() -> ProbeOutcome {
+        ProbeOutcome::Signals(vec![Signal {
             value: serde_json::json!(1),
             eval: None,
-        }
+        }])
     }
 
-    fn error() -> SignalOutcome {
-        SignalOutcome::Error {
+    fn no_signals() -> ProbeOutcome {
+        ProbeOutcome::Signals(vec![])
+    }
+
+    fn error() -> ProbeOutcome {
+        ProbeOutcome::Error {
             error: "boom".to_string(),
         }
     }
 
-    fn report(outcomes: Vec<(&str, SignalOutcome)>) -> AuditReport {
+    fn report(outcomes: Vec<(&str, ProbeOutcome)>) -> AuditReport {
         AuditReport {
             outcomes: outcomes
                 .into_iter()
@@ -311,13 +304,13 @@ mod tests {
     }
 
     #[test]
-    fn run_evaluates_every_signal_and_preserves_key_order() {
-        let mut signals: IndexMap<String, Box<dyn Signal>> = IndexMap::new();
-        signals.insert("b".to_string(), Box::new(MockSignal(success(true))));
-        signals.insert("a".to_string(), Box::new(MockSignal(success(false))));
+    fn run_evaluates_every_probe_and_preserves_key_order() {
+        let mut probes: IndexMap<String, Box<dyn Probe>> = IndexMap::new();
+        probes.insert("b".to_string(), Box::new(MockProbe(success(true))));
+        probes.insert("a".to_string(), Box::new(MockProbe(success(false))));
 
         let run_log = Rc::new(MockRunLog::default());
-        let audit = Audit::new(signals, run_log.clone(), run_log);
+        let audit = Audit::new(probes, run_log.clone(), run_log);
 
         let audit_report = audit.run();
 
@@ -326,55 +319,54 @@ mod tests {
     }
 
     #[test]
-    fn run_writes_one_metadata_row_per_signal_with_its_key() {
-        let mut signals: IndexMap<String, Box<dyn Signal>> = IndexMap::new();
-        signals.insert(
-            "has-events".to_string(),
-            Box::new(MockSignal(success(true))),
-        );
-        signals.insert("errored".to_string(), Box::new(MockSignal(error())));
+    fn run_writes_each_signal_under_its_probe_key() {
+        let mut probes: IndexMap<String, Box<dyn Probe>> = IndexMap::new();
+        probes.insert("has-events".to_string(), Box::new(MockProbe(success(true))));
+        probes.insert("silent".to_string(), Box::new(MockProbe(no_signals())));
 
         let run_log = Rc::new(MockRunLog::default());
-        let audit = Audit::new(signals, run_log.clone(), run_log.clone());
+        let audit = Audit::new(probes, run_log.clone(), run_log.clone());
+
+        audit.run();
+
+        let written = run_log.signals.borrow();
+        assert_eq!(written.len(), 1);
+        assert_eq!(written[0].0, "has-events");
+        assert_eq!(written[0].1.value, serde_json::json!(1));
+        assert!(run_log.metadata.borrow().is_empty());
+    }
+
+    #[test]
+    fn run_writes_probe_errors_as_metadata_with_the_probe_key() {
+        let mut probes: IndexMap<String, Box<dyn Probe>> = IndexMap::new();
+        probes.insert("errored".to_string(), Box::new(MockProbe(error())));
+
+        let run_log = Rc::new(MockRunLog::default());
+        let audit = Audit::new(probes, run_log.clone(), run_log.clone());
 
         audit.run();
 
         let written = run_log.metadata.borrow();
-        assert_eq!(written.len(), 2);
-
-        assert_eq!(written[0].mtype, "signal");
-        assert_eq!(written[0].input_id, None);
-        assert_eq!(written[0].output_id, None);
+        assert_eq!(written.len(), 1);
+        assert_eq!(written[0].mtype, "probe_error");
         assert_eq!(
             written[0].data.as_ref().unwrap()["key"],
-            serde_json::json!("has-events")
-        );
-        assert_eq!(
-            written[0].data.as_ref().unwrap()["status"],
-            serde_json::json!("success")
-        );
-
-        assert_eq!(written[1].mtype, "signal");
-        assert_eq!(
-            written[1].data.as_ref().unwrap()["key"],
             serde_json::json!("errored")
         );
         assert_eq!(
-            written[1].data.as_ref().unwrap()["status"],
-            serde_json::json!("error")
+            written[0].data.as_ref().unwrap()["error"],
+            serde_json::json!("boom")
         );
+        assert!(run_log.signals.borrow().is_empty());
     }
 
     #[test]
-    fn builder_wires_signal_builders_into_a_runnable_audit() {
-        use crate::build::sql_signal;
+    fn builder_wires_probe_builders_into_a_runnable_audit() {
+        use crate::build::sql_probe;
 
         let run_log = Rc::new(MockRunLog::default());
         let audit = Audit::builder()
-            .with_signal(
-                "check",
-                sql_signal().query("SELECT 1").expect("result == 1"),
-            )
+            .with_probe("check", sql_probe().query("SELECT 1").expect("result == 1"))
             .run_log(run_log)
             .build()
             .unwrap();
@@ -386,10 +378,10 @@ mod tests {
 
     #[test]
     fn builder_without_a_run_log_is_an_error() {
-        use crate::build::sql_signal;
+        use crate::build::sql_probe;
 
         let result = Audit::builder()
-            .with_signal("check", sql_signal().query("SELECT 1"))
+            .with_probe("check", sql_probe().query("SELECT 1"))
             .build();
 
         let errors = result.unwrap_err();
@@ -397,13 +389,13 @@ mod tests {
     }
 
     #[test]
-    fn builder_collects_errors_from_every_failing_signal_builder() {
-        use crate::build::sql_signal;
+    fn builder_collects_errors_from_every_failing_probe_builder() {
+        use crate::build::sql_probe;
 
         let run_log = Rc::new(MockRunLog::default());
         let result = Audit::builder()
-            .with_signal("no-query", sql_signal())
-            .with_signal("also-no-query", sql_signal())
+            .with_probe("no-query", sql_probe())
+            .with_probe("also-no-query", sql_probe())
             .run_log(run_log)
             .build();
 
@@ -418,13 +410,21 @@ mod tests {
     }
 
     #[test]
+    fn a_probe_that_produces_no_signals_passes() {
+        let report = report(vec![("silent", no_signals())]);
+        assert!(report.passed());
+        assert_eq!(report.eval_count(), 0);
+        assert_eq!(report.error_count(), 0);
+    }
+
+    #[test]
     fn passed_is_false_when_any_eval_fails() {
         let report = report(vec![("a", success(true)), ("b", success(false))]);
         assert!(!report.passed());
     }
 
     #[test]
-    fn passed_is_false_when_any_signal_errors() {
+    fn passed_is_false_when_any_probe_errors() {
         let report = report(vec![("a", success(true)), ("b", error())]);
         assert!(!report.passed());
     }

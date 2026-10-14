@@ -1,7 +1,7 @@
 use chrono::{DateTime, FixedOffset, TimeDelta, Utc};
 use console::{Term, style};
 use rngo::spec::Spec;
-use rngo::{Input, Metadata, Output, RunLogWriter};
+use rngo::{Input, Metadata, Output, RunLogWriter, Signal};
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
@@ -181,6 +181,11 @@ impl RunLogWriter for StatusWriter {
     fn push_metadata(&self, metadata: Metadata) {
         self.render(false);
         self.child.push_metadata(metadata);
+    }
+
+    fn push_signal(&self, probe: &str, signal: Signal) {
+        self.render(false);
+        self.child.push_signal(probe, signal);
     }
 
     fn flush(&self) {

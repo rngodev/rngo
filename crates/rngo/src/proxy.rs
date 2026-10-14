@@ -311,6 +311,7 @@ mod tests {
         fn push_metadata(&self, metadata: Metadata) {
             self.metadata.borrow_mut().push(metadata);
         }
+        fn push_signal(&self, _probe: &str, _signal: crate::audit::probe::Signal) {}
     }
 
     #[derive(Debug)]

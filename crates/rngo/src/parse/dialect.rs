@@ -1,8 +1,8 @@
 use super::format::FormatParser;
+use super::probe::ProbeParser;
 use super::schema::{SchemaParseVisitor, SchemaParser};
-use super::signal::SignalParser;
-use crate::audit::signal::Signal;
-use crate::audit::{Audit, AuditBuilder, signal};
+use crate::audit::probe::Probe;
+use crate::audit::{Audit, AuditBuilder, probe};
 use crate::effect::schema::custom::CustomParser;
 use crate::effect::simulation::{Simulation, SimulationBuilder};
 use crate::effect::{Effect, schema};
@@ -19,7 +19,7 @@ pub struct Dialect {
     schema_parsers: Rc<Vec<Box<dyn SchemaParser>>>,
     format_parsers: Rc<Vec<Box<dyn FormatParser>>>,
     channel_target_parsers: Rc<Vec<Box<dyn ChannelTargetParser>>>,
-    signal_parsers: Rc<Vec<Box<dyn SignalParser>>>,
+    probe_parsers: Rc<Vec<Box<dyn ProbeParser>>>,
 }
 
 impl Dialect {
@@ -27,13 +27,13 @@ impl Dialect {
         schema_parsers: Vec<Box<dyn SchemaParser>>,
         format_parsers: Vec<Box<dyn FormatParser>>,
         channel_target_parsers: Vec<Box<dyn ChannelTargetParser>>,
-        signal_parsers: Vec<Box<dyn SignalParser>>,
+        probe_parsers: Vec<Box<dyn ProbeParser>>,
     ) -> Self {
         Dialect {
             schema_parsers: Rc::new(schema_parsers),
             format_parsers: Rc::new(format_parsers),
             channel_target_parsers: Rc::new(channel_target_parsers),
-            signal_parsers: Rc::new(signal_parsers),
+            probe_parsers: Rc::new(probe_parsers),
         }
     }
 
@@ -58,7 +58,7 @@ impl Dialect {
                 Box::new(target::Exec::parser()),
                 Box::new(target::Stream::parser()),
             ],
-            vec![Box::new(signal::SqlSignal::parser())],
+            vec![Box::new(probe::SqlProbe::parser())],
         )
     }
 
@@ -241,10 +241,10 @@ impl Dialect {
         let mut errors = vec![];
         let mut audit_builder = Audit::builder();
 
-        for (key, signal) in &spec.signals {
-            match self.parse_signal(key, signal) {
+        for (key, probe) in &spec.probes {
+            match self.parse_probe(key, probe) {
                 Ok(built) => {
-                    audit_builder.set_signal(key.clone(), built);
+                    audit_builder.set_probe(key.clone(), built);
                 }
                 Err(mut e) => errors.append(&mut e),
             }
@@ -257,26 +257,26 @@ impl Dialect {
         }
     }
 
-    fn parse_signal(
+    fn parse_probe(
         &self,
         key: &str,
-        signal: &spec::Signal,
-    ) -> Result<Box<dyn Signal>, Vec<ParseError>> {
+        probe: &spec::Probe,
+    ) -> Result<Box<dyn Probe>, Vec<ParseError>> {
         let matching: Vec<_> = self
-            .signal_parsers
+            .probe_parsers
             .iter()
-            .filter(|p| signal.stype.as_deref() == Some(p.key()))
+            .filter(|p| probe.stype.as_deref() == Some(p.key()))
             .collect();
 
         match matching.as_slice() {
-            [parser] => parser.parse(key, signal),
+            [parser] => parser.parse(key, probe),
             [] => Err(vec![ParseError::SchemaError {
                 path: None,
-                message: "unknown signal type".to_string(),
+                message: "unknown probe type".to_string(),
             }]),
             _ => Err(vec![ParseError::SchemaError {
                 path: None,
-                message: format!("{} signal parsers matched", matching.len()),
+                message: format!("{} probe parsers matched", matching.len()),
             }]),
         }
     }

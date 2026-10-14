@@ -3,6 +3,7 @@ mod simple;
 mod sqlite;
 
 use crate::Output;
+use crate::audit::probe::Signal;
 use crate::effect::Input;
 use chrono::{DateTime, FixedOffset};
 use rand_pcg::Pcg32;
@@ -16,6 +17,8 @@ pub trait RunLogWriter: std::fmt::Debug {
     fn push_input(&self, input: Input);
     fn push_output(&self, output: Output);
     fn push_metadata(&self, metadata: Metadata);
+    /// Records a signal produced by the probe named `probe`.
+    fn push_signal(&self, probe: &str, signal: Signal);
     /// Persists any buffered writes; a no-op for writers that don't buffer.
     fn flush(&self) {}
 }

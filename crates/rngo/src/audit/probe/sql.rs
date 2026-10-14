@@ -1,26 +1,26 @@
-use super::{Signal, SignalBuilder, SignalOutcome};
+use super::{Probe, ProbeBuilder, ProbeOutcome};
 use crate::RunLogReader;
-use crate::audit::signal::{CelExpectation, SignalEval};
+use crate::audit::probe::{CelExpectation, Signal, SignalEval};
 use crate::build::BuildError;
 use crate::cel::json_to_cel;
-use crate::parse::SignalParser;
+use crate::parse::ProbeParser;
 use crate::spec::{self, ParseError};
 use cel::{Context, Program};
 
 #[derive(Debug)]
-pub struct SqlSignal {
+pub struct SqlProbe {
     key: String,
     query: String,
     expectation: Option<super::CelExpectation>,
 }
 
-impl SqlSignal {
-    pub fn parser() -> SqlSignalParser {
-        SqlSignalParser {}
+impl SqlProbe {
+    pub fn parser() -> SqlProbeParser {
+        SqlProbeParser {}
     }
 
-    pub fn builder() -> SqlSignalBuilder {
-        SqlSignalBuilder::default()
+    pub fn builder() -> SqlProbeBuilder {
+        SqlProbeBuilder::default()
     }
 }
 
@@ -34,8 +34,8 @@ fn compile_expectation(source: &str) -> Result<CelExpectation, String> {
     })
 }
 
-impl Signal for SqlSignal {
-    fn evaluate(&self, run_log: &dyn RunLogReader) -> SignalOutcome {
+impl Probe for SqlProbe {
+    fn evaluate(&self, run_log: &dyn RunLogReader) -> ProbeOutcome {
         let value = run_log.query(&self.query);
         evaluate_expect(&self.key, self.expectation.as_ref(), value)
     }
@@ -45,15 +45,15 @@ fn evaluate_expect(
     key: &str,
     expectation: Option<&CelExpectation>,
     value: Option<serde_json::Value>,
-) -> SignalOutcome {
+) -> ProbeOutcome {
     let Some(value) = value else {
-        return SignalOutcome::Error {
-            error: format!("signal `{key}`: this run log does not support evaluating signals"),
+        return ProbeOutcome::Error {
+            error: format!("probe `{key}`: this run log does not support evaluating probes"),
         };
     };
 
     let Some(expectation) = expectation else {
-        return SignalOutcome::Success { value, eval: None };
+        return ProbeOutcome::Signals(vec![Signal { value, eval: None }]);
     };
 
     let mut ctx = Context::default();
@@ -62,8 +62,8 @@ fn evaluate_expect(
     let result = match expectation.program.execute(&ctx) {
         Ok(r) => r,
         Err(e) => {
-            return SignalOutcome::Error {
-                error: format!("signal `{key}`: expect expression failed to evaluate: {e}"),
+            return ProbeOutcome::Error {
+                error: format!("probe `{key}`: expect expression failed to evaluate: {e}"),
             };
         }
     };
@@ -71,61 +71,61 @@ fn evaluate_expect(
     let passed = match result {
         cel::Value::Bool(b) => b,
         other => {
-            return SignalOutcome::Error {
+            return ProbeOutcome::Error {
                 error: format!(
-                    "signal `{key}`: expect expression must evaluate to a bool, got {other:?}"
+                    "probe `{key}`: expect expression must evaluate to a bool, got {other:?}"
                 ),
             };
         }
     };
 
-    SignalOutcome::Success {
+    ProbeOutcome::Signals(vec![Signal {
         value,
         eval: Some(SignalEval {
             expectation: expectation.source.clone(),
             passed,
         }),
-    }
+    }])
 }
 
-pub struct SqlSignalParser;
+pub struct SqlProbeParser;
 
-impl SignalParser for SqlSignalParser {
+impl ProbeParser for SqlProbeParser {
     fn key(&self) -> &str {
         "sql"
     }
 
-    fn parse(&self, key: &str, signal: &spec::Signal) -> Result<Box<dyn Signal>, Vec<ParseError>> {
-        let query = match signal.fields.get("query") {
+    fn parse(&self, key: &str, probe: &spec::Probe) -> Result<Box<dyn Probe>, Vec<ParseError>> {
+        let query = match probe.fields.get("query") {
             Some(value) => match value.as_str() {
                 Some(query) => query.to_string(),
                 None => {
                     return Err(vec![ParseError::SchemaError {
-                        path: Some(vec!["signals".into(), key.into(), "query".into()]),
+                        path: Some(vec!["probes".into(), key.into(), "query".into()]),
                         message: "query must be a string".into(),
                     }]);
                 }
             },
             None => {
                 return Err(vec![ParseError::SchemaError {
-                    path: Some(vec!["signals".into(), key.into(), "query".into()]),
+                    path: Some(vec!["probes".into(), key.into(), "query".into()]),
                     message: "query is required".into(),
                 }]);
             }
         };
 
-        let expectation = match signal.fields.get("expect") {
+        let expectation = match probe.fields.get("expect") {
             Some(value) => {
                 let Some(source) = value.as_str() else {
                     return Err(vec![ParseError::SchemaError {
-                        path: Some(vec!["signals".into(), key.into(), "expect".into()]),
+                        path: Some(vec!["probes".into(), key.into(), "expect".into()]),
                         message: "expect must be a string".into(),
                     }]);
                 };
 
                 let expectation = compile_expectation(source).map_err(|message| {
                     vec![ParseError::SchemaError {
-                        path: Some(vec!["signals".into(), key.into(), "expect".into()]),
+                        path: Some(vec!["probes".into(), key.into(), "expect".into()]),
                         message,
                     }]
                 })?;
@@ -135,7 +135,7 @@ impl SignalParser for SqlSignalParser {
             None => None,
         };
 
-        Ok(Box::new(SqlSignal {
+        Ok(Box::new(SqlProbe {
             key: key.to_string(),
             query,
             expectation,
@@ -144,12 +144,12 @@ impl SignalParser for SqlSignalParser {
 }
 
 #[derive(Debug, Default)]
-pub struct SqlSignalBuilder {
+pub struct SqlProbeBuilder {
     query: Option<String>,
     expect: Option<String>,
 }
 
-impl SqlSignalBuilder {
+impl SqlProbeBuilder {
     pub fn query(mut self, query: impl Into<String>) -> Self {
         self.set_query(query);
         self
@@ -171,26 +171,26 @@ impl SqlSignalBuilder {
     }
 }
 
-impl SignalBuilder for SqlSignalBuilder {
-    fn build(self: Box<Self>, key: &str) -> Result<Box<dyn Signal>, Vec<BuildError>> {
+impl ProbeBuilder for SqlProbeBuilder {
+    fn build(self: Box<Self>, key: &str) -> Result<Box<dyn Probe>, Vec<BuildError>> {
         let Some(query) = self.query else {
-            return Err(vec![BuildError::Signal {
-                signal: key.to_string(),
+            return Err(vec![BuildError::Probe {
+                probe: key.to_string(),
                 message: "query is required".into(),
             }]);
         };
 
         let expectation = match self.expect {
             Some(source) => Some(compile_expectation(&source).map_err(|message| {
-                vec![BuildError::Signal {
-                    signal: key.to_string(),
+                vec![BuildError::Probe {
+                    probe: key.to_string(),
                     message,
                 }]
             })?),
             None => None,
         };
 
-        Ok(Box::new(SqlSignal {
+        Ok(Box::new(SqlProbe {
             key: key.to_string(),
             query,
             expectation,
@@ -202,8 +202,18 @@ impl SignalBuilder for SqlSignalBuilder {
 mod tests {
     use super::*;
 
-    fn spec_signal(fields: serde_json::Value) -> spec::Signal {
+    fn spec_probe(fields: serde_json::Value) -> spec::Probe {
         serde_json::from_value(fields).unwrap()
+    }
+
+    fn single_signal(outcome: ProbeOutcome) -> Signal {
+        match outcome {
+            ProbeOutcome::Signals(mut signals) => {
+                assert_eq!(signals.len(), 1);
+                signals.remove(0)
+            }
+            ProbeOutcome::Error { error } => panic!("expected a signal, got error: {error}"),
+        }
     }
 
     fn expectation(expression: &str) -> CelExpectation {
@@ -215,39 +225,39 @@ mod tests {
 
     #[test]
     fn parses_query_and_expect() {
-        let signal = spec_signal(serde_json::json!({
+        let probe = spec_probe(serde_json::json!({
             "type": "sql",
             "query": "SELECT 1",
             "expect": "result == 1",
         }));
 
-        let result = SqlSignal::parser().parse("check", &signal);
+        let result = SqlProbe::parser().parse("check", &probe);
         assert!(result.is_ok());
     }
 
     #[test]
     fn missing_query_is_an_error() {
-        let signal = spec_signal(serde_json::json!({ "type": "sql" }));
-        let result = SqlSignal::parser().parse("check", &signal);
+        let probe = spec_probe(serde_json::json!({ "type": "sql" }));
+        let result = SqlProbe::parser().parse("check", &probe);
         assert!(result.is_err());
     }
 
     #[test]
-    fn builder_builds_signal_with_query_and_expect() {
-        let builder = SqlSignal::builder().query("SELECT 1").expect("result == 1");
+    fn builder_builds_probe_with_query_and_expect() {
+        let builder = SqlProbe::builder().query("SELECT 1").expect("result == 1");
         let result = Box::new(builder).build("check");
         assert!(result.is_ok());
     }
 
     #[test]
     fn builder_without_query_is_an_error() {
-        let result = Box::new(SqlSignal::builder()).build("check");
+        let result = Box::new(SqlProbe::builder()).build("check");
         assert!(result.is_err());
     }
 
     #[test]
     fn builder_rejects_expect_that_fails_to_compile() {
-        let builder = SqlSignal::builder()
+        let builder = SqlProbe::builder()
             .query("SELECT 1")
             .expect("not ( valid cel");
         let result = Box::new(builder).build("check");
@@ -256,72 +266,57 @@ mod tests {
 
     #[test]
     fn non_string_expect_is_an_error() {
-        let signal = spec_signal(serde_json::json!({
+        let probe = spec_probe(serde_json::json!({
             "type": "sql",
             "query": "SELECT 1",
             "expect": 1,
         }));
-        let result = SqlSignal::parser().parse("check", &signal);
+        let result = SqlProbe::parser().parse("check", &probe);
         assert!(result.is_err());
     }
 
     #[test]
     fn expect_that_fails_to_compile_is_an_error() {
-        let signal = spec_signal(serde_json::json!({
+        let probe = spec_probe(serde_json::json!({
             "type": "sql",
             "query": "SELECT 1",
             "expect": "not ( valid cel",
         }));
-        let result = SqlSignal::parser().parse("check", &signal);
+        let result = SqlProbe::parser().parse("check", &probe);
         assert!(result.is_err());
     }
 
     #[test]
-    fn passing_signal() {
+    fn passing_probe() {
         let expect = expectation("result == 2");
         let outcome = evaluate_expect("check", Some(&expect), Some(serde_json::json!(2)));
-        match outcome {
-            SignalOutcome::Success { value, eval } => {
-                assert_eq!(value, serde_json::json!(2));
-                assert!(eval.unwrap().passed);
-            }
-            SignalOutcome::Error { error } => panic!("expected success, got error: {error}"),
-        }
+        let signal = single_signal(outcome);
+        assert_eq!(signal.value, serde_json::json!(2));
+        assert!(signal.eval.unwrap().passed);
     }
 
     #[test]
-    fn failing_signal() {
+    fn failing_probe() {
         let expect = expectation("result == 0");
         let outcome = evaluate_expect("check", Some(&expect), Some(serde_json::json!(1)));
-        match outcome {
-            SignalOutcome::Success { value, eval } => {
-                assert_eq!(value, serde_json::json!(1));
-                assert!(!eval.unwrap().passed);
-            }
-            SignalOutcome::Error { error } => panic!("expected success, got error: {error}"),
-        }
+        let signal = single_signal(outcome);
+        assert_eq!(signal.value, serde_json::json!(1));
+        assert!(!signal.eval.unwrap().passed);
     }
 
     #[test]
     fn missing_expect_has_a_value_but_no_result() {
         let outcome = evaluate_expect("check", None, Some(serde_json::json!(1)));
-        match outcome {
-            SignalOutcome::Success { value, eval } => {
-                assert_eq!(value, serde_json::json!(1));
-                assert!(eval.is_none());
-            }
-            SignalOutcome::Error { error } => panic!("expected success, got error: {error}"),
-        }
+        let signal = single_signal(outcome);
+        assert_eq!(signal.value, serde_json::json!(1));
+        assert!(signal.eval.is_none());
     }
 
     #[test]
     fn range_expression() {
         let expect = expectation("result >= 2 && result <= 5");
         let outcome = evaluate_expect("check", Some(&expect), Some(serde_json::json!(3)));
-        match outcome {
-            SignalOutcome::Success { eval, .. } => assert!(eval.unwrap().passed),
-            SignalOutcome::Error { error } => panic!("expected success, got error: {error}"),
-        }
+        assert!(single_signal(outcome).eval.unwrap().passed);
     }
 
     #[test]
@@ -329,10 +324,10 @@ mod tests {
         let expect = expectation("result == 0");
         let outcome = evaluate_expect("check", Some(&expect), None);
         match outcome {
-            SignalOutcome::Error { error } => {
-                assert!(error.contains("does not support evaluating signals"))
+            ProbeOutcome::Error { error } => {
+                assert!(error.contains("does not support evaluating probes"))
             }
-            SignalOutcome::Success { .. } => panic!("expected error"),
+            ProbeOutcome::Signals(_) => panic!("expected error"),
         }
     }
 
@@ -341,8 +336,8 @@ mod tests {
         let expect = expectation("result");
         let outcome = evaluate_expect("check", Some(&expect), Some(serde_json::json!(3)));
         match outcome {
-            SignalOutcome::Error { error } => assert!(error.contains("must evaluate to a bool")),
-            SignalOutcome::Success { .. } => panic!("expected error"),
+            ProbeOutcome::Error { error } => assert!(error.contains("must evaluate to a bool")),
+            ProbeOutcome::Signals(_) => panic!("expected error"),
         }
     }
 }

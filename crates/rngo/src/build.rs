@@ -1,5 +1,5 @@
-use crate::audit::signal::SqlSignal;
-pub use crate::audit::signal::sql::SqlSignalBuilder;
+use crate::audit::probe::SqlProbe;
+pub use crate::audit::probe::sql::SqlProbeBuilder;
 pub use crate::effect::schema::array::ArrayBuilder;
 pub use crate::effect::schema::constant::ConstantBuilder;
 pub use crate::effect::schema::context::ContextBuilder;
@@ -54,8 +54,8 @@ pub fn string() -> StrBuilder {
     Str::builder()
 }
 
-pub fn sql_signal() -> SqlSignalBuilder {
-    SqlSignal::builder()
+pub fn sql_probe() -> SqlProbeBuilder {
+    SqlProbe::builder()
 }
 
 pub fn sql_format() -> SqlFormat {
@@ -98,8 +98,8 @@ pub enum BuildError {
         channel: String,
         message: String,
     },
-    Signal {
-        signal: String,
+    Probe {
+        probe: String,
         message: String,
     },
     Audit {

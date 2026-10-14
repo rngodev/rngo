@@ -42,7 +42,7 @@ pub struct Spec {
     #[serde(default)]
     pub schemas: IndexMap<String, SchemaType>,
     #[serde(default)]
-    pub signals: IndexMap<String, Signal>,
+    pub probes: IndexMap<String, Probe>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -111,7 +111,7 @@ pub struct ChannelTarget {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Signal {
+pub struct Probe {
     #[serde(rename = "type")]
     pub stype: Option<String>,
     #[serde(flatten)]

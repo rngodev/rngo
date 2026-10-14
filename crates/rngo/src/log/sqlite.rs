@@ -1,3 +1,4 @@
+use crate::audit::probe::Signal;
 use crate::effect::Input;
 use crate::log::pool::InputPool;
 use crate::log::{Metadata, RunLogReader, RunLogWriter};
@@ -44,6 +45,13 @@ impl SqliteRunLog {
                     level TEXT NOT NULL,
                     data TEXT NOT NULL,
                     metadata TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS signals (
+                    probe TEXT NOT NULL,
+                    value TEXT NOT NULL,
+                    expectation TEXT,
+                    passed INTEGER
                 );
 
                 CREATE TABLE IF NOT EXISTS metadata (
@@ -223,6 +231,23 @@ impl RunLogWriter for SqliteRunLog {
 
     fn push_metadata(&self, metadata: Metadata) {
         insert_metadata(&self.connection.borrow(), &metadata);
+        self.record();
+    }
+
+    fn push_signal(&self, probe: &str, signal: Signal) {
+        self.connection
+            .borrow()
+            .prepare_cached(
+                "INSERT INTO signals (probe, value, expectation, passed) VALUES (?1, ?2, ?3, ?4)",
+            )
+            .unwrap()
+            .execute(rusqlite::params![
+                probe,
+                signal.value.to_string(),
+                signal.eval.as_ref().map(|eval| eval.expectation.as_str()),
+                signal.eval.as_ref().map(|eval| eval.passed),
+            ])
+            .unwrap();
         self.record();
     }
 
@@ -812,7 +837,7 @@ mod tests {
     }
 
     #[test]
-    fn get_signal_returns_query_value() {
+    fn query_returns_value() {
         let tmp = TempDir::new().unwrap();
         let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
         push_inputs(&run_log, "a", 3);
@@ -824,7 +849,7 @@ mod tests {
     }
 
     #[test]
-    fn get_signal_returns_none_on_query_error() {
+    fn query_returns_none_on_error() {
         let tmp = TempDir::new().unwrap();
         let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
 
