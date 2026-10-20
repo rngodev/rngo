@@ -105,7 +105,7 @@ fn ensure_gitignore(
     confirm_create: impl FnOnce() -> bool,
 ) -> Result<GitignoreOutcome, Box<dyn Error>> {
     let path = base.join(".gitignore");
-    let entry = ".rngo/runs";
+    let entry = ".rngo/evals";
 
     if !path.exists() {
         if !confirm_create() {
@@ -164,12 +164,12 @@ mod tests {
 
         init_project(base, false, |d| d.to_string(), || 1, || true).unwrap();
         let gitignore = fs::read_to_string(base.join(".gitignore")).unwrap();
-        assert_eq!(gitignore, "target\n.rngo/runs\n");
+        assert_eq!(gitignore, "target\n.rngo/evals\n");
 
         let outcome = ensure_gitignore(base, || panic!("should not prompt")).unwrap();
         assert_eq!(outcome, GitignoreOutcome::AlreadyUpToDate);
         let gitignore = fs::read_to_string(base.join(".gitignore")).unwrap();
-        assert_eq!(gitignore, "target\n.rngo/runs\n");
+        assert_eq!(gitignore, "target\n.rngo/evals\n");
     }
 
     #[test]
@@ -181,7 +181,7 @@ mod tests {
         assert_eq!(outcome, GitignoreOutcome::Created);
 
         let gitignore = fs::read_to_string(base.join(".gitignore")).unwrap();
-        assert_eq!(gitignore, ".rngo/runs\n");
+        assert_eq!(gitignore, ".rngo/evals\n");
     }
 
     #[test]
@@ -253,7 +253,7 @@ mod tests {
         assert_eq!(spec, format!("key: {name}\nseed: 1\n"));
 
         let gitignore = fs::read_to_string(base.join(".gitignore")).unwrap();
-        assert_eq!(gitignore, ".rngo/runs\n");
+        assert_eq!(gitignore, ".rngo/evals\n");
     }
 
     #[test]

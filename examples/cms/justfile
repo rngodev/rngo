@@ -18,7 +18,7 @@ install-sqlx:
     cargo install sqlx-cli --no-default-features --features postgres,rustls
 
 rngo-run:
-    cargo run --manifest-path ../../Cargo.toml -p rngo-cli -- run
+    cargo run --manifest-path ../../Cargo.toml -p rngo-cli -- eval
 
 psql:
     psql postgres://cms:cms@localhost:5432/cms

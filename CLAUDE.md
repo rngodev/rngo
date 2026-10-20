@@ -25,8 +25,8 @@ just clippy                     # lint, matching CI (warnings are errors)
 just clippy-fix                 # lint and auto-fix clippy suggestions
 cargo clippy --workspace --all-targets -- -D warnings  # lint (warnings are errors in CI)
 cargo build                     # build
-cargo run -p rngo-cli -- run            # run simulation (writes to .rngo/runs/<UUID>/, symlinked from .rngo/runs/last)
-cargo run -p rngo-cli -- run --stdout   # run simulation, print all events to stdout as JSON
+cargo run -p rngo-cli -- eval            # evaluate simulation (writes to .rngo/evals/<UUID>/, symlinked from .rngo/evals/last)
+cargo run -p rngo-cli -- eval --stdout   # evaluate simulation, print all events to stdout as JSON
 just bench                      # run all criterion benchmarks (crates/rngo/benches/)
 just bench sqlite_log/random    # run benchmarks whose name matches a filter
 just bench --save-baseline main # save a named baseline; compare later with --baseline main
@@ -42,7 +42,7 @@ The workspace has two crates:
 
 ### Data flow
 
-1. **Spec** (`spec.rs`): A YAML/JSON document loaded from `.rngo/spec.yml` merged with per-file `effects/*.yml`, `channels/*.yml`, `schemas/*.yml`, and `signals/*.yml` (each merge step lives in `cli/src/run.rs::load_spec`, keyed by file stem). Defines `seed`, `start`, `end`, named `effects`, named `channels`, named custom `schemas`, and named `signals`.
+1. **Spec** (`spec.rs`): A YAML/JSON document loaded from `.rngo/spec.yml` merged with per-file `effects/*.yml`, `channels/*.yml`, `schemas/*.yml`, and `signals/*.yml` (each merge step lives in `cli/src/eval.rs::load_spec`, keyed by file stem). Defines `seed`, `start`, `end`, named `effects`, named `channels`, named custom `schemas`, and named `signals`.
 
 2. **Dialect** (`rngo/src/parse/dialect.rs`): Converts a `spec::Spec` into builders by dispatching each effect's schema to a matching `SchemaParser`, each channel's format to a `FormatParser`, each channel's target to a `ChannelTargetParser`, and each signal to a `SignalParser`. `Dialect::primitive()` registers all built-in parsers. Three entry points, one per builder:
    - `parse_simulation` → `SimulationBuilder`
@@ -57,12 +57,12 @@ The workspace has two crates:
 
 6. **Audit** (`rngo/src/audit.rs`): Runs after the simulation finishes. Evaluates every named `Signal` against the completed run's log, writes each `SignalOutcome` back as metadata, and produces an `AuditReport` (pass/fail/error counts, `passed()`) that the CLI uses for its exit status.
 
-### CLI run loop (`cli/src/run.rs`)
+### CLI eval loop (`cli/src/eval.rs`)
 
 - `load_spec` merges `.rngo/spec.yml` with `.rngo/effects/*.yml`, `channels/*.yml`, `schemas/*.yml`, `signals/*.yml`, or `load_spec_file` loads a single file when `--spec` is passed.
 - `Dialect::primitive()` parses the spec three ways (simulation, proxy, audit builders).
 - `--dry-run`: only builds the `Simulation` (to validate the spec) and returns, without creating a run directory or touching channels.
-- Otherwise: creates a run directory at `.rngo/runs/<UUIDv7>/`, symlinks `.rngo/runs/last` to it, writes a `spec.json` snapshot, and opens a `SqliteRunLog` (backed by `log.sqlite`) as both the simulation's `RunLogReader`/`RunLogWriter` and the proxy's writer — wrapped in `StatusWriter` (`cli/src/run/status.rs`), which renders a live effect/output counter to stderr as it forwards writes through. `StatusWriter::finish()` is called right after `proxy.finish()` so the final redraw happens before the audit prints to stdout; its in-place redraw clears the last N lines, so redrawing after other output would erase that output.
+- Otherwise: creates an eval directory at `.rngo/evals/<UUIDv7>/`, symlinks `.rngo/evals/last` to it, writes a `spec.json` snapshot, and opens a `SqliteRunLog` (backed by `log.sqlite`) as both the simulation's `RunLogReader`/`RunLogWriter` and the proxy's writer — wrapped in `StatusWriter` (`cli/src/eval/status.rs`), which renders a live effect/output counter to stderr as it forwards writes through. `StatusWriter::finish()` is called right after `proxy.finish()` so the final redraw happens before the audit prints to stdout; its in-place redraw clears the last N lines, so redrawing after other output would erase that output.
 - Only when `--realtime` is passed, builds the proxy with `realtime(true)` and an `on_wait` hook that flushes the run log (`RunLogWriter::flush`; `SqliteRunLog` otherwise commits in batches, so a long wait or a hard exit would leave rows uncommitted) and shows a countdown via `StatusWriter::wait`. `--stdout` is paced the same way. Without `--realtime`, future inputs are sent right away.
 - Ctrl-C and SIGTERM are handled in `main.rs` (`ctrlc` with `termination`): the first calls `stop()` on the `RunOptions::stop` handle, which is shared into the proxy, ending any wait; the run loop then breaks, so the run finishes and audits, but `run` returns `Ok(false)` (exit status 1) because it was stopped; a second exits immediately with status 130.
 - Drives the `Simulation` iterator, sending each `Ok` input through the `Proxy` and writing each skipped attempt (`Err`) to the run log as `skipped` metadata itself, then calls `proxy.finish()`, then builds and runs the `Audit` against the same `SqliteRunLog` and prints per-signal outcomes.

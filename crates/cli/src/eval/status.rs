@@ -53,7 +53,7 @@ impl StatusWriter {
         self.render(true);
     }
 
-    /// Shows that the run is waiting for an input due at `until`, until that time passes.
+    /// Shows that the eval is waiting for an input due at `until`, until that time passes.
     pub fn wait(&self, until: DateTime<FixedOffset>) {
         self.waiting.set(Some(until));
         self.dirty.set(true);
