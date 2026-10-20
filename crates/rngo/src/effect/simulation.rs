@@ -200,25 +200,26 @@ impl SimulationBuilder {
 #[cfg(test)]
 mod tests {
     use crate::build::BuildError;
-    use crate::effect::schema::{
-        Metadata, Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult,
+    use crate::effect::generator::{
+        Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
+        Metadata,
     };
 
     #[derive(Debug, Default)]
-    struct AlternatingSchema {
+    struct AlternatingGenerator {
         calls: u32,
     }
 
-    impl Schema for AlternatingSchema {
-        fn next(&mut self, _context: &SchemaContext) -> SchemaResult {
+    impl Generator for AlternatingGenerator {
+        fn next(&mut self, _context: &GeneratorContext) -> GeneratorResult {
             self.calls += 1;
             if self.calls % 2 == 1 {
-                SchemaResult {
+                GeneratorResult {
                     value: Some(serde_json::Value::Null),
                     metadata: vec![],
                 }
             } else {
-                SchemaResult {
+                GeneratorResult {
                     value: None,
                     metadata: vec![Metadata {
                         mtype: "error".into(),
@@ -231,11 +232,14 @@ mod tests {
     }
 
     #[derive(Debug)]
-    struct AlternatingSchemaBuilder;
+    struct AlternatingGeneratorBuilder;
 
-    impl SchemaBuilder for AlternatingSchemaBuilder {
-        fn build(&self, _visitor: SchemaBuildVisitor) -> Result<Box<dyn Schema>, Vec<BuildError>> {
-            Ok(Box::new(AlternatingSchema::default()))
+    impl GeneratorBuilder for AlternatingGeneratorBuilder {
+        fn build(
+            &self,
+            _visitor: GeneratorBuildVisitor,
+        ) -> Result<Box<dyn Generator>, Vec<BuildError>> {
+            Ok(Box::new(AlternatingGenerator::default()))
         }
     }
 
@@ -245,7 +249,8 @@ mod tests {
             super::Simulation::builder().run_log_reader(crate::SimpleEventRunLog::new());
 
         simulation_builder.with_effect("alternating", |e| {
-            e.trigger_hertz(1000.0).schema(AlternatingSchemaBuilder)
+            e.trigger_hertz(1000.0)
+                .generator(AlternatingGeneratorBuilder)
         });
 
         let items: Vec<_> = simulation_builder.limit(5).build().unwrap().collect();
@@ -283,11 +288,11 @@ mod tests {
             .with_effect("upstream", |e| {
                 e.trigger_hertz(1.0)
                     .limit(std::num::NonZeroU64::new(3).unwrap())
-                    .schema(AlternatingSchemaBuilder)
+                    .generator(AlternatingGeneratorBuilder)
             })
             .with_effect("downstream", |e| {
                 e.trigger_effect("upstream".into())
-                    .schema(AlternatingSchemaBuilder)
+                    .generator(AlternatingGeneratorBuilder)
             });
 
         let mut simulation = simulation_builder.standalone().unwrap();

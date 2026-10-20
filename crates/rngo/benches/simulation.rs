@@ -3,7 +3,7 @@ use rngo::{Dialect, RunLogWriter, SimpleEventRunLog, Simulation, SimulationBuild
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
-fn user_schema() -> Value {
+fn user_generator() -> Value {
     json!({
         "type": "object",
         "properties": {
@@ -12,8 +12,8 @@ fn user_schema() -> Value {
             "age": {
                 "type": "select",
                 "options": [
-                    { "weight": 3, "schema": { "type": "number", "minimum": 18, "maximum": 65, "scale": 0 } },
-                    { "weight": 1, "schema": { "type": "constant", "value": null } }
+                    { "weight": 3, "generator": { "type": "number", "minimum": 18, "maximum": 65, "scale": 0 } },
+                    { "weight": 1, "generator": { "type": "constant", "value": null } }
                 ]
             },
             "created_at": { "type": "context", "path": ["sim", "offset"] }
@@ -29,11 +29,11 @@ fn spec(cursor: &str) -> Value {
         "effects": {
             "user": {
                 "trigger": "hz(1, minute)",
-                "schema": user_schema()
+                "generator": user_generator()
             },
             "post": {
                 "trigger": "hz(3, minute)",
-                "schema": {
+                "generator": {
                     "type": "object",
                     "properties": {
                         "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 },
@@ -52,8 +52,8 @@ fn spec(cursor: &str) -> Value {
                             "items": {
                                 "type": "select",
                                 "options": [
-                                    { "weight": 1, "schema": { "type": "constant", "value": "a" } },
-                                    { "weight": 1, "schema": { "type": "constant", "value": "b" } }
+                                    { "weight": 1, "generator": { "type": "constant", "value": "a" } },
+                                    { "weight": 1, "generator": { "type": "constant", "value": "b" } }
                                 ]
                             }
                         },

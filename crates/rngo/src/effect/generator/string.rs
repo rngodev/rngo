@@ -1,7 +1,7 @@
-use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaResult};
+use super::{Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorResult};
 use crate::build::BuildError;
-use crate::effect::schema::SchemaContext;
-use crate::parse::{SchemaParseVisitor, SchemaParser};
+use crate::effect::generator::GeneratorContext;
+use crate::parse::{GeneratorParseVisitor, GeneratorParser};
 use crate::spec::ParseError as Error;
 use rand::distr::Distribution;
 use rand_pcg::Pcg32;
@@ -29,10 +29,10 @@ impl Str {
     }
 }
 
-impl Schema for Str {
-    fn next(&mut self, _context: &SchemaContext) -> SchemaResult {
+impl Generator for Str {
+    fn next(&mut self, _context: &GeneratorContext) -> GeneratorResult {
         let s: String = self.regex.sample(&mut self.rng);
-        SchemaResult {
+        GeneratorResult {
             value: Some(s.into()),
             metadata: vec![],
         }
@@ -56,8 +56,8 @@ impl StrBuilder {
     }
 }
 
-impl SchemaBuilder for StrBuilder {
-    fn build(&self, visitor: SchemaBuildVisitor) -> Result<Box<dyn Schema>, Vec<BuildError>> {
+impl GeneratorBuilder for StrBuilder {
+    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, Vec<BuildError>> {
         let regex = rand_regex::Regex::compile(&self.pattern, 100)
             .map_err(|e| vec![visitor.error(format!("invalid pattern: {e}"))])?;
 
@@ -70,12 +70,15 @@ impl SchemaBuilder for StrBuilder {
 
 pub struct StrParser {}
 
-impl SchemaParser for StrParser {
+impl GeneratorParser for StrParser {
     fn key(&self) -> &str {
         "string"
     }
 
-    fn parse(&self, visitor: SchemaParseVisitor) -> Result<Box<dyn SchemaBuilder>, Vec<Error>> {
+    fn parse(
+        &self,
+        visitor: GeneratorParseVisitor,
+    ) -> Result<Box<dyn GeneratorBuilder>, Vec<Error>> {
         let mut builder = Str::builder();
 
         match visitor.spec().fields.get("pattern") {
@@ -86,7 +89,7 @@ impl SchemaParser for StrParser {
             Some(_) => Err(vec![
                 visitor.input_error("pattern", "pattern must be a string"),
             ]),
-            None => Err(vec![visitor.schema_error("pattern must be specified")]),
+            None => Err(vec![visitor.invalid("pattern must be specified")]),
         }
     }
 }

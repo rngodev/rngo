@@ -1,4 +1,4 @@
-use crate::effect::schema::Metadata;
+use crate::effect::generator::Metadata;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use std::sync::mpsc::Sender;

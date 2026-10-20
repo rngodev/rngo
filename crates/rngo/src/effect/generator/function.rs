@@ -1,8 +1,10 @@
-use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
-use crate::build::{BuildError, SchemaEdge};
+use super::{
+    Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
+};
+use crate::build::{BuildError, GeneratorEdge};
 use crate::cel::{CelContextExt, json_to_cel};
-use crate::effect::schema::Metadata;
-use crate::parse::{SchemaParseVisitor, SchemaParser};
+use crate::effect::generator::Metadata;
+use crate::parse::{GeneratorParseVisitor, GeneratorParser};
 use crate::spec::{self, ParseError as Error};
 use cel::{Context, Program};
 use indexmap::IndexMap;
@@ -11,7 +13,7 @@ use std::collections::HashMap;
 #[derive(Debug)]
 pub struct Function {
     program: Program,
-    variables: HashMap<String, Box<dyn Schema>>,
+    variables: HashMap<String, Box<dyn Generator>>,
 }
 
 impl Function {
@@ -27,16 +29,16 @@ impl Function {
     }
 }
 
-impl Schema for Function {
-    fn next(&mut self, context: &SchemaContext) -> SchemaResult {
+impl Generator for Function {
+    fn next(&mut self, context: &GeneratorContext) -> GeneratorResult {
         let mut ctx = Context::default();
         ctx.with_strings();
 
         let mut complete = true;
         let mut metadata: Vec<Metadata> = Vec::new();
 
-        for (key, schema) in &mut self.variables {
-            let result = schema.next(context);
+        for (key, generator) in &mut self.variables {
+            let result = generator.next(context);
 
             if let Some(value) = result.value {
                 ctx.add_variable(key.as_str(), json_to_cel(value));
@@ -51,14 +53,14 @@ impl Schema for Function {
         }
 
         if !complete {
-            return SchemaResult {
+            return GeneratorResult {
                 value: None,
                 metadata,
             };
         }
 
         match self.program.execute(&ctx) {
-            Ok(result) => SchemaResult {
+            Ok(result) => GeneratorResult {
                 value: Some(cel_to_json(result)),
                 metadata,
             },
@@ -68,7 +70,7 @@ impl Schema for Function {
                     attribute: None,
                     data: Some(serde_json::json!({ "message": e.to_string() })),
                 });
-                SchemaResult {
+                GeneratorResult {
                     value: None,
                     metadata,
                 }
@@ -80,7 +82,7 @@ impl Schema for Function {
 #[derive(Debug)]
 pub struct FunctionBuilder {
     expression: Option<String>,
-    variable_builders: IndexMap<String, Box<dyn SchemaBuilder>>,
+    variable_builders: IndexMap<String, Box<dyn GeneratorBuilder>>,
 }
 
 impl FunctionBuilder {
@@ -97,7 +99,7 @@ impl FunctionBuilder {
     pub fn variable(
         mut self,
         key: impl Into<String>,
-        builder: impl SchemaBuilder + 'static,
+        builder: impl GeneratorBuilder + 'static,
     ) -> Self {
         self.set_variable(key, builder);
         self
@@ -106,15 +108,15 @@ impl FunctionBuilder {
     pub fn set_variable(
         &mut self,
         key: impl Into<String>,
-        builder: impl SchemaBuilder + 'static,
+        builder: impl GeneratorBuilder + 'static,
     ) -> &mut Self {
         self.variable_builders.insert(key.into(), Box::new(builder));
         self
     }
 }
 
-impl SchemaBuilder for FunctionBuilder {
-    fn build(&self, visitor: SchemaBuildVisitor) -> Result<Box<dyn Schema>, Vec<BuildError>> {
+impl GeneratorBuilder for FunctionBuilder {
+    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, Vec<BuildError>> {
         let expression = match &self.expression {
             Some(e) => e,
             None => return Err(vec![visitor.error("expression was not set")]),
@@ -124,13 +126,13 @@ impl SchemaBuilder for FunctionBuilder {
         let mut variables = HashMap::new();
 
         for (key, builder) in &self.variable_builders {
-            let var_visitor = visitor.follow_edge(SchemaEdge {
+            let var_visitor = visitor.follow_edge(GeneratorEdge {
                 kind: "variable",
                 key: key.clone(),
             });
             match builder.build(var_visitor) {
-                Ok(schema) => {
-                    variables.insert(key.clone(), schema);
+                Ok(generator) => {
+                    variables.insert(key.clone(), generator);
                 }
                 Err(mut e) => errors.append(&mut e),
             }
@@ -149,12 +151,15 @@ impl SchemaBuilder for FunctionBuilder {
 
 pub struct FunctionParser {}
 
-impl SchemaParser for FunctionParser {
+impl GeneratorParser for FunctionParser {
     fn key(&self) -> &str {
         "function"
     }
 
-    fn parse(&self, visitor: SchemaParseVisitor) -> Result<Box<dyn SchemaBuilder>, Vec<Error>> {
+    fn parse(
+        &self,
+        visitor: GeneratorParseVisitor,
+    ) -> Result<Box<dyn GeneratorBuilder>, Vec<Error>> {
         let expression = match visitor.spec().fields.get("expression") {
             Some(v) if v.is_string() => v.as_str().unwrap().to_string(),
             Some(_) => {
@@ -163,7 +168,7 @@ impl SchemaParser for FunctionParser {
                 ]);
             }
             None => {
-                return Err(vec![visitor.schema_error("expression must be specified")]);
+                return Err(vec![visitor.invalid("expression must be specified")]);
             }
         };
 
@@ -171,15 +176,15 @@ impl SchemaParser for FunctionParser {
         builder.set_expression(expression);
 
         if let Some(vars_value) = visitor.spec().fields.get("variables") {
-            let vars: IndexMap<String, spec::Schema> = serde_json::from_value(vars_value.clone())
-                .map_err(|e| {
-                vec![visitor.input_error("variables", format!("variables parsing failed: {e}"))]
-            })?;
+            let vars: IndexMap<String, spec::Generator> =
+                serde_json::from_value(vars_value.clone()).map_err(|e| {
+                    vec![visitor.input_error("variables", format!("variables parsing failed: {e}"))]
+                })?;
 
             let mut errors = vec![];
-            for (key, schema) in vars {
+            for (key, generator) in vars {
                 let path = vec!["variables".into(), key.clone()];
-                match visitor.parse_input_schema(path, schema) {
+                match visitor.parse_input_generator(path, generator) {
                     Ok(b) => {
                         builder.set_variable(key, b);
                     }

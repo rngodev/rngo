@@ -79,7 +79,7 @@ impl FormatParser for TemplateFormatParser {
         _spec: &spec::Spec,
     ) -> Result<Box<dyn Format>, Vec<ParseError>> {
         let error = |message: String| {
-            vec![ParseError::SchemaError {
+            vec![ParseError::Invalid {
                 path: Some(vec!["template".into()]),
                 message,
             }]
@@ -180,7 +180,7 @@ mod tests {
         let errors = parse(json!({ "type": "template" })).unwrap_err();
         assert!(matches!(
             &errors[..],
-            [ParseError::SchemaError { path: Some(p), .. }] if p == &["template"]
+            [ParseError::Invalid { path: Some(p), .. }] if p == &["template"]
         ));
     }
 

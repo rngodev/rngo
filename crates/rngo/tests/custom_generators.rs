@@ -31,19 +31,19 @@ fn parse_errors(json: &str) -> Vec<ParseError> {
 }
 
 #[test]
-fn resolves_custom_schema_independently_per_effect() {
+fn resolves_custom_generator_independently_per_effect() {
     let json = r#"{
         "seed": 1,
         "start": "2024-01-01",
         "end": "2024-01-02",
-        "schemas": {
+        "generators": {
             "title": {
-                "schema": {
+                "generator": {
                     "type": "select",
                     "options": [
-                        { "schema": { "type": "constant", "value": "Mr." } },
-                        { "schema": { "type": "constant", "value": "Mrs." } },
-                        { "schema": { "type": "constant", "value": "Dr." } }
+                        { "generator": { "type": "constant", "value": "Mr." } },
+                        { "generator": { "type": "constant", "value": "Mrs." } },
+                        { "generator": { "type": "constant", "value": "Dr." } }
                     ]
                 }
             }
@@ -51,14 +51,14 @@ fn resolves_custom_schema_independently_per_effect() {
         "effects": {
             "a": {
                 "trigger": "hz(1, hour)",
-                "schema": {
+                "generator": {
                     "type": "object",
                     "properties": { "title": { "type": "title" } }
                 }
             },
             "b": {
                 "trigger": "hz(1, hour)",
-                "schema": {
+                "generator": {
                     "type": "object",
                     "properties": { "title": { "type": "title" } }
                 }
@@ -82,19 +82,19 @@ fn resolves_custom_schema_independently_per_effect() {
 }
 
 #[test]
-fn custom_schema_can_reference_another_custom_schema() {
+fn custom_generator_can_reference_another_custom_generator() {
     let json = r#"{
         "seed": 1,
         "start": "2024-01-01",
         "end": "2024-01-02",
-        "schemas": {
-            "inner": { "schema": { "type": "constant", "value": "x" } },
-            "outer": { "schema": { "type": "inner" } }
+        "generators": {
+            "inner": { "generator": { "type": "constant", "value": "x" } },
+            "outer": { "generator": { "type": "inner" } }
         },
         "effects": {
             "a": {
                 "trigger": "hz(1, hour)",
-                "schema": { "type": "outer" }
+                "generator": { "type": "outer" }
             }
         }
     }"#;
@@ -105,13 +105,13 @@ fn custom_schema_can_reference_another_custom_schema() {
 }
 
 #[test]
-fn custom_schema_name_cannot_shadow_primitive_type() {
+fn custom_generator_name_cannot_shadow_primitive_type() {
     let json = r#"{
-        "schemas": {
-            "object": { "schema": { "type": "constant", "value": 1 } }
+        "generators": {
+            "object": { "generator": { "type": "constant", "value": 1 } }
         },
         "effects": {
-            "a": { "schema": { "type": "constant", "value": 1 } }
+            "a": { "generator": { "type": "constant", "value": 1 } }
         }
     }"#;
 
@@ -119,20 +119,20 @@ fn custom_schema_name_cannot_shadow_primitive_type() {
 
     let error = errors
         .iter()
-        .find(|e| e.message().contains("primitive schema type"))
+        .find(|e| e.message().contains("primitive generator type"))
         .unwrap();
-    assert_eq!(error.path().unwrap().as_slice(), ["schemas", "object"]);
+    assert_eq!(error.path().unwrap().as_slice(), ["generators", "object"]);
 }
 
 #[test]
-fn cyclical_custom_schema_reference_errors() {
+fn cyclical_custom_generator_reference_errors() {
     let json = r#"{
-        "schemas": {
-            "a": { "schema": { "type": "b" } },
-            "b": { "schema": { "type": "a" } }
+        "generators": {
+            "a": { "generator": { "type": "b" } },
+            "b": { "generator": { "type": "a" } }
         },
         "effects": {
-            "e": { "schema": { "type": "a" } }
+            "e": { "generator": { "type": "a" } }
         }
     }"#;
 
@@ -150,13 +150,13 @@ fn cyclical_custom_schema_reference_errors() {
 }
 
 #[test]
-fn malformed_custom_schema_errors() {
+fn malformed_custom_generator_errors() {
     let json = r#"{
-        "schemas": {
-            "age": { "schema": { "type": "number", "minimum": "not-a-number" } }
+        "generators": {
+            "age": { "generator": { "type": "number", "minimum": "not-a-number" } }
         },
         "effects": {
-            "a": { "schema": { "type": "age" } }
+            "a": { "generator": { "type": "age" } }
         }
     }"#;
 
@@ -168,15 +168,15 @@ fn malformed_custom_schema_errors() {
         .unwrap();
     assert_eq!(
         error.path().unwrap().as_slice(),
-        ["schemas", "age", "schema", "minimum"]
+        ["generators", "age", "generator", "minimum"]
     );
 }
 
 #[test]
-fn unknown_custom_schema_type_still_errors_like_before() {
+fn unknown_custom_generator_type_still_errors_like_before() {
     let json = r#"{
         "effects": {
-            "a": { "schema": { "type": "nonexistent" } }
+            "a": { "generator": { "type": "nonexistent" } }
         }
     }"#;
 
@@ -184,6 +184,6 @@ fn unknown_custom_schema_type_still_errors_like_before() {
     assert!(
         errors
             .iter()
-            .any(|e| e.message() == "no schema parser matched")
+            .any(|e| e.message() == "no generator parser matched")
     );
 }

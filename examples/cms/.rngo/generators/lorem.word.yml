@@ -1,0 +1,33 @@
+generator:
+  type: select
+  options:
+    - generator: { type: constant, value: "lorem" }
+    - generator: { type: constant, value: "ipsum" }
+    - generator: { type: constant, value: "dolor" }
+    - generator: { type: constant, value: "sit" }
+    - generator: { type: constant, value: "amet" }
+    - generator: { type: constant, value: "consectetur" }
+    - generator: { type: constant, value: "adipiscing" }
+    - generator: { type: constant, value: "elit" }
+    - generator: { type: constant, value: "sed" }
+    - generator: { type: constant, value: "do" }
+    - generator: { type: constant, value: "eiusmod" }
+    - generator: { type: constant, value: "tempor" }
+    - generator: { type: constant, value: "incididunt" }
+    - generator: { type: constant, value: "ut" }
+    - generator: { type: constant, value: "labore" }
+    - generator: { type: constant, value: "et" }
+    - generator: { type: constant, value: "dolore" }
+    - generator: { type: constant, value: "magna" }
+    - generator: { type: constant, value: "aliqua" }
+    - generator: { type: constant, value: "enim" }
+    - generator: { type: constant, value: "ad" }
+    - generator: { type: constant, value: "minim" }
+    - generator: { type: constant, value: "veniam" }
+    - generator: { type: constant, value: "quis" }
+    - generator: { type: constant, value: "nostrud" }
+    - generator: { type: constant, value: "exercitation" }
+    - generator: { type: constant, value: "ullamco" }
+    - generator: { type: constant, value: "laboris" }
+    - generator: { type: constant, value: "nisi" }
+    - generator: { type: constant, value: "aliquip" }

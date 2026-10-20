@@ -394,7 +394,7 @@ impl RunLogReader for SqliteRunLog {
 mod tests {
     use super::*;
     use crate::effect::Input;
-    use crate::effect::schema::Metadata as SchemaMetadata;
+    use crate::effect::generator::Metadata as GeneratorMetadata;
     use chrono::Utc;
     use tempfile::TempDir;
 
@@ -441,7 +441,7 @@ mod tests {
             effect: "ping".to_string(),
             timestamp: Utc::now().fixed_offset(),
             data: serde_json::json!({ "a": 1 }),
-            metadata: vec![SchemaMetadata {
+            metadata: vec![GeneratorMetadata {
                 mtype: "error".into(),
                 attribute: None,
                 data: Some(serde_json::json!({ "message": "partial value" })),
@@ -454,7 +454,7 @@ mod tests {
             channel: "logger".to_string(),
             level: Level::Info,
             data: "hello".to_string(),
-            metadata: vec![SchemaMetadata {
+            metadata: vec![GeneratorMetadata {
                 mtype: "error".into(),
                 attribute: None,
                 data: Some(serde_json::json!({ "message": "delivery failed" })),

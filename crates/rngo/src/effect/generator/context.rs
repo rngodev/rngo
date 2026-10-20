@@ -1,7 +1,7 @@
-use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaResult};
+use super::{Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorResult};
 use crate::build::BuildError;
-use crate::effect::schema::{Metadata, SchemaContext};
-use crate::parse::{SchemaParseVisitor, SchemaParser};
+use crate::effect::generator::{GeneratorContext, Metadata};
+use crate::parse::{GeneratorParseVisitor, GeneratorParser};
 use crate::spec::ParseError as Error;
 use serde_json;
 
@@ -20,12 +20,12 @@ impl Context {
     }
 }
 
-impl Schema for Context {
-    fn next(&mut self, context: &SchemaContext) -> SchemaResult {
+impl Generator for Context {
+    fn next(&mut self, context: &GeneratorContext) -> GeneratorResult {
         match self.path {
             ContextPath::TriggerEvent => match &context.trigger.input_event {
                 Some(input_event) => match serde_json::to_value(input_event.as_ref()) {
-                    Ok(value) => SchemaResult {
+                    Ok(value) => GeneratorResult {
                         value: Some(value),
                         metadata: vec![],
                     },
@@ -33,22 +33,22 @@ impl Schema for Context {
                 },
                 None => error_result("no value for trigger"),
             },
-            ContextPath::SimOffset => SchemaResult {
+            ContextPath::SimOffset => GeneratorResult {
                 value: Some((context.trigger.sim_offset as f64 / 1000.0).into()),
                 metadata: vec![],
             },
-            ContextPath::SimStart => SchemaResult {
+            ContextPath::SimStart => GeneratorResult {
                 value: Some(context.simulation_start.to_rfc3339().into()),
                 metadata: vec![],
             },
-            ContextPath::SimEnd => SchemaResult {
+            ContextPath::SimEnd => GeneratorResult {
                 value: Some(context.simulation_end.to_rfc3339().into()),
                 metadata: vec![],
             },
             ContextPath::ClockNow => {
                 let now = context.simulation_start
                     + chrono::Duration::milliseconds(context.trigger.sim_offset);
-                SchemaResult {
+                GeneratorResult {
                     value: Some(now.to_rfc3339().into()),
                     metadata: vec![],
                 }
@@ -57,8 +57,8 @@ impl Schema for Context {
     }
 }
 
-fn error_result(message: impl Into<String>) -> SchemaResult {
-    SchemaResult {
+fn error_result(message: impl Into<String>) -> GeneratorResult {
+    GeneratorResult {
         value: None,
         metadata: vec![Metadata {
             mtype: "error".into(),
@@ -110,33 +110,36 @@ impl ContextBuilder {
     }
 }
 
-impl SchemaBuilder for ContextBuilder {
-    fn build(&self, visitor: SchemaBuildVisitor) -> Result<Box<dyn Schema>, Vec<BuildError>> {
+impl GeneratorBuilder for ContextBuilder {
+    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, Vec<BuildError>> {
         let path = match &self.path {
             Some(p) => p.clone(),
             None => return Err(vec![visitor.error("path was not set")]),
         };
 
         ContextPath::try_from(path)
-            .map(|p| Box::new(Context { path: p }) as Box<dyn Schema>)
+            .map(|p| Box::new(Context { path: p }) as Box<dyn Generator>)
             .map_err(|e| vec![visitor.error(format!("invalid context path: {e}"))])
     }
 }
 
 pub struct ContextParser {}
 
-impl SchemaParser for ContextParser {
+impl GeneratorParser for ContextParser {
     fn key(&self) -> &str {
         "context"
     }
 
-    fn parse(&self, visitor: SchemaParseVisitor) -> Result<Box<dyn SchemaBuilder>, Vec<Error>> {
+    fn parse(
+        &self,
+        visitor: GeneratorParseVisitor,
+    ) -> Result<Box<dyn GeneratorBuilder>, Vec<Error>> {
         let path = match visitor.spec().fields.get("path") {
             Some(v) => serde_json::from_value::<Vec<String>>(v.clone()).map_err(|e| {
                 vec![visitor.input_error("path", format!("path parsing failed: {e}"))]
             })?,
             None => {
-                return Err(vec![visitor.schema_error("path must be specified")]);
+                return Err(vec![visitor.invalid("path must be specified")]);
             }
         };
 

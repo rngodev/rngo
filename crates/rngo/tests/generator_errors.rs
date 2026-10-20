@@ -9,17 +9,17 @@ fn builder() {
     let mut simulation_builder = Simulation::builder();
 
     simulation_builder
-        .with_effect("number", |e| e.schema(number().minimum(100).maximum(18)))
+        .with_effect("number", |e| e.generator(number().minimum(100).maximum(18)))
         .with_effect("object", |e| {
-            e.schema(
+            e.generator(
                 object()
                     .property("name", string())
                     .property("age", number().minimum(100).maximum(18)),
             )
         })
-        .with_effect("no_schema", |e| e)
+        .with_effect("no_generator", |e| e)
         .with_effect("nested", |e| {
-            e.schema(
+            e.generator(
                 object().property(
                     "score",
                     select()
@@ -36,44 +36,44 @@ fn builder() {
 
     let number_error = errors
         .iter()
-        .find(|e| matches!(e, BuildError::Schema { effect, .. } if effect == "number"))
+        .find(|e| matches!(e, BuildError::Generator { effect, .. } if effect == "number"))
         .unwrap();
 
     assert_eq!(number_error.message(), "minimum is greater than maximum");
-    assert!(number_error.schema_path().unwrap().is_empty());
+    assert!(number_error.generator_path().unwrap().is_empty());
 
     let object_error = errors
         .iter()
-        .find(|e| matches!(e, BuildError::Schema { effect, .. } if effect == "object"))
+        .find(|e| matches!(e, BuildError::Generator { effect, .. } if effect == "object"))
         .unwrap();
 
     assert_eq!(object_error.message(), "minimum is greater than maximum");
-    let object_path = object_error.schema_path().unwrap();
+    let object_path = object_error.generator_path().unwrap();
     assert_eq!(object_path.len(), 1);
     assert_eq!(object_path[0].kind, "property");
     assert_eq!(object_path[0].key, "age");
 
-    let no_schema_error = errors
+    let no_generator_error = errors
         .iter()
-        .find(|e| matches!(e, BuildError::Effect { effect, .. } if effect == "no_schema"))
+        .find(|e| matches!(e, BuildError::Effect { effect, .. } if effect == "no_generator"))
         .unwrap();
 
-    assert_eq!(no_schema_error.message(), "schema was not set");
+    assert_eq!(no_generator_error.message(), "generator was not set");
     assert!(matches!(
-        no_schema_error,
+        no_generator_error,
         BuildError::Effect {
-            key: EffectKey::Schema,
+            key: EffectKey::Generator,
             ..
         }
     ));
 
     let nested_error = errors
         .iter()
-        .find(|e| matches!(e, BuildError::Schema { effect, .. } if effect == "nested"))
+        .find(|e| matches!(e, BuildError::Generator { effect, .. } if effect == "nested"))
         .unwrap();
 
     assert_eq!(nested_error.message(), "minimum is greater than maximum");
-    let nested_path = nested_error.schema_path().unwrap();
+    let nested_path = nested_error.generator_path().unwrap();
     assert_eq!(nested_path.len(), 2);
     assert_eq!(nested_path[0].kind, "property");
     assert_eq!(nested_path[0].key, "score");
@@ -86,29 +86,29 @@ fn spec() {
     let json = r#"{
         "effects": {
             "number": {
-                "schema": { "type": "number", "minimum": "not-a-number" }
+                "generator": { "type": "number", "minimum": "not-a-number" }
             },
             "object": {
-                "schema": { "type": "object" }
+                "generator": { "type": "object" }
             },
             "unknown": {
-                "schema": { "type": "nonexistent" }
+                "generator": { "type": "nonexistent" }
             },
             "nested": {
-                "schema": {
+                "generator": {
                     "type": "object",
                     "properties": {
                         "score": {
                             "type": "select",
                             "options": [
-                                { "schema": { "type": "number", "minimum": "not-a-number" } }
+                                { "generator": { "type": "number", "minimum": "not-a-number" } }
                             ]
                         }
                     }
                 }
             },
             "reference": {
-                "schema": { "type": "reference", "effect": "number", "cursor": "sequential" }
+                "generator": { "type": "reference", "effect": "number", "cursor": "sequential" }
             }
         }
     }"#;
@@ -127,7 +127,7 @@ fn spec() {
     let number_path = number_error.path().unwrap();
     assert_eq!(
         number_path.as_slice(),
-        ["effects", "number", "schema", "minimum"]
+        ["effects", "number", "generator", "minimum"]
     );
 
     let object_error = errors.iter().find(by_effect("object")).unwrap();
@@ -135,12 +135,12 @@ fn spec() {
     let object_path = object_error.path().unwrap();
     assert_eq!(
         object_path.as_slice(),
-        ["effects", "object", "schema", "properties"]
+        ["effects", "object", "generator", "properties"]
     );
 
     let unknown_error = errors
         .iter()
-        .find(|e| e.message() == "no schema parser matched")
+        .find(|e| e.message() == "no generator parser matched")
         .unwrap();
     assert!(unknown_error.path().is_none());
 
@@ -152,7 +152,7 @@ fn spec() {
     let reference_path = reference_error.path().unwrap();
     assert_eq!(
         reference_path.as_slice(),
-        ["effects", "reference", "schema", "cursor"]
+        ["effects", "reference", "generator", "cursor"]
     );
 
     let nested_error = errors.iter().find(by_effect("nested")).unwrap();
@@ -163,12 +163,12 @@ fn spec() {
         [
             "effects",
             "nested",
-            "schema",
+            "generator",
             "properties",
             "score",
             "options",
             "0",
-            "schema",
+            "generator",
             "minimum"
         ]
     );

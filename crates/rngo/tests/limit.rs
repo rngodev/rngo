@@ -20,11 +20,11 @@ fn unlimited_effect_keeps_running_after_limited_effect_stops() {
         .with_effect("limited", |e| {
             e.trigger_hertz(1.0)
                 .limit(limit(3))
-                .schema(constant().value(1))
+                .generator(constant().value(1))
         })
         .with_effect("unlimited", |e| {
             e.trigger_expression("hz(1, hour)".into())
-                .schema(constant().value(1))
+                .generator(constant().value(1))
         });
 
     let inputs: Vec<_> = simulation_builder
@@ -53,11 +53,11 @@ fn dependent_effect_stops_after_upstream_limit() {
         .with_effect("upstream", |e| {
             e.trigger_expression("hz(1, hour)".into())
                 .limit(limit(4))
-                .schema(constant().value(1))
+                .generator(constant().value(1))
         })
         .with_effect("downstream", |e| {
             e.trigger_effect("upstream".into())
-                .schema(constant().value(2))
+                .generator(constant().value(2))
         });
 
     let inputs: Vec<_> = simulation_builder.standalone().unwrap().flatten().collect();
@@ -72,7 +72,7 @@ fn run_limit_lower_than_effect_limit_wins() {
     simulation_builder.with_effect("ping", |e| {
         e.trigger_hertz(1.0)
             .limit(limit(10))
-            .schema(constant().value(1))
+            .generator(constant().value(1))
     });
 
     let inputs: Vec<_> = simulation_builder
@@ -92,7 +92,7 @@ fn effect_limit_lower_than_run_limit_wins() {
     simulation_builder.with_effect("ping", |e| {
         e.trigger_hertz(1.0)
             .limit(limit(4))
-            .schema(constant().value(1))
+            .generator(constant().value(1))
     });
 
     let inputs: Vec<_> = simulation_builder
@@ -116,7 +116,7 @@ fn spec_limit_is_applied() {
             "ping": {
                 "trigger": "hz(1, hour)",
                 "limit": 5,
-                "schema": { "type": "constant", "value": 1 }
+                "generator": { "type": "constant", "value": 1 }
             }
         }
     });
@@ -148,7 +148,7 @@ fn invalid_spec_limit_is_rejected_with_effect_path() {
                 "ping": {
                     "trigger": "hz(1, hour)",
                     "limit": invalid,
-                    "schema": { "type": "constant", "value": 1 }
+                    "generator": { "type": "constant", "value": 1 }
                 }
             }
         });

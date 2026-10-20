@@ -53,11 +53,11 @@ fn spec() -> serde_json::Value {
         "effects": {
             "user": {
                 "trigger": "hz(1, minute)",
-                "schema": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
+                "generator": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
             },
             "post": {
                 "trigger": "hz(1, minute)",
-                "schema": {
+                "generator": {
                     "type": "object",
                     "properties": {
                         "author": { "type": "reference", "effect": "user", "cursor": "unique" },
@@ -67,7 +67,7 @@ fn spec() -> serde_json::Value {
             },
             "event": {
                 "trigger": "hz(8, minute)",
-                "schema": { "type": "number", "minimum": 0, "maximum": 100, "scale": 0 }
+                "generator": { "type": "number", "minimum": 0, "maximum": 100, "scale": 0 }
             }
         }
     })

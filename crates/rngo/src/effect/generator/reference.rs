@@ -1,8 +1,10 @@
-use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
+use super::{
+    Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
+};
 use crate::build::BuildError;
-use crate::effect::schema::Metadata;
+use crate::effect::generator::Metadata;
 use crate::log::RunLogReader;
-use crate::parse::{SchemaParseVisitor, SchemaParser};
+use crate::parse::{GeneratorParseVisitor, GeneratorParser};
 use crate::spec::ParseError as Error;
 use rand_pcg::Pcg32;
 use std::rc::Rc;
@@ -35,8 +37,8 @@ impl Reference {
     }
 }
 
-impl Schema for Reference {
-    fn next(&mut self, _context: &SchemaContext) -> SchemaResult {
+impl Generator for Reference {
+    fn next(&mut self, _context: &GeneratorContext) -> GeneratorResult {
         let sampled = match self.cursor {
             Cursor::Random => self
                 .event_run_log
@@ -52,11 +54,11 @@ impl Schema for Reference {
         };
 
         match sampled {
-            Some(input_event) => SchemaResult {
+            Some(input_event) => GeneratorResult {
                 value: Some(input_event.data.clone()),
                 metadata: input_event.metadata.clone(),
             },
-            None => SchemaResult {
+            None => GeneratorResult {
                 value: None,
                 metadata: vec![Metadata {
                     mtype: "skipped".into(),
@@ -96,8 +98,8 @@ impl ReferenceBuilder {
     }
 }
 
-impl SchemaBuilder for ReferenceBuilder {
-    fn build(&self, visitor: SchemaBuildVisitor) -> Result<Box<dyn Schema>, Vec<BuildError>> {
+impl GeneratorBuilder for ReferenceBuilder {
+    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, Vec<BuildError>> {
         if let Some(key) = &self.effect {
             let unique_cursor = matches!(self.cursor, Cursor::Unique).then(|| visitor.path_id());
 
@@ -116,12 +118,15 @@ impl SchemaBuilder for ReferenceBuilder {
 
 pub struct ReferenceParser {}
 
-impl SchemaParser for ReferenceParser {
+impl GeneratorParser for ReferenceParser {
     fn key(&self) -> &str {
         "reference"
     }
 
-    fn parse(&self, visitor: SchemaParseVisitor) -> Result<Box<dyn SchemaBuilder>, Vec<Error>> {
+    fn parse(
+        &self,
+        visitor: GeneratorParseVisitor,
+    ) -> Result<Box<dyn GeneratorBuilder>, Vec<Error>> {
         let mut builder = Reference::builder();
         let mut errors = vec![];
 
@@ -129,8 +134,8 @@ impl SchemaParser for ReferenceParser {
             Some(k) if k.is_string() => {
                 builder.set_effect(k.as_str().unwrap().to_string());
             }
-            Some(_) => errors.push(visitor.schema_error("effect must be a string")),
-            None => errors.push(visitor.schema_error("effect must be specified")),
+            Some(_) => errors.push(visitor.invalid("effect must be a string")),
+            None => errors.push(visitor.invalid("effect must be specified")),
         }
 
         if let Some(v) = visitor.spec().fields.get("cursor") {

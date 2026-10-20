@@ -1,7 +1,9 @@
-use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
-use crate::build::{BuildError, SchemaEdge};
-use crate::effect::schema::Metadata;
-use crate::parse::{SchemaParseVisitor, SchemaParser};
+use super::{
+    Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
+};
+use crate::build::{BuildError, GeneratorEdge};
+use crate::effect::generator::Metadata;
+use crate::parse::{GeneratorParseVisitor, GeneratorParser};
 use crate::spec::{self, ParseError as Error};
 use rand::RngExt;
 use rand_pcg::Pcg32;
@@ -27,23 +29,23 @@ impl Select {
 
 #[derive(Debug)]
 pub struct SelectProperty {
-    pub schema: Box<dyn Schema>,
+    pub generator: Box<dyn Generator>,
     pub weight: u32,
 }
 
-impl Schema for Select {
-    fn next(&mut self, context: &SchemaContext) -> SchemaResult {
+impl Generator for Select {
+    fn next(&mut self, context: &GeneratorContext) -> GeneratorResult {
         let total_weight: u32 = self.properties.iter().map(|p| p.weight).sum();
         let mut chosen = self.rng.random_range(0..total_weight);
 
         for property in &mut self.properties {
             if chosen < property.weight {
-                return property.schema.next(context);
+                return property.generator.next(context);
             }
             chosen -= property.weight;
         }
 
-        SchemaResult {
+        GeneratorResult {
             value: None,
             metadata: vec![Metadata {
                 mtype: "error".into(),
@@ -56,23 +58,27 @@ impl Schema for Select {
 
 #[derive(Debug)]
 pub struct SelectBuilder {
-    option_builders: Vec<(u32, Box<dyn SchemaBuilder>)>,
+    option_builders: Vec<(u32, Box<dyn GeneratorBuilder>)>,
 }
 
 impl SelectBuilder {
-    pub fn option(mut self, weight: u32, builder: impl SchemaBuilder + 'static) -> Self {
+    pub fn option(mut self, weight: u32, builder: impl GeneratorBuilder + 'static) -> Self {
         self.set_option(weight, builder);
         self
     }
 
-    pub fn set_option(&mut self, weight: u32, builder: impl SchemaBuilder + 'static) -> &mut Self {
+    pub fn set_option(
+        &mut self,
+        weight: u32,
+        builder: impl GeneratorBuilder + 'static,
+    ) -> &mut Self {
         self.option_builders.push((weight, Box::new(builder)));
         self
     }
 }
 
-impl SchemaBuilder for SelectBuilder {
-    fn build(&self, visitor: SchemaBuildVisitor) -> Result<Box<dyn Schema>, Vec<BuildError>> {
+impl GeneratorBuilder for SelectBuilder {
+    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, Vec<BuildError>> {
         if self.option_builders.is_empty() {
             return Err(vec![visitor.error("options must not be empty")]);
         }
@@ -81,13 +87,13 @@ impl SchemaBuilder for SelectBuilder {
         let mut properties = vec![];
 
         for (i, (weight, builder)) in self.option_builders.iter().enumerate() {
-            let option_visitor = visitor.follow_edge(SchemaEdge {
+            let option_visitor = visitor.follow_edge(GeneratorEdge {
                 kind: "option",
                 key: i.to_string(),
             });
             match builder.build(option_visitor) {
-                Ok(schema) => properties.push(SelectProperty {
-                    schema,
+                Ok(generator) => properties.push(SelectProperty {
+                    generator,
                     weight: *weight,
                 }),
                 Err(mut e) => errors.append(&mut e),
@@ -108,21 +114,24 @@ impl SchemaBuilder for SelectBuilder {
 #[derive(Deserialize)]
 struct OptionSpec {
     weight: Option<u32>,
-    schema: spec::Schema,
+    generator: spec::Generator,
 }
 
 pub struct SelectParser {}
 
-impl SchemaParser for SelectParser {
+impl GeneratorParser for SelectParser {
     fn key(&self) -> &str {
         "select"
     }
 
-    fn parse(&self, visitor: SchemaParseVisitor) -> Result<Box<dyn SchemaBuilder>, Vec<Error>> {
+    fn parse(
+        &self,
+        visitor: GeneratorParseVisitor,
+    ) -> Result<Box<dyn GeneratorBuilder>, Vec<Error>> {
         let options_value = match visitor.spec().fields.get("options") {
             Some(v) => v.clone(),
             None => {
-                return Err(vec![visitor.schema_error("options must be specified")]);
+                return Err(vec![visitor.invalid("options must be specified")]);
             }
         };
 
@@ -131,17 +140,17 @@ impl SchemaParser for SelectParser {
         })?;
 
         if option_specs.is_empty() {
-            return Err(vec![visitor.schema_error("options must not be empty")]);
+            return Err(vec![visitor.invalid("options must not be empty")]);
         }
 
         let mut errors = vec![];
         let mut builder = Select::builder();
 
         for (i, option) in option_specs.into_iter().enumerate() {
-            let path = vec!["options".into(), i.to_string(), "schema".into()];
-            match visitor.parse_input_schema(path, option.schema) {
-                Ok(schema_builder) => {
-                    builder.set_option(option.weight.unwrap_or(1), schema_builder);
+            let path = vec!["options".into(), i.to_string(), "generator".into()];
+            match visitor.parse_input_generator(path, option.generator) {
+                Ok(generator_builder) => {
+                    builder.set_option(option.weight.unwrap_or(1), generator_builder);
                 }
                 Err(mut e) => errors.append(&mut e),
             }

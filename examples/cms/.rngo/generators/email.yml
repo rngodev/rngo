@@ -1,0 +1,18 @@
+generator:
+  type: function
+  expression: "local + '@' + domain"
+  variables:
+    local:
+      type: string
+      pattern: "[a-z]{5,10}"
+    domain:
+      type: select
+      options:
+        - weight: 3
+          generator: { type: constant, value: "gmail.com" }
+        - weight: 2
+          generator: { type: constant, value: "yahoo.com" }
+        - weight: 2
+          generator: { type: constant, value: "outlook.com" }
+        - generator: { type: constant, value: "icloud.com" }
+        - generator: { type: constant, value: "protonmail.com" }

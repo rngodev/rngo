@@ -117,7 +117,7 @@ fn builder() {
 
     simulation_builder
         .with_effect("user", |e| {
-            e.schema(
+            e.generator(
                 object()
                     .property("id", number().minimum(1).scale(0).step(1))
                     .property("name", string().pattern(".{10,50}"))
@@ -131,7 +131,7 @@ fn builder() {
             )
         })
         .with_effect("post", |e| {
-            e.schema(
+            e.generator(
                 object()
                     .property("id", number().minimum(1).scale(0).step(1))
                     .property(
@@ -161,7 +161,7 @@ fn spec() {
     let json = r#"{
         "effects": {
             "user": {
-                "schema": {
+                "generator": {
                     "type": "object",
                     "properties": {
                         "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 },
@@ -169,8 +169,8 @@ fn spec() {
                         "age": {
                             "type": "select",
                             "options": [
-                                { "weight": 3, "schema": { "type": "number", "minimum": 18, "maximum": 65 } },
-                                { "weight": 1, "schema": { "type": "constant", "value": null } }
+                                { "weight": 3, "generator": { "type": "number", "minimum": 18, "maximum": 65 } },
+                                { "weight": 1, "generator": { "type": "constant", "value": null } }
                             ]
                         },
                         "created_at": { "type": "context", "path": ["sim", "offset"] }
@@ -178,7 +178,7 @@ fn spec() {
                 }
             },
             "post": {
-                "schema": {
+                "generator": {
                     "type": "object",
                     "properties": {
                         "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 },
@@ -197,8 +197,8 @@ fn spec() {
                             "items": {
                                 "type": "select",
                                 "options": [
-                                    { "weight": 1, "schema": { "type": "constant", "value": "a" } },
-                                    { "weight": 1, "schema": { "type": "constant", "value": "b" } }
+                                    { "weight": 1, "generator": { "type": "constant", "value": "a" } },
+                                    { "weight": 1, "generator": { "type": "constant", "value": "b" } }
                                 ]
                             }
                         },

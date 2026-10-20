@@ -70,14 +70,14 @@ impl<'a> MomentParser<'a> {
         };
 
         let program = Program::compile(expr).map_err(|e| {
-            vec![ParseError::SchemaError {
+            vec![ParseError::Invalid {
                 path: Some(vec![field_name.to_string()]),
                 message: format!("could not compile {} expression: {}", field_name, e),
             }]
         })?;
 
         let value = program.execute(&context).map_err(|e| {
-            vec![ParseError::SchemaError {
+            vec![ParseError::Invalid {
                 path: Some(vec![field_name.to_string()]),
                 message: format!("could not execute {} expression: {}", field_name, e),
             }]
@@ -90,7 +90,7 @@ impl<'a> MomentParser<'a> {
             Value::Timestamp(dt) => dt.timestamp(),
             Value::Duration(d) => (now + d).timestamp(),
             _ => {
-                return Err(vec![ParseError::SchemaError {
+                return Err(vec![ParseError::Invalid {
                     path: Some(vec![field_name.to_string()]),
                     message: format!(
                         "{} expression must evaluate to a number or timestamp (seconds relative to now)",
@@ -214,7 +214,7 @@ mod tests {
     #[test]
     fn error_on_invalid_expression() {
         let errs = parse("???").unwrap_err();
-        let ParseError::SchemaError { path, message } = &errs[0];
+        let ParseError::Invalid { path, message } = &errs[0];
         assert_eq!(path, &Some(vec!["field".to_string()]));
         assert!(message.contains("field"));
     }
@@ -222,7 +222,7 @@ mod tests {
     #[test]
     fn error_on_wrong_type() {
         let errs = parse("true").unwrap_err();
-        let ParseError::SchemaError { path, message } = &errs[0];
+        let ParseError::Invalid { path, message } = &errs[0];
         assert_eq!(path, &Some(vec!["field".to_string()]));
         assert!(message.contains("field"));
     }

@@ -1,15 +1,15 @@
 use crate::audit::signal::SqlSignal;
 pub use crate::audit::signal::sql::SqlSignalBuilder;
-pub use crate::effect::schema::array::ArrayBuilder;
-pub use crate::effect::schema::constant::ConstantBuilder;
-pub use crate::effect::schema::context::ContextBuilder;
-pub use crate::effect::schema::function::FunctionBuilder;
-pub use crate::effect::schema::number::NumberBuilder;
-pub use crate::effect::schema::object::ObjectBuilder;
-pub use crate::effect::schema::reference::ReferenceBuilder;
-pub use crate::effect::schema::select::SelectBuilder;
-pub use crate::effect::schema::string::StrBuilder;
-use crate::effect::schema::{
+pub use crate::effect::generator::array::ArrayBuilder;
+pub use crate::effect::generator::constant::ConstantBuilder;
+pub use crate::effect::generator::context::ContextBuilder;
+pub use crate::effect::generator::function::FunctionBuilder;
+pub use crate::effect::generator::number::NumberBuilder;
+pub use crate::effect::generator::object::ObjectBuilder;
+pub use crate::effect::generator::reference::ReferenceBuilder;
+pub use crate::effect::generator::select::SelectBuilder;
+pub use crate::effect::generator::string::StrBuilder;
+use crate::effect::generator::{
     Array, Constant, Context, Function, Number, Object, Reference, Select, Str,
 };
 pub use crate::proxy::channel::target::exec::ExecBuilder;
@@ -82,9 +82,9 @@ pub enum BuildError {
         key: EffectKey,
         message: String,
     },
-    Schema {
+    Generator {
         effect: String,
-        path: Vec<SchemaEdge>,
+        path: Vec<GeneratorEdge>,
         message: String,
     },
     Proxy {
@@ -108,7 +108,7 @@ pub enum BuildError {
 }
 
 #[derive(Debug, Clone)]
-pub struct SchemaEdge {
+pub struct GeneratorEdge {
     pub kind: &'static str,
     pub key: String,
 }
@@ -122,7 +122,7 @@ pub enum SimulationKey {
 
 #[derive(Debug)]
 pub enum EffectKey {
-    Schema,
+    Generator,
     Trigger,
     Config,
     Start,

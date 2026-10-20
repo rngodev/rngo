@@ -30,7 +30,7 @@ fn reference_with_no_prior_events_is_skipped_not_logged() {
     let mut simulation_builder = Simulation::builder();
     simulation_builder.with_effect("derived", |e| {
         e.trigger_hertz(1.0)
-            .schema(reference().effect("nonexistent"))
+            .generator(reference().effect("nonexistent"))
     });
 
     let simulation = simulation_builder
@@ -72,7 +72,7 @@ fn reference_with_no_prior_events_is_skipped_not_logged() {
 fn object_with_a_skipped_property_is_itself_skipped() {
     let mut simulation_builder = Simulation::builder();
     simulation_builder.with_effect("derived", |e| {
-        e.trigger_hertz(1.0).schema(
+        e.trigger_hertz(1.0).generator(
             object()
                 .property("id", constant().value(1))
                 .property("missing", reference().effect("nonexistent")),
@@ -98,7 +98,7 @@ fn object_with_a_skipped_property_is_itself_skipped() {
 fn array_with_a_skipped_item_is_itself_skipped() {
     let mut simulation_builder = Simulation::builder();
     simulation_builder.with_effect("derived", |e| {
-        e.trigger_hertz(1.0).schema(
+        e.trigger_hertz(1.0).generator(
             array()
                 .min_items(1)
                 .max_items(1)

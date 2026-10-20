@@ -1,4 +1,4 @@
-schema:
+generator:
   type: function
   expression: "sentences.join(' ')"
   variables:
