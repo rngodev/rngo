@@ -1,10 +1,10 @@
 #![allow(dead_code)]
 
-use rngo::{BuildError, ParseError, SchemaEdge};
+use rngo::{BuildError, GeneratorEdge, ParseError};
 
 pub trait BuildErrorTestExt {
     fn message(&self) -> &str;
-    fn schema_path(&self) -> Option<&Vec<SchemaEdge>>;
+    fn generator_path(&self) -> Option<&Vec<GeneratorEdge>>;
 }
 
 impl BuildErrorTestExt for BuildError {
@@ -12,7 +12,7 @@ impl BuildErrorTestExt for BuildError {
         match self {
             BuildError::Simulation { message, .. } => message,
             BuildError::Effect { message, .. } => message,
-            BuildError::Schema { message, .. } => message,
+            BuildError::Generator { message, .. } => message,
             BuildError::Proxy { message } => message,
             BuildError::Channel { message, .. } => message,
             BuildError::ChannelTarget { message, .. } => message,
@@ -21,9 +21,9 @@ impl BuildErrorTestExt for BuildError {
         }
     }
 
-    fn schema_path(&self) -> Option<&Vec<SchemaEdge>> {
+    fn generator_path(&self) -> Option<&Vec<GeneratorEdge>> {
         match self {
-            BuildError::Schema { path, .. } => Some(path),
+            BuildError::Generator { path, .. } => Some(path),
             _ => None,
         }
     }
@@ -36,12 +36,12 @@ pub trait ParseErrorTestExt {
 
 impl ParseErrorTestExt for ParseError {
     fn message(&self) -> &str {
-        let ParseError::SchemaError { message, .. } = self;
+        let ParseError::Invalid { message, .. } = self;
         message
     }
 
     fn path(&self) -> Option<&Vec<String>> {
-        let ParseError::SchemaError { path, .. } = self;
+        let ParseError::Invalid { path, .. } = self;
         path.as_ref()
     }
 }

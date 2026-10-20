@@ -1,0 +1,34 @@
+generator:
+  type: function
+  expression: "givenName + ' ' + familyName"
+  variables:
+    givenName:
+      type: select
+      options:
+        - generator: { type: constant, value: "Alice" }
+        - generator: { type: constant, value: "Marcus" }
+        - generator: { type: constant, value: "Priya" }
+        - generator: { type: constant, value: "James" }
+        - generator: { type: constant, value: "Fatima" }
+        - generator: { type: constant, value: "Noah" }
+        - generator: { type: constant, value: "Sofia" }
+        - generator: { type: constant, value: "Liam" }
+        - generator: { type: constant, value: "Grace" }
+        - generator: { type: constant, value: "Ethan" }
+        - generator: { type: constant, value: "Ana" }
+        - generator: { type: constant, value: "David" }
+    familyName:
+      type: select
+      options:
+        - generator: { type: constant, value: "Johnson" }
+        - generator: { type: constant, value: "Chen" }
+        - generator: { type: constant, value: "Patel" }
+        - generator: { type: constant, value: "O'Connor" }
+        - generator: { type: constant, value: "Al-Sayed" }
+        - generator: { type: constant, value: "Kim" }
+        - generator: { type: constant, value: "Rossi" }
+        - generator: { type: constant, value: "Murphy" }
+        - generator: { type: constant, value: "Nakamura" }
+        - generator: { type: constant, value: "Walker" }
+        - generator: { type: constant, value: "Silva" }
+        - generator: { type: constant, value: "Okafor" }

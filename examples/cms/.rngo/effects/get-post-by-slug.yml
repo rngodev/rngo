@@ -2,7 +2,7 @@ trigger: "hz(3, hour)"
 start: now
 end: now + hours(3)
 channel: api
-schema:
+generator:
   type: object
   properties:
     method:

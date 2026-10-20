@@ -22,7 +22,7 @@ pub use reference::Reference;
 pub use select::Select;
 pub use string::Str;
 
-use crate::build::{BuildError, SchemaEdge};
+use crate::build::{BuildError, GeneratorEdge};
 use crate::effect::TriggerEvent;
 use crate::log::RunLogReader;
 use rand_pcg::Pcg32;
@@ -31,22 +31,22 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::rc::Rc;
 
-pub trait Schema: std::fmt::Debug {
-    fn next(&mut self, context: &SchemaContext) -> SchemaResult;
+pub trait Generator: std::fmt::Debug {
+    fn next(&mut self, context: &GeneratorContext) -> GeneratorResult;
 }
 
-pub struct SchemaContext<'a> {
+pub struct GeneratorContext<'a> {
     pub trigger: &'a TriggerEvent,
     pub simulation_start: DateTime<FixedOffset>,
     pub simulation_end: DateTime<FixedOffset>,
 }
 
-pub struct SchemaResult {
+pub struct GeneratorResult {
     pub(crate) value: Option<Value>,
     pub(crate) metadata: Vec<Metadata>,
 }
 
-impl From<Value> for SchemaResult {
+impl From<Value> for GeneratorResult {
     fn from(value: Value) -> Self {
         Self {
             value: Some(value),
@@ -73,26 +73,26 @@ impl Metadata {
     }
 }
 
-pub trait SchemaBuilder: std::fmt::Debug {
-    fn build(&self, visitor: SchemaBuildVisitor) -> Result<Box<dyn Schema>, Vec<BuildError>>;
+pub trait GeneratorBuilder: std::fmt::Debug {
+    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, Vec<BuildError>>;
 }
 
-impl SchemaBuilder for Box<dyn SchemaBuilder> {
-    fn build(&self, visitor: SchemaBuildVisitor) -> Result<Box<dyn Schema>, Vec<BuildError>> {
+impl GeneratorBuilder for Box<dyn GeneratorBuilder> {
+    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, Vec<BuildError>> {
         self.as_ref().build(visitor)
     }
 }
 
-pub struct SchemaBuildVisitor {
+pub struct GeneratorBuildVisitor {
     pub event_run_log: Rc<dyn RunLogReader>,
     pub simulation_seed: u64,
     pub effect_key: String,
-    pub path: Vec<SchemaEdge>,
+    pub path: Vec<GeneratorEdge>,
 }
 
-impl Clone for SchemaBuildVisitor {
+impl Clone for GeneratorBuildVisitor {
     fn clone(&self) -> Self {
-        SchemaBuildVisitor {
+        GeneratorBuildVisitor {
             event_run_log: Rc::clone(&self.event_run_log),
             simulation_seed: self.simulation_seed,
             effect_key: self.effect_key.clone(),
@@ -101,7 +101,7 @@ impl Clone for SchemaBuildVisitor {
     }
 }
 
-impl SchemaBuildVisitor {
+impl GeneratorBuildVisitor {
     pub fn rng(&self) -> Pcg32 {
         let hash = format!("{}-{}", self.simulation_seed, self.path_id());
         Seeder::from(&hash).into_rng()
@@ -116,14 +116,14 @@ impl SchemaBuildVisitor {
         format!("{}-{}", self.effect_key, path_str)
     }
 
-    pub fn follow_edge(&self, edge: SchemaEdge) -> SchemaBuildVisitor {
+    pub fn follow_edge(&self, edge: GeneratorEdge) -> GeneratorBuildVisitor {
         let mut new_self = self.clone();
         new_self.path.push(edge);
         new_self
     }
 
     pub fn error(&self, message: impl Into<String>) -> BuildError {
-        BuildError::Schema {
+        BuildError::Generator {
             effect: self.effect_key.clone(),
             path: self.path.clone(),
             message: message.into(),

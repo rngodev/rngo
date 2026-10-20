@@ -1,7 +1,7 @@
-use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaResult};
+use super::{Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorResult};
 use crate::build::BuildError;
-use crate::effect::schema::SchemaContext;
-use crate::parse::{SchemaParseVisitor, SchemaParser};
+use crate::effect::generator::GeneratorContext;
+use crate::parse::{GeneratorParseVisitor, GeneratorParser};
 use crate::spec::ParseError as Error;
 use rand::RngExt;
 use rand_pcg::Pcg32;
@@ -31,8 +31,8 @@ impl Number {
     }
 }
 
-impl Schema for Number {
-    fn next(&mut self, _context: &SchemaContext) -> SchemaResult {
+impl Generator for Number {
+    fn next(&mut self, _context: &GeneratorContext) -> GeneratorResult {
         let mut value = if let Some(step) = self.step {
             let current = self.current.get_or_insert(if step >= 0.0 {
                 self.minimum
@@ -48,7 +48,7 @@ impl Schema for Number {
 
         if let Some(scale) = self.scale {
             if scale == 0 {
-                return SchemaResult {
+                return GeneratorResult {
                     value: Some((value as i64).into()),
                     metadata: vec![],
                 };
@@ -58,7 +58,7 @@ impl Schema for Number {
             }
         }
 
-        SchemaResult {
+        GeneratorResult {
             value: Some(value.into()),
             metadata: vec![],
         }
@@ -115,8 +115,8 @@ impl NumberBuilder {
     }
 }
 
-impl SchemaBuilder for NumberBuilder {
-    fn build(&self, visitor: SchemaBuildVisitor) -> Result<Box<dyn Schema>, Vec<BuildError>> {
+impl GeneratorBuilder for NumberBuilder {
+    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, Vec<BuildError>> {
         let mut errors = vec![];
 
         match (self.minimum, self.maximum) {
@@ -143,12 +143,15 @@ impl SchemaBuilder for NumberBuilder {
 
 pub struct NumberParser {}
 
-impl SchemaParser for NumberParser {
+impl GeneratorParser for NumberParser {
     fn key(&self) -> &str {
         "number"
     }
 
-    fn parse(&self, visitor: SchemaParseVisitor) -> Result<Box<dyn SchemaBuilder>, Vec<Error>> {
+    fn parse(
+        &self,
+        visitor: GeneratorParseVisitor,
+    ) -> Result<Box<dyn GeneratorBuilder>, Vec<Error>> {
         let mut builder = Number::builder();
         let mut errors = vec![];
 

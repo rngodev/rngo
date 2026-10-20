@@ -211,13 +211,13 @@ fn load_spec(base: &Path) -> Result<spec::Spec, Box<dyn Error>> {
         }
     }
 
-    if !spec["schemas"].is_object() {
-        spec["schemas"] = serde_json::json!({});
+    if !spec["generators"].is_object() {
+        spec["generators"] = serde_json::json!({});
     }
 
-    let schemas_dir = base.join(".rngo/schemas");
-    if schemas_dir.is_dir() {
-        let mut paths: Vec<_> = fs::read_dir(&schemas_dir)?
+    let generators_dir = base.join(".rngo/generators");
+    if generators_dir.is_dir() {
+        let mut paths: Vec<_> = fs::read_dir(&generators_dir)?
             .filter_map(|e| e.ok())
             .map(|e| e.path())
             .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("yml"))
@@ -230,8 +230,8 @@ fn load_spec(base: &Path) -> Result<spec::Spec, Box<dyn Error>> {
                 .and_then(|s| s.to_str())
                 .ok_or_else(|| format!("invalid filename: {}", path.display()))?
                 .to_string();
-            let schema: serde_json::Value = serde_yaml::from_str(&fs::read_to_string(&path)?)?;
-            spec["schemas"][key] = schema;
+            let generator: serde_json::Value = serde_yaml::from_str(&fs::read_to_string(&path)?)?;
+            spec["generators"][key] = generator;
         }
     }
 
@@ -351,7 +351,7 @@ mod tests {
             &json!({
                 "channel": "logger",
                 "trigger": "hz(1, day)",
-                "schema": {
+                "generator": {
                     "type": "object",
                     "properties": {
                         "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
@@ -402,7 +402,7 @@ mod tests {
             &json!({
                 "channel": "logger",
                 "trigger": "hz(1, day)",
-                "schema": { "type": "constant", "value": command }
+                "generator": { "type": "constant", "value": command }
             }),
         );
 
@@ -450,7 +450,7 @@ mod tests {
             &json!({
                 "channel": "logger",
                 "trigger": "hz(1, day)",
-                "schema": {
+                "generator": {
                     "type": "object",
                     "properties": {
                         "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
@@ -508,7 +508,7 @@ mod tests {
             &json!({
                 "channel": "logger",
                 "trigger": "hz(1, day)",
-                "schema": {
+                "generator": {
                     "type": "object",
                     "properties": {
                         "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
@@ -557,7 +557,7 @@ mod tests {
             &json!({
                 "channel": "logger",
                 "trigger": "hz(1, day)",
-                "schema": {
+                "generator": {
                     "type": "object",
                     "properties": {
                         "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
@@ -607,7 +607,7 @@ mod tests {
             &json!({
                 "channel": "logger",
                 "trigger": "hz(1, day)",
-                "schema": {
+                "generator": {
                     "type": "object",
                     "properties": { "tag": { "type": "constant", "value": "<a&b>" } }
                 }
@@ -657,7 +657,7 @@ mod tests {
                 "channel": "db",
                 "metadata": { "table": "accounts" },
                 "trigger": "hz(1, hour)",
-                "schema": {
+                "generator": {
                     "type": "object",
                     "properties": {
                         "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
@@ -718,7 +718,7 @@ mod tests {
                     "ping": {
                         "channel": "logger",
                         "trigger": "hz(1, day)",
-                        "schema": {
+                        "generator": {
                             "type": "object",
                             "properties": {
                                 "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
@@ -746,14 +746,14 @@ mod tests {
     }
 
     #[test]
-    fn schemas_dir_yml_files_are_referenceable_by_type_name() {
+    fn generators_dir_yml_files_are_referenceable_by_type_name() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
-        let output = base.join("schemas_output.txt");
+        let output = base.join("generators_output.txt");
 
         fs::create_dir_all(base.join(".rngo/effects")).unwrap();
         fs::create_dir_all(base.join(".rngo/channels")).unwrap();
-        fs::create_dir_all(base.join(".rngo/schemas")).unwrap();
+        fs::create_dir_all(base.join(".rngo/generators")).unwrap();
 
         write_yaml(
             base.join(".rngo/spec.yml"),
@@ -765,14 +765,14 @@ mod tests {
         );
 
         write_yaml(
-            base.join(".rngo/schemas/title.yml"),
+            base.join(".rngo/generators/title.yml"),
             &json!({
-                "schema": {
+                "generator": {
                     "type": "select",
                     "options": [
-                        { "schema": { "type": "constant", "value": "Mr." } },
-                        { "schema": { "type": "constant", "value": "Mrs." } },
-                        { "schema": { "type": "constant", "value": "Dr." } }
+                        { "generator": { "type": "constant", "value": "Mr." } },
+                        { "generator": { "type": "constant", "value": "Mrs." } },
+                        { "generator": { "type": "constant", "value": "Dr." } }
                     ]
                 }
             }),
@@ -783,7 +783,7 @@ mod tests {
             &json!({
                 "channel": "logger",
                 "trigger": "hz(1, hour)",
-                "schema": {
+                "generator": {
                     "type": "object",
                     "properties": {
                         "title": { "type": "title" }
@@ -848,7 +848,7 @@ mod tests {
             base.join(".rngo/effects/ping.yml"),
             &json!({
                 "trigger": "hz(1, day)",
-                "schema": {
+                "generator": {
                     "type": "object",
                     "properties": {
                         "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
@@ -897,7 +897,7 @@ mod tests {
             base.join(".rngo/effects/ping.yml"),
             &json!({
                 "trigger": "hz(1, day)",
-                "schema": {
+                "generator": {
                     "type": "object",
                     "properties": {
                         "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
@@ -939,7 +939,7 @@ mod tests {
             base.join(".rngo/effects/ping.yml"),
             &json!({
                 "trigger": "hz(1, day)",
-                "schema": {
+                "generator": {
                     "type": "object",
                     "properties": {
                         "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
@@ -981,7 +981,7 @@ mod tests {
             base.join(".rngo/effects/ping.yml"),
             &json!({
                 "trigger": "hz(1, day)",
-                "schema": {
+                "generator": {
                     "type": "object",
                     "properties": {
                         "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
@@ -1016,7 +1016,7 @@ mod tests {
             base.join(".rngo/effects/ping.yml"),
             &json!({
                 "trigger": "hz(1, day)",
-                "schema": {
+                "generator": {
                     "type": "object",
                     "properties": {
                         "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
@@ -1075,7 +1075,7 @@ mod tests {
             &json!({
                 "channel": "logger",
                 "trigger": "hz(1, day)",
-                "schema": {
+                "generator": {
                     "type": "object",
                     "properties": {
                         "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
@@ -1129,12 +1129,12 @@ mod tests {
             }),
         );
 
-        // minimum > maximum is a build-time schema error.
+        // minimum > maximum is a build-time generator error.
         write_yaml(
             base.join(".rngo/effects/broken.yml"),
             &json!({
                 "trigger": "hz(1, day)",
-                "schema": {
+                "generator": {
                     "type": "number",
                     "minimum": 100,
                     "maximum": 18
@@ -1181,7 +1181,7 @@ mod tests {
             &json!({
                 "trigger": "hz(1, day)",
                 "limit": 0,
-                "schema": { "type": "constant", "value": 1 }
+                "generator": { "type": "constant", "value": 1 }
             }),
         );
 
@@ -1223,7 +1223,7 @@ mod tests {
             &json!({
                 "channel": "logger",
                 "trigger": "hz(1, hour)",
-                "schema": {
+                "generator": {
                     "type": "object",
                     "properties": {
                         "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
@@ -1279,7 +1279,7 @@ mod tests {
             base.join(".rngo/effects/ping.yml"),
             &json!({
                 "trigger": "hz(1, day)",
-                "schema": { "type": "constant", "value": 1 }
+                "generator": { "type": "constant", "value": 1 }
             }),
         );
 
@@ -1316,7 +1316,7 @@ mod tests {
             &json!({
                 "channel": "logger",
                 "trigger": "hz(1, second)",
-                "schema": { "type": "constant", "value": 1 }
+                "generator": { "type": "constant", "value": 1 }
             }),
         );
 

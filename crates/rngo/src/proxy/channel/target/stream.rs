@@ -170,14 +170,14 @@ impl ChannelTargetParser for StreamParser {
             Some(value) => match value.as_str() {
                 Some(command) => command,
                 None => {
-                    return Err(vec![ParseError::SchemaError {
+                    return Err(vec![ParseError::Invalid {
                         path: None,
                         message: "FIX ME must be a string".into(),
                     }]);
                 }
             },
             None => {
-                return Err(vec![ParseError::SchemaError {
+                return Err(vec![ParseError::Invalid {
                     path: None,
                     message: "FIX ME must be a string".into(),
                 }]);

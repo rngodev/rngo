@@ -100,14 +100,14 @@ impl SignalParser for SqlSignalParser {
             Some(value) => match value.as_str() {
                 Some(query) => query.to_string(),
                 None => {
-                    return Err(vec![ParseError::SchemaError {
+                    return Err(vec![ParseError::Invalid {
                         path: Some(vec!["signals".into(), key.into(), "query".into()]),
                         message: "query must be a string".into(),
                     }]);
                 }
             },
             None => {
-                return Err(vec![ParseError::SchemaError {
+                return Err(vec![ParseError::Invalid {
                     path: Some(vec!["signals".into(), key.into(), "query".into()]),
                     message: "query is required".into(),
                 }]);
@@ -117,14 +117,14 @@ impl SignalParser for SqlSignalParser {
         let expectation = match signal.fields.get("expect") {
             Some(value) => {
                 let Some(source) = value.as_str() else {
-                    return Err(vec![ParseError::SchemaError {
+                    return Err(vec![ParseError::Invalid {
                         path: Some(vec!["signals".into(), key.into(), "expect".into()]),
                         message: "expect must be a string".into(),
                     }]);
                 };
 
                 let expectation = compile_expectation(source).map_err(|message| {
-                    vec![ParseError::SchemaError {
+                    vec![ParseError::Invalid {
                         path: Some(vec!["signals".into(), key.into(), "expect".into()]),
                         message,
                     }]

@@ -8,7 +8,7 @@ pub fn from_value(value: serde_json::Value) -> Result<Spec, Vec<ParseError>> {
     let mut track = serde_path_to_error::Track::new();
     let deserializer = serde_path_to_error::Deserializer::new(value, &mut track);
     serde_path_to_error::deserialize(deserializer).map_err(|e| {
-        vec![ParseError::SchemaError {
+        vec![ParseError::Invalid {
             path: Some(e.path().to_string().split('.').map(String::from).collect()),
             message: e.inner().to_string(),
         }]
@@ -18,7 +18,7 @@ pub fn from_value(value: serde_json::Value) -> Result<Spec, Vec<ParseError>> {
 #[derive(Error, Debug)]
 #[error("failed to parse{}: `{message}`", display_path(.path))]
 pub enum ParseError {
-    SchemaError {
+    Invalid {
         path: Option<Vec<String>>,
         message: String,
     },
@@ -40,7 +40,7 @@ pub struct Spec {
     #[serde(default)]
     pub channels: IndexMap<String, Channel>,
     #[serde(default)]
-    pub schemas: IndexMap<String, SchemaType>,
+    pub generators: IndexMap<String, GeneratorType>,
     #[serde(default)]
     pub signals: IndexMap<String, Signal>,
 }
@@ -68,7 +68,7 @@ pub struct Effect {
     pub limit: Option<NonZeroU64>,
     pub trigger: Option<TriggerUnion>,
     pub metadata: Option<Value>,
-    pub schema: Schema,
+    pub generator: Generator,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -82,7 +82,7 @@ pub struct Format {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Schema {
+pub struct Generator {
     #[serde(rename = "type")]
     pub stype: Option<String>,
     #[serde(flatten)]
@@ -90,8 +90,8 @@ pub struct Schema {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct SchemaType {
-    pub schema: Schema,
+pub struct GeneratorType {
+    pub generator: Generator,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

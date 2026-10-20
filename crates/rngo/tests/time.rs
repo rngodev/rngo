@@ -34,7 +34,7 @@ fn fixed_window() -> rngo::SimulationBuilder {
 #[test]
 fn simulation_respects_end_time() {
     let mut builder = fixed_window();
-    builder.with_effect("events", |e| e.schema(constant().value(Value::Null)));
+    builder.with_effect("events", |e| e.generator(constant().value(Value::Null)));
 
     let offsets = offsets_in_seconds(
         builder
@@ -65,7 +65,7 @@ fn effect_respects_start_time() {
     let mut builder = fixed_window();
     builder.with_effect("events", |e| {
         e.start(Moment::Absolute(start() + TimeDelta::days(15)))
-            .schema(constant().value(Value::Null))
+            .generator(constant().value(Value::Null))
     });
 
     let offsets = offsets_in_seconds(
@@ -106,7 +106,7 @@ fn effect_respects_end_time_via_spec() {
             "events": {
                 "trigger": "hz(1, day)",
                 "end": "2024-06-01",
-                "schema": { "type": "constant", "value": null }
+                "generator": { "type": "constant", "value": null }
             }
         }
     });
@@ -157,7 +157,7 @@ fn effect_respects_both_start_and_end() {
                 "trigger": "hz(1, day)",
                 "start": "2024-04-01",
                 "end": "2024-09-30",
-                "schema": { "type": "constant", "value": null }
+                "generator": { "type": "constant", "value": null }
             }
         }
     });
@@ -216,7 +216,7 @@ fn effect_start_before_simulation_start_is_error() {
     // Simulation: -30d to now. Effect tries to start before the simulation at -60d.
     builder.with_effect("events", |e| {
         e.start(Moment::Relative(TimeDelta::days(-60)))
-            .schema(constant().value(Value::Null))
+            .generator(constant().value(Value::Null))
     });
 
     let errors = builder
@@ -244,7 +244,7 @@ fn effect_end_after_simulation_end_is_error() {
     // Simulation: -30d to now. Effect tries to end after the simulation at +1d.
     builder.with_effect("events", |e| {
         e.end(Moment::Relative(TimeDelta::days(1)))
-            .schema(constant().value(Value::Null))
+            .generator(constant().value(Value::Null))
     });
 
     let errors = builder
@@ -274,11 +274,11 @@ fn effect_bounds_outside_simulation_via_spec_are_errors() {
         "effects": {
             "too_early": {
                 "start": "2023-06-01",
-                "schema": { "type": "constant", "value": null }
+                "generator": { "type": "constant", "value": null }
             },
             "too_late": {
                 "end": "2025-06-01",
-                "schema": { "type": "constant", "value": null }
+                "generator": { "type": "constant", "value": null }
             }
         }
     });

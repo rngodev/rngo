@@ -85,7 +85,7 @@ impl ChannelTargetParser for ExecParser {
         channel_target: &spec::ChannelTarget,
     ) -> Result<Box<dyn ChannelTargetBuilder>, Vec<ParseError>> {
         if channel_target.fields.contains_key("command") {
-            return Err(vec![ParseError::SchemaError {
+            return Err(vec![ParseError::Invalid {
                 path: Some(vec!["command".into()]),
                 message: "exec no longer takes a command; set the channel's format to a template \
                           format, or have the effect produce the command as a string, instead"

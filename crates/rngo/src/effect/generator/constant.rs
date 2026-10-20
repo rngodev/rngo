@@ -1,7 +1,7 @@
-use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaResult};
+use super::{Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorResult};
 use crate::build::BuildError;
-use crate::effect::schema::SchemaContext;
-use crate::parse::{SchemaParseVisitor, SchemaParser};
+use crate::effect::generator::GeneratorContext;
+use crate::parse::{GeneratorParseVisitor, GeneratorParser};
 use crate::spec::ParseError;
 use serde_json::Value;
 
@@ -20,8 +20,8 @@ impl Constant {
     }
 }
 
-impl Schema for Constant {
-    fn next(&mut self, _context: &SchemaContext) -> SchemaResult {
+impl Generator for Constant {
+    fn next(&mut self, _context: &GeneratorContext) -> GeneratorResult {
         self.value.clone().into()
     }
 }
@@ -43,8 +43,8 @@ impl ConstantBuilder {
     }
 }
 
-impl SchemaBuilder for ConstantBuilder {
-    fn build(&self, visitor: SchemaBuildVisitor) -> Result<Box<dyn Schema>, Vec<BuildError>> {
+impl GeneratorBuilder for ConstantBuilder {
+    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, Vec<BuildError>> {
         if let Some(value) = &self.value {
             Ok(Box::new(Constant {
                 value: value.clone(),
@@ -57,15 +57,15 @@ impl SchemaBuilder for ConstantBuilder {
 
 pub struct ConstantParser {}
 
-impl SchemaParser for ConstantParser {
+impl GeneratorParser for ConstantParser {
     fn key(&self) -> &str {
         "constant"
     }
 
     fn parse(
         &self,
-        visitor: SchemaParseVisitor,
-    ) -> Result<Box<dyn SchemaBuilder>, Vec<ParseError>> {
+        visitor: GeneratorParseVisitor,
+    ) -> Result<Box<dyn GeneratorBuilder>, Vec<ParseError>> {
         let mut builder = Constant::builder();
 
         match visitor.spec().fields.get("value") {
@@ -73,7 +73,7 @@ impl SchemaParser for ConstantParser {
                 builder.set_value(value.clone());
                 Ok(Box::new(builder))
             }
-            None => Err(vec![visitor.schema_error("value must be specified")]),
+            None => Err(vec![visitor.invalid("value must be specified")]),
         }
     }
 }

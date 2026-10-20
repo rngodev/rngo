@@ -10,9 +10,9 @@ pub mod spec;
 
 pub use audit::signal::{self, Signal, SignalBuilder, SignalOutcome};
 pub use audit::{Audit, AuditBuilder, AuditReport};
-pub use build::{BuildError, EffectKey, SchemaEdge, SimulationKey};
+pub use build::{BuildError, EffectKey, GeneratorEdge, SimulationKey};
 pub use effect::simulation::{Simulation, SimulationBuilder, StandaloneSimulation};
-pub use effect::{Effect, EffectBuilder, Input, SkippedInput, schema};
+pub use effect::{Effect, EffectBuilder, Input, SkippedInput, generator};
 pub use log::{Metadata, RunLogReader, RunLogWriter, SimpleEventRunLog, SqliteRunLog};
 pub use moment::Moment;
 pub use parse::Dialect;

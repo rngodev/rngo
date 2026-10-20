@@ -3,7 +3,7 @@ end: now
 channel: db
 metadata:
   table: posts
-schema:
+generator:
   type: object
   properties:
     id:
@@ -29,9 +29,9 @@ schema:
       type: select
       options:
         - weight: 3
-          schema: { type: constant, value: "published" }
+          generator: { type: constant, value: "published" }
         - weight: 1
-          schema: { type: constant, value: "draft" }
+          generator: { type: constant, value: "draft" }
     created_at:
       type: context
       path: ["clock", "now"]

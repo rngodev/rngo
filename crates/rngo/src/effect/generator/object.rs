@@ -1,14 +1,16 @@
-use super::{Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult};
-use crate::build::{BuildError, SchemaEdge};
-use crate::effect::schema::Metadata;
-use crate::parse::{SchemaParseVisitor, SchemaParser};
+use super::{
+    Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
+};
+use crate::build::{BuildError, GeneratorEdge};
+use crate::effect::generator::Metadata;
+use crate::parse::{GeneratorParseVisitor, GeneratorParser};
 use crate::spec::{self, ParseError as Error};
 use indexmap::IndexMap;
 use serde_json::Map;
 
 #[derive(Debug)]
 pub struct Object {
-    properties: IndexMap<String, Box<dyn Schema>>,
+    properties: IndexMap<String, Box<dyn Generator>>,
 }
 
 impl Object {
@@ -23,14 +25,14 @@ impl Object {
     }
 }
 
-impl Schema for Object {
-    fn next(&mut self, context: &SchemaContext) -> SchemaResult {
+impl Generator for Object {
+    fn next(&mut self, context: &GeneratorContext) -> GeneratorResult {
         let mut map = Map::new();
         let mut complete = true;
         let mut metadata: Vec<Metadata> = Vec::new();
 
-        for (key, schema) in &mut self.properties {
-            let result = schema.next(context);
+        for (key, generator) in &mut self.properties {
+            let result = generator.next(context);
 
             if let Some(value) = result.value {
                 map.insert(key.clone(), value);
@@ -46,40 +48,44 @@ impl Schema for Object {
 
         let value = if complete { Some(map.into()) } else { None };
 
-        SchemaResult { value, metadata }
+        GeneratorResult { value, metadata }
     }
 }
 
 #[derive(Debug)]
 pub struct ObjectBuilder {
-    property_builders: IndexMap<String, Box<dyn SchemaBuilder>>,
+    property_builders: IndexMap<String, Box<dyn GeneratorBuilder>>,
 }
 
 impl ObjectBuilder {
-    pub fn set_property(&mut self, key: &str, builder: impl SchemaBuilder + 'static) -> &mut Self {
+    pub fn set_property(
+        &mut self,
+        key: &str,
+        builder: impl GeneratorBuilder + 'static,
+    ) -> &mut Self {
         self.property_builders.insert(key.into(), Box::new(builder));
         self
     }
 
-    pub fn property(mut self, key: &str, builder: impl SchemaBuilder + 'static) -> Self {
+    pub fn property(mut self, key: &str, builder: impl GeneratorBuilder + 'static) -> Self {
         self.set_property(key, builder);
         self
     }
 }
 
-impl SchemaBuilder for ObjectBuilder {
-    fn build(&self, visitor: SchemaBuildVisitor) -> Result<Box<dyn Schema>, Vec<BuildError>> {
+impl GeneratorBuilder for ObjectBuilder {
+    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, Vec<BuildError>> {
         let mut errors = vec![];
         let mut properties = IndexMap::new();
 
         for (key, builder) in &self.property_builders {
-            let property_visitor = visitor.follow_edge(SchemaEdge {
+            let property_visitor = visitor.follow_edge(GeneratorEdge {
                 kind: "property",
                 key: key.clone(),
             });
             match builder.build(property_visitor) {
-                Ok(schema) => {
-                    properties.insert(key.into(), schema);
+                Ok(generator) => {
+                    properties.insert(key.into(), generator);
                 }
                 Err(mut e) => errors.append(&mut e),
             }
@@ -95,14 +101,17 @@ impl SchemaBuilder for ObjectBuilder {
 
 pub struct ObjectParser {}
 
-impl SchemaParser for ObjectParser {
+impl GeneratorParser for ObjectParser {
     fn key(&self) -> &str {
         "object"
     }
 
-    fn parse(&self, visitor: SchemaParseVisitor) -> Result<Box<dyn SchemaBuilder>, Vec<Error>> {
+    fn parse(
+        &self,
+        visitor: GeneratorParseVisitor,
+    ) -> Result<Box<dyn GeneratorBuilder>, Vec<Error>> {
         if let Some(input) = visitor.spec().fields.get("properties") {
-            serde_json::from_value::<IndexMap<String, spec::Schema>>(input.clone())
+            serde_json::from_value::<IndexMap<String, spec::Generator>>(input.clone())
                 .map_err(|err| {
                     vec![
                         visitor
@@ -113,10 +122,11 @@ impl SchemaParser for ObjectParser {
                     let mut errors = vec![];
                     let mut builder = Object::builder();
 
-                    for (key, schema) in properties.into_iter() {
-                        match visitor
-                            .parse_input_schema(vec!["properties".into(), key.clone()], schema)
-                        {
+                    for (key, generator) in properties.into_iter() {
+                        match visitor.parse_input_generator(
+                            vec!["properties".into(), key.clone()],
+                            generator,
+                        ) {
                             Ok(stream) => {
                                 builder.set_property(&key, stream);
                             }
@@ -125,7 +135,7 @@ impl SchemaParser for ObjectParser {
                     }
 
                     if errors.is_empty() {
-                        Ok(Box::new(builder) as Box<dyn SchemaBuilder>)
+                        Ok(Box::new(builder) as Box<dyn GeneratorBuilder>)
                     } else {
                         Err(errors)
                     }

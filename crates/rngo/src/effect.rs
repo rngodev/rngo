@@ -1,5 +1,5 @@
 mod clock;
-pub mod schema;
+pub mod generator;
 pub mod simulation;
 mod trigger;
 
@@ -8,10 +8,11 @@ use crate::log::{Metadata, RunLogReader, SimpleEventRunLog};
 use crate::moment::Moment;
 use chrono::{DateTime, FixedOffset, TimeDelta};
 use clock::Clock;
-use multi_try::MultiTry;
-use schema::{
-    Metadata as SchemaMetadata, Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext,
+use generator::{
+    Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext,
+    Metadata as GeneratorMetadata,
 };
+use multi_try::MultiTry;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::num::NonZeroU64;
@@ -25,7 +26,7 @@ pub struct Effect {
     pub key: String,
     run_log_reader: Rc<dyn RunLogReader>,
     trigger: Trigger,
-    schema: Box<dyn Schema>,
+    generator: Box<dyn Generator>,
     end_offset: i64,
     limit: Option<u64>,
     produced: u64,
@@ -60,14 +61,14 @@ impl Iterator for Effect {
         self.next_offset()?;
 
         let trigger_event = self.trigger.pull()?;
-        let context = SchemaContext {
+        let context = GeneratorContext {
             trigger: &trigger_event,
             simulation_start: self.sim_start,
             simulation_end: self.sim_end,
         };
         let timestamp = self.sim_start + TimeDelta::milliseconds(trigger_event.sim_offset);
 
-        let result = self.schema.next(&context);
+        let result = self.generator.next(&context);
 
         if let Some(data) = result.value {
             let last_id = self.run_log_reader.last().map(|e| e.id).unwrap_or(0);
@@ -96,14 +97,14 @@ pub struct Input {
     pub effect: String,
     pub timestamp: DateTime<FixedOffset>,
     pub data: Value,
-    pub metadata: Vec<SchemaMetadata>,
+    pub metadata: Vec<GeneratorMetadata>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkippedInput {
     pub effect: String,
     pub timestamp: DateTime<FixedOffset>,
-    pub metadata: Vec<SchemaMetadata>,
+    pub metadata: Vec<GeneratorMetadata>,
 }
 
 impl From<SkippedInput> for Metadata {
@@ -137,7 +138,7 @@ pub struct EffectBuilder {
     event_run_log: Option<Rc<dyn RunLogReader>>,
     seed: Option<u64>,
     trigger: TriggerConfig,
-    schema_builder: Option<Box<dyn SchemaBuilder>>,
+    generator_builder: Option<Box<dyn GeneratorBuilder>>,
 }
 
 impl EffectBuilder {
@@ -153,7 +154,7 @@ impl EffectBuilder {
             event_run_log: None,
             seed: None,
             trigger: TriggerConfig::ClockExpression("hz(1, day)".into()),
-            schema_builder: None,
+            generator_builder: None,
         }
     }
 
@@ -267,13 +268,13 @@ impl EffectBuilder {
         self
     }
 
-    pub fn schema(mut self, builder: impl SchemaBuilder + 'static) -> Self {
-        self.set_schema(builder);
+    pub fn generator(mut self, builder: impl GeneratorBuilder + 'static) -> Self {
+        self.set_generator(builder);
         self
     }
 
-    pub fn set_schema(&mut self, builder: impl SchemaBuilder + 'static) -> &mut Self {
-        self.schema_builder = Some(Box::new(builder));
+    pub fn set_generator(&mut self, builder: impl GeneratorBuilder + 'static) -> &mut Self {
+        self.generator_builder = Some(Box::new(builder));
         self
     }
 
@@ -313,20 +314,20 @@ impl EffectBuilder {
             });
         }
 
-        let schema_result = if let Some(schema_builder) = self.schema_builder {
-            let visitor = SchemaBuildVisitor {
+        let generator_result = if let Some(generator_builder) = self.generator_builder {
+            let visitor = GeneratorBuildVisitor {
                 event_run_log: run_log_reader.clone(),
                 simulation_seed: seed,
                 effect_key: self.key.clone(),
                 path: vec![],
             };
 
-            schema_builder.build(visitor)
+            generator_builder.build(visitor)
         } else {
             Err(vec![BuildError::Effect {
                 effect: self.key.clone(),
-                key: EffectKey::Schema,
-                message: "schema was not set".into(),
+                key: EffectKey::Generator,
+                message: "generator was not set".into(),
             }])
         };
 
@@ -359,15 +360,15 @@ impl EffectBuilder {
                 }),
         };
 
-        match schema_result
+        match generator_result
             .and_try(trigger_result)
             .map_err(|e| e.into_iter().flatten().collect::<Vec<_>>())
         {
-            Ok((schema, trigger)) if errors.is_empty() => Ok(Effect {
+            Ok((generator, trigger)) if errors.is_empty() => Ok(Effect {
                 key: self.key,
                 run_log_reader: run_log_reader.clone(),
                 trigger,
-                schema,
+                generator,
                 end_offset,
                 limit: self.limit.map(NonZeroU64::get),
                 produced: 0,
@@ -387,22 +388,23 @@ impl EffectBuilder {
 mod tests {
     use super::Effect;
     use crate::build::{BuildError, constant};
-    use crate::effect::schema::{
-        Metadata, Schema, SchemaBuildVisitor, SchemaBuilder, SchemaContext, SchemaResult,
+    use crate::effect::generator::{
+        Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
+        Metadata,
     };
     use chrono::Utc;
     use std::num::NonZeroU64;
 
     #[derive(Debug, Default)]
-    struct AlternatingSchema {
+    struct AlternatingGenerator {
         calls: u32,
     }
 
-    impl Schema for AlternatingSchema {
-        fn next(&mut self, _context: &SchemaContext) -> SchemaResult {
+    impl Generator for AlternatingGenerator {
+        fn next(&mut self, _context: &GeneratorContext) -> GeneratorResult {
             self.calls += 1;
             if self.calls % 2 == 1 {
-                SchemaResult {
+                GeneratorResult {
                     value: None,
                     metadata: vec![Metadata {
                         mtype: "error".into(),
@@ -411,7 +413,7 @@ mod tests {
                     }],
                 }
             } else {
-                SchemaResult {
+                GeneratorResult {
                     value: Some(serde_json::Value::Null),
                     metadata: vec![],
                 }
@@ -420,11 +422,14 @@ mod tests {
     }
 
     #[derive(Debug)]
-    struct AlternatingSchemaBuilder;
+    struct AlternatingGeneratorBuilder;
 
-    impl SchemaBuilder for AlternatingSchemaBuilder {
-        fn build(&self, _visitor: SchemaBuildVisitor) -> Result<Box<dyn Schema>, Vec<BuildError>> {
-            Ok(Box::new(AlternatingSchema::default()))
+    impl GeneratorBuilder for AlternatingGeneratorBuilder {
+        fn build(
+            &self,
+            _visitor: GeneratorBuildVisitor,
+        ) -> Result<Box<dyn Generator>, Vec<BuildError>> {
+            Ok(Box::new(AlternatingGenerator::default()))
         }
     }
 
@@ -434,7 +439,7 @@ mod tests {
             .now(Utc::now().fixed_offset())
             .trigger_hertz(1000.0)
             .limit(NonZeroU64::new(3).unwrap())
-            .schema(constant().value(1))
+            .generator(constant().value(1))
             .build()
             .unwrap();
 
@@ -450,7 +455,7 @@ mod tests {
             .now(Utc::now().fixed_offset())
             .trigger_hertz(1000.0)
             .limit(NonZeroU64::new(3).unwrap())
-            .schema(AlternatingSchemaBuilder)
+            .generator(AlternatingGeneratorBuilder)
             .build()
             .unwrap();
 

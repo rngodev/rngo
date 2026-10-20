@@ -3,7 +3,7 @@ end: now
 channel: db
 metadata:
   table: AUTHORS
-schema:
+generator:
   type: object
   properties:
     id:

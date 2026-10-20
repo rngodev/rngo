@@ -1,11 +1,11 @@
 use super::format::FormatParser;
-use super::schema::{SchemaParseVisitor, SchemaParser};
+use super::generator::{GeneratorParseVisitor, GeneratorParser};
 use super::signal::SignalParser;
 use crate::audit::signal::Signal;
 use crate::audit::{Audit, AuditBuilder, signal};
-use crate::effect::schema::custom::CustomParser;
+use crate::effect::generator::custom::CustomParser;
 use crate::effect::simulation::{Simulation, SimulationBuilder};
-use crate::effect::{Effect, schema};
+use crate::effect::{Effect, generator};
 use crate::moment::Moment;
 use crate::parse::ChannelTargetParser;
 use crate::proxy::channel::{Channel, ChannelTargetBuilder, target};
@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 pub struct Dialect {
-    schema_parsers: Rc<Vec<Box<dyn SchemaParser>>>,
+    generator_parsers: Rc<Vec<Box<dyn GeneratorParser>>>,
     format_parsers: Rc<Vec<Box<dyn FormatParser>>>,
     channel_target_parsers: Rc<Vec<Box<dyn ChannelTargetParser>>>,
     signal_parsers: Rc<Vec<Box<dyn SignalParser>>>,
@@ -24,13 +24,13 @@ pub struct Dialect {
 
 impl Dialect {
     pub fn new(
-        schema_parsers: Vec<Box<dyn SchemaParser>>,
+        generator_parsers: Vec<Box<dyn GeneratorParser>>,
         format_parsers: Vec<Box<dyn FormatParser>>,
         channel_target_parsers: Vec<Box<dyn ChannelTargetParser>>,
         signal_parsers: Vec<Box<dyn SignalParser>>,
     ) -> Self {
         Dialect {
-            schema_parsers: Rc::new(schema_parsers),
+            generator_parsers: Rc::new(generator_parsers),
             format_parsers: Rc::new(format_parsers),
             channel_target_parsers: Rc::new(channel_target_parsers),
             signal_parsers: Rc::new(signal_parsers),
@@ -40,15 +40,15 @@ impl Dialect {
     pub fn primitive() -> Self {
         Dialect::new(
             vec![
-                Box::new(schema::Array::parser()),
-                Box::new(schema::Constant::parser()),
-                Box::new(schema::Context::parser()),
-                Box::new(schema::Function::parser()),
-                Box::new(schema::Number::parser()),
-                Box::new(schema::Object::parser()),
-                Box::new(schema::Reference::parser()),
-                Box::new(schema::Select::parser()),
-                Box::new(schema::Str::parser()),
+                Box::new(generator::Array::parser()),
+                Box::new(generator::Constant::parser()),
+                Box::new(generator::Context::parser()),
+                Box::new(generator::Function::parser()),
+                Box::new(generator::Number::parser()),
+                Box::new(generator::Object::parser()),
+                Box::new(generator::Reference::parser()),
+                Box::new(generator::Select::parser()),
+                Box::new(generator::Str::parser()),
             ],
             vec![
                 Box::new(format::SqlFormat::parser()),
@@ -97,21 +97,23 @@ impl Dialect {
             };
         };
 
-        for name in spec.schemas.keys() {
-            if self.schema_parsers.iter().any(|p| p.key() == name) {
-                errors.push(ParseError::SchemaError {
-                    path: Some(vec!["schemas".into(), name.clone()]),
+        for name in spec.generators.keys() {
+            if self.generator_parsers.iter().any(|p| p.key() == name) {
+                errors.push(ParseError::Invalid {
+                    path: Some(vec!["generators".into(), name.clone()]),
                     message: format!(
-                        "\"{name}\" is a primitive schema type and cannot be used as a custom schema name"
+                        "\"{name}\" is a primitive generator type and cannot be used as a custom generator name"
                     ),
                 });
             }
         }
 
-        let custom_schemas: Rc<Vec<CustomParser>> = Rc::new(
-            spec.schemas
+        let custom_generators: Rc<Vec<CustomParser>> = Rc::new(
+            spec.generators
                 .iter()
-                .map(|(name, schema_type)| CustomParser::new(name.clone(), schema_type.clone()))
+                .map(|(name, generator_type)| {
+                    CustomParser::new(name.clone(), generator_type.clone())
+                })
                 .collect(),
         );
 
@@ -156,17 +158,17 @@ impl Dialect {
                 };
             }
 
-            let visitor = SchemaParseVisitor::new(
-                self.schema_parsers.clone(),
-                Rc::clone(&custom_schemas),
-                effect.schema.clone(),
+            let visitor = GeneratorParseVisitor::new(
+                self.generator_parsers.clone(),
+                Rc::clone(&custom_generators),
+                effect.generator.clone(),
                 vec![],
-                vec!["effects".into(), key.clone(), "schema".into()],
+                vec!["effects".into(), key.clone(), "generator".into()],
             );
 
             match visitor.parse() {
-                Ok(schema_builder) => {
-                    effect_builder.set_schema(schema_builder);
+                Ok(generator_builder) => {
+                    effect_builder.set_generator(generator_builder);
                     simulation_builder.set_effect(effect_builder);
                 }
                 Err(mut e) => errors.append(&mut e),
@@ -192,7 +194,7 @@ impl Dialect {
 
         for (effect_key, channel_key) in &effect_channels {
             if !spec.channels.keys().any(|key| key == channel_key) {
-                errors.push(ParseError::SchemaError {
+                errors.push(ParseError::Invalid {
                     path: Some(vec!["effects".into(), effect_key.clone(), "channel".into()]),
                     message: format!("unknown channel: {channel_key}"),
                 });
@@ -270,11 +272,11 @@ impl Dialect {
 
         match matching.as_slice() {
             [parser] => parser.parse(key, signal),
-            [] => Err(vec![ParseError::SchemaError {
+            [] => Err(vec![ParseError::Invalid {
                 path: None,
                 message: "unknown signal type".to_string(),
             }]),
-            _ => Err(vec![ParseError::SchemaError {
+            _ => Err(vec![ParseError::Invalid {
                 path: None,
                 message: format!("{} signal parsers matched", matching.len()),
             }]),
@@ -294,11 +296,11 @@ impl Dialect {
 
         match matching.as_slice() {
             [parser] => parser.parse(format, spec),
-            [] => Err(vec![ParseError::SchemaError {
+            [] => Err(vec![ParseError::Invalid {
                 path: None,
                 message: "unknown format type".to_string(),
             }]),
-            _ => Err(vec![ParseError::SchemaError {
+            _ => Err(vec![ParseError::Invalid {
                 path: None,
                 message: format!("{} format parsers matched", matching.len()),
             }]),
@@ -317,11 +319,11 @@ impl Dialect {
 
         match matching.as_slice() {
             [parser] => parser.parse(channel_target),
-            [] => Err(vec![ParseError::SchemaError {
+            [] => Err(vec![ParseError::Invalid {
                 path: None,
                 message: "unknown target type".to_string(),
             }]),
-            _ => Err(vec![ParseError::SchemaError {
+            _ => Err(vec![ParseError::Invalid {
                 path: None,
                 message: format!("{} target parsers matched", matching.len()),
             }]),
@@ -333,10 +335,10 @@ impl Dialect {
 fn prefix_paths(errors: Vec<ParseError>, prefix: &[&str]) -> Vec<ParseError> {
     errors
         .into_iter()
-        .map(|ParseError::SchemaError { path, message }| {
+        .map(|ParseError::Invalid { path, message }| {
             let mut full: Vec<String> = prefix.iter().map(|s| s.to_string()).collect();
             full.extend(path.unwrap_or_default());
-            ParseError::SchemaError {
+            ParseError::Invalid {
                 path: Some(full),
                 message,
             }
@@ -360,7 +362,7 @@ mod tests {
     fn paths(errors: &[ParseError]) -> Vec<String> {
         errors
             .iter()
-            .map(|ParseError::SchemaError { path, .. }| path.clone().unwrap_or_default().join("."))
+            .map(|ParseError::Invalid { path, .. }| path.clone().unwrap_or_default().join("."))
             .collect()
     }
 
