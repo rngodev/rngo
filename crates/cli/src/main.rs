@@ -1,5 +1,5 @@
+mod eval;
 mod init;
-mod run;
 mod skills;
 mod ui;
 
@@ -31,18 +31,18 @@ enum Commands {
         #[arg(long)]
         default: bool,
     },
-    /// Run a simulation
+    /// Evaluate a simulation
     ///
     /// Loads a spec, runs the simulation, routes events to channels,
     /// and records everything.
-    Run {
+    Eval {
         /// Write  events to stdout (instead of routing to channels)
         #[arg(long)]
         stdout: bool,
         /// Check that the simulation can be built without generating or persisting anything
         #[arg(long)]
         dry_run: bool,
-        /// Cap the number of inputs a run produces
+        /// Cap the number of inputs an eval produces
         #[arg(long)]
         limit: Option<std::num::NonZeroU64>,
         /// Wait for each event's timestamp before sending it instead of sending right away
@@ -86,7 +86,7 @@ fn stop_on_interrupt() -> StopHandle {
         handler_stop.stop();
     });
     if let Err(e) = installed {
-        eprintln!("warning: couldn't handle interrupts, stopping a run won't audit it: {e}");
+        eprintln!("warning: couldn't handle interrupts, stopping an eval won't audit it: {e}");
     }
     stop
 }
@@ -101,16 +101,16 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        Commands::Run {
+        Commands::Eval {
             stdout,
             dry_run,
             limit,
             realtime,
             dir,
             spec,
-        } => match run::run(
+        } => match eval::eval(
             &dir,
-            run::RunOptions {
+            eval::EvalOptions {
                 stdout,
                 spec_path: spec.as_deref(),
                 dry_run,

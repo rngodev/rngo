@@ -8,9 +8,9 @@ use std::path::{Path, PathBuf};
 use std::{fmt, fs};
 use uuid::Uuid;
 
-/// Options for a single `rngo run`.
+/// Options for a single `rngo eval`.
 #[derive(Default)]
-pub struct RunOptions<'a> {
+pub struct EvalOptions<'a> {
     /// Print events to stdout instead of sending them to channel targets.
     pub stdout: bool,
     /// Load this spec file instead of the `.rngo` directory.
@@ -21,12 +21,12 @@ pub struct RunOptions<'a> {
     pub limit: Option<std::num::NonZeroU64>,
     /// Wait for each input's timestamp before sending it instead of sending right away.
     pub realtime: bool,
-    /// Stops the run early; it then finishes and audits what was logged.
+    /// Stops the eval early; it then finishes and audits what was logged.
     pub stop: StopHandle,
 }
 
-pub fn run(base: &Path, options: RunOptions) -> Result<bool, Box<dyn Error>> {
-    let RunOptions {
+pub fn eval(base: &Path, options: EvalOptions) -> Result<bool, Box<dyn Error>> {
+    let EvalOptions {
         stdout,
         spec_path,
         dry_run,
@@ -68,9 +68,9 @@ pub fn run(base: &Path, options: RunOptions) -> Result<bool, Box<dyn Error>> {
         return Ok(true);
     }
 
-    let run_dir = prepare_run_dir(base, &spec)?;
+    let eval_dir = prepare_eval_dir(base, &spec)?;
 
-    let sqlite_run_log = SqliteRunLog::new(run_dir.clone());
+    let sqlite_run_log = SqliteRunLog::new(eval_dir.clone());
     let reader = sqlite_run_log.clone();
     let writer = StatusWriter::new(sqlite_run_log.clone(), &spec);
 
@@ -262,30 +262,30 @@ fn load_spec(base: &Path) -> Result<spec::Spec, Box<dyn Error>> {
     Ok(spec::from_value(spec).map_err(join_errors)?)
 }
 
-fn prepare_run_dir(base: &Path, spec: &spec::Spec) -> Result<PathBuf, Box<dyn Error>> {
-    let run_dir = new_run_dir(base)?;
-    fs::create_dir_all(&run_dir)?;
+fn prepare_eval_dir(base: &Path, spec: &spec::Spec) -> Result<PathBuf, Box<dyn Error>> {
+    let eval_dir = new_eval_dir(base)?;
+    fs::create_dir_all(&eval_dir)?;
     fs::write(
-        run_dir.join("spec.json"),
+        eval_dir.join("spec.json"),
         serde_json::to_string_pretty(spec)?,
     )?;
-    update_last_symlink(base, &run_dir)?;
-    Ok(run_dir)
+    update_last_symlink(base, &eval_dir)?;
+    Ok(eval_dir)
 }
 
-fn new_run_dir(base: &Path) -> Result<PathBuf, Box<dyn Error>> {
-    let runs_dir = base.join(".rngo/runs");
-    fs::create_dir_all(&runs_dir)?;
+fn new_eval_dir(base: &Path) -> Result<PathBuf, Box<dyn Error>> {
+    let evals_dir = base.join(".rngo/evals");
+    fs::create_dir_all(&evals_dir)?;
     let id = Uuid::now_v7();
-    Ok(runs_dir.join(id.to_string()))
+    Ok(evals_dir.join(id.to_string()))
 }
 
-fn update_last_symlink(base: &Path, run_dir: &Path) -> Result<(), Box<dyn Error>> {
-    let link = base.join(".rngo/runs/last");
+fn update_last_symlink(base: &Path, eval_dir: &Path) -> Result<(), Box<dyn Error>> {
+    let link = base.join(".rngo/evals/last");
     if link.exists() || link.is_symlink() {
         fs::remove_file(&link)?;
     }
-    let target = run_dir.strip_prefix(base.join(".rngo/runs"))?;
+    let target = eval_dir.strip_prefix(base.join(".rngo/evals"))?;
     #[cfg(unix)]
     std::os::unix::fs::symlink(target, &link)?;
     #[cfg(windows)]
@@ -313,7 +313,7 @@ mod tests {
 
     fn signal_outcome(base: &Path, key: &str) -> (serde_json::Value, bool) {
         let connection =
-            rusqlite::Connection::open(base.join(".rngo/runs/last/log.sqlite")).unwrap();
+            rusqlite::Connection::open(base.join(".rngo/evals/last/log.sqlite")).unwrap();
         let mut statement = connection
             .prepare("SELECT data FROM metadata WHERE type = 'signal'")
             .unwrap();
@@ -369,7 +369,7 @@ mod tests {
             }),
         );
 
-        run(base, RunOptions::default()).unwrap();
+        eval(base, EvalOptions::default()).unwrap();
 
         let content = fs::read_to_string(&output).unwrap();
         assert!(
@@ -411,7 +411,7 @@ mod tests {
             &json!({ "target": { "type": "exec" } }),
         );
 
-        run(base, RunOptions::default()).unwrap();
+        eval(base, EvalOptions::default()).unwrap();
 
         let content = fs::read_to_string(&output).unwrap();
         assert!(content.lines().all(|line| line == "hi"));
@@ -467,7 +467,7 @@ mod tests {
             }),
         );
 
-        run(base, RunOptions::default()).unwrap();
+        eval(base, EvalOptions::default()).unwrap();
 
         let (_, passed) = signal_outcome(base, "has-failure-output");
         assert!(passed);
@@ -525,7 +525,7 @@ mod tests {
             }),
         );
 
-        run(base, RunOptions::default()).unwrap();
+        eval(base, EvalOptions::default()).unwrap();
 
         let (value, passed) = signal_outcome(base, "matches-effect-count");
         assert!(
@@ -575,7 +575,7 @@ mod tests {
             }),
         );
 
-        run(base, RunOptions::default()).unwrap();
+        eval(base, EvalOptions::default()).unwrap();
 
         let content = fs::read_to_string(&output).unwrap();
         assert!(
@@ -623,7 +623,7 @@ mod tests {
             }),
         );
 
-        run(base, RunOptions::default()).unwrap();
+        eval(base, EvalOptions::default()).unwrap();
 
         let content = fs::read_to_string(&output).unwrap();
         let first = content
@@ -675,7 +675,7 @@ mod tests {
             }),
         );
 
-        run(base, RunOptions::default()).unwrap();
+        eval(base, EvalOptions::default()).unwrap();
 
         let content = fs::read_to_string(&output).unwrap();
         assert!(
@@ -729,9 +729,9 @@ mod tests {
             }),
         );
 
-        run(
+        eval(
             base,
-            RunOptions {
+            EvalOptions {
                 spec_path: Some(&spec_path),
                 ..Default::default()
             },
@@ -741,7 +741,7 @@ mod tests {
         let content = fs::read_to_string(&output).unwrap();
         assert!(
             content.lines().count() > 0,
-            "run should use the spec file passed via --spec"
+            "eval should use the spec file passed via --spec"
         );
     }
 
@@ -801,7 +801,7 @@ mod tests {
             }),
         );
 
-        run(base, RunOptions::default()).unwrap();
+        eval(base, EvalOptions::default()).unwrap();
 
         let content = fs::read_to_string(&output).unwrap();
         let lines: Vec<_> = content.lines().collect();
@@ -817,7 +817,7 @@ mod tests {
     }
 
     #[test]
-    fn signals_are_evaluated_and_written_to_run_dir() {
+    fn signals_are_evaluated_and_written_to_eval_dir() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
@@ -857,7 +857,7 @@ mod tests {
             }),
         );
 
-        run(base, RunOptions::default()).unwrap();
+        eval(base, EvalOptions::default()).unwrap();
 
         let (has_events_value, has_events_passed) = signal_outcome(base, "hasEvents");
         assert!(has_events_passed);
@@ -906,7 +906,7 @@ mod tests {
             }),
         );
 
-        run(base, RunOptions::default()).unwrap();
+        eval(base, EvalOptions::default()).unwrap();
 
         let (_, passed) = signal_outcome(base, "has-events");
         assert!(passed);
@@ -948,8 +948,8 @@ mod tests {
             }),
         );
 
-        let passed = run(base, RunOptions::default()).unwrap();
-        assert!(!passed, "run should fail when a signal's expect fails");
+        let passed = eval(base, EvalOptions::default()).unwrap();
+        assert!(!passed, "eval should fail when a signal's expect fails");
     }
 
     #[test]
@@ -990,8 +990,8 @@ mod tests {
             }),
         );
 
-        let passed = run(base, RunOptions::default()).unwrap();
-        assert!(!passed, "run should fail when a signal errors");
+        let passed = eval(base, EvalOptions::default()).unwrap();
+        assert!(!passed, "eval should fail when a signal errors");
     }
 
     #[test]
@@ -1043,7 +1043,7 @@ mod tests {
             }),
         );
 
-        run(base, RunOptions::default()).unwrap();
+        eval(base, EvalOptions::default()).unwrap();
 
         let (value, passed) = signal_outcome(base, "tail-outputs");
         assert!(
@@ -1093,23 +1093,23 @@ mod tests {
             }),
         );
 
-        let passed = run(
+        let passed = eval(
             base,
-            RunOptions {
+            EvalOptions {
                 dry_run: true,
                 ..Default::default()
             },
         )
         .unwrap();
 
-        assert!(passed, "dry run of a valid spec should succeed");
+        assert!(passed, "dry eval of a valid spec should succeed");
         assert!(
-            !base.join(".rngo/runs").exists(),
-            "dry run should not create a run directory"
+            !base.join(".rngo/evals").exists(),
+            "dry eval should not create an eval directory"
         );
         assert!(
             !output.exists(),
-            "dry run should not invoke channel side effects"
+            "dry eval should not invoke channel side effects"
         );
     }
 
@@ -1142,9 +1142,9 @@ mod tests {
             }),
         );
 
-        let result = run(
+        let result = eval(
             base,
-            RunOptions {
+            EvalOptions {
                 dry_run: true,
                 ..Default::default()
             },
@@ -1152,11 +1152,11 @@ mod tests {
 
         assert!(
             result.is_err(),
-            "dry run should return an error when the simulation can't be built"
+            "dry eval should return an error when the simulation can't be built"
         );
         assert!(
-            !base.join(".rngo/runs").exists(),
-            "a failed dry run should not create a run directory either"
+            !base.join(".rngo/evals").exists(),
+            "a failed dry eval should not create an eval directory either"
         );
     }
 
@@ -1185,9 +1185,9 @@ mod tests {
             }),
         );
 
-        let error = run(
+        let error = eval(
             base,
-            RunOptions {
+            EvalOptions {
                 dry_run: true,
                 ..Default::default()
             },
@@ -1241,9 +1241,9 @@ mod tests {
             }),
         );
 
-        run(
+        eval(
             base,
-            RunOptions {
+            EvalOptions {
                 limit: std::num::NonZeroU64::new(3),
                 ..Default::default()
             },
@@ -1254,7 +1254,7 @@ mod tests {
         assert_eq!(
             content.lines().count(),
             3,
-            "limit should cap the run at exactly 3 effects"
+            "limit should cap the eval at exactly 3 effects"
         );
     }
 
@@ -1292,7 +1292,7 @@ mod tests {
             }),
         );
 
-        assert!(run(base, RunOptions::default()).unwrap());
+        assert!(eval(base, EvalOptions::default()).unwrap());
 
         let (_, passed) = signal_outcome(base, "simulation-times");
         assert!(
@@ -1357,7 +1357,7 @@ mod tests {
     }
 
     fn input_count(base: &Path) -> i64 {
-        rusqlite::Connection::open(base.join(".rngo/runs/last/log.sqlite"))
+        rusqlite::Connection::open(base.join(".rngo/evals/last/log.sqlite"))
             .unwrap()
             .query_row("SELECT COUNT(*) FROM inputs", [], |row| row.get(0))
             .unwrap()
@@ -1370,9 +1370,9 @@ mod tests {
         let sent_log = base.join("sent.txt");
         write_timed_spec(base, "now + seconds(3)", &sent_log);
 
-        run(
+        eval(
             base,
-            RunOptions {
+            EvalOptions {
                 realtime: true,
                 ..Default::default()
             },
@@ -1398,9 +1398,9 @@ mod tests {
         write_timed_spec(base, "now + minutes(10)", &sent_log);
 
         let started = std::time::Instant::now();
-        run(
+        eval(
             base,
-            RunOptions {
+            EvalOptions {
                 limit: std::num::NonZeroU64::new(10),
                 ..Default::default()
             },
@@ -1434,9 +1434,9 @@ mod tests {
         };
 
         let started = std::time::Instant::now();
-        let succeeded = run(
+        let succeeded = eval(
             base,
-            RunOptions {
+            EvalOptions {
                 realtime: true,
                 stop,
                 ..Default::default()
@@ -1445,7 +1445,7 @@ mod tests {
         .unwrap();
         stopper.join().unwrap();
 
-        assert!(!succeeded, "an interrupted run reports failure");
+        assert!(!succeeded, "an interrupted eval reports failure");
 
         assert!(started.elapsed() < std::time::Duration::from_secs(5));
 
