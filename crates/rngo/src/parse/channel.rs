@@ -1,4 +1,4 @@
-use crate::parse::FormatContext;
+use crate::parse::FormatParseContext;
 use crate::proxy::channel::ChannelBuilder;
 use crate::{ParseError, spec};
 
@@ -10,6 +10,6 @@ pub trait ChannelParser {
     fn parse(
         &self,
         channel: &spec::Channel,
-        formats: &FormatContext,
+        formats: &FormatParseContext,
     ) -> Result<Box<dyn ChannelBuilder>, Vec<ParseError>>;
 }

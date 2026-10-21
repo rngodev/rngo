@@ -1,5 +1,5 @@
 use crate::effect::Input;
-use crate::parse::{ChannelParser, FormatContext};
+use crate::parse::{ChannelParser, FormatParseContext};
 use crate::proxy::channel::{Channel, ChannelBuilder};
 use crate::proxy::format::Format;
 use crate::proxy::output::{ChannelOutput, OutputSender};
@@ -109,7 +109,7 @@ impl ChannelParser for ExecParser {
     fn parse(
         &self,
         channel: &spec::Channel,
-        formats: &FormatContext,
+        formats: &FormatParseContext,
     ) -> Result<Box<dyn ChannelBuilder>, Vec<ParseError>> {
         if channel.fields.contains_key("command") {
             return Err(vec![ParseError::Invalid {
@@ -122,7 +122,9 @@ impl ChannelParser for ExecParser {
 
         let mut builder = ExecBuilder::default();
 
-        if let Some(format) = formats.parse(channel)? {
+        if let Some(value) = channel.fields.get("format")
+            && let Some(format) = formats.parse(&["format"], value)?
+        {
             builder.set_format(format);
         }
 

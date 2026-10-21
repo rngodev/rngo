@@ -1,5 +1,5 @@
 use crate::effect::Input;
-use crate::parse::{ChannelParser, FormatContext};
+use crate::parse::{ChannelParser, FormatParseContext};
 use crate::proxy::channel::{Channel, ChannelBuilder};
 use crate::proxy::format::Format;
 use crate::proxy::output::{ChannelOutput, OutputSender};
@@ -186,7 +186,7 @@ impl ChannelParser for StreamParser {
     fn parse(
         &self,
         channel: &spec::Channel,
-        formats: &FormatContext,
+        formats: &FormatParseContext,
     ) -> Result<Box<dyn ChannelBuilder>, Vec<ParseError>> {
         let command = match channel.fields.get("command") {
             Some(value) => match value.as_str() {
@@ -208,7 +208,9 @@ impl ChannelParser for StreamParser {
 
         let mut builder = StreamBuilder::default().command(command);
 
-        if let Some(format) = formats.parse(channel)? {
+        if let Some(value) = channel.fields.get("format")
+            && let Some(format) = formats.parse(&["format"], value)?
+        {
             builder.set_format(format);
         }
 

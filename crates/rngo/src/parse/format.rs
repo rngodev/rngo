@@ -1,5 +1,6 @@
 use crate::proxy::format::Format;
 use crate::spec::{self, ParseError};
+use serde_json::Value;
 use std::rc::Rc;
 
 pub trait FormatParser {
@@ -12,25 +13,31 @@ pub trait FormatParser {
 }
 
 /// Lets a channel parser build the optional `format` of its channel with the dialect's format parsers.
-pub struct FormatContext<'a> {
-    pub(super) parsers: &'a [Box<dyn FormatParser>],
-    pub(super) spec: &'a spec::Spec,
+pub struct FormatParseContext<'a> {
+    parsers: &'a [Box<dyn FormatParser>],
+    spec: &'a spec::Spec,
 }
 
-impl FormatContext<'_> {
-    /// Parses `channel`'s `format` field, if it has one with a `type`. Error paths are relative to
-    /// the channel.
+impl<'a> FormatParseContext<'a> {
+    pub fn new(parsers: &'a [Box<dyn FormatParser>], spec: &'a spec::Spec) -> Self {
+        FormatParseContext { parsers, spec }
+    }
+
+    /// Parses `value` as a format; `None` if it has no `type`. Error paths are prefixed with
+    /// `path`, where `value` sits relative to the caller's own node.
     pub fn parse(
         &self,
-        channel: &spec::Channel,
+        path: &[&str],
+        value: &Value,
     ) -> Result<Option<Rc<dyn Format>>, Vec<ParseError>> {
-        let Some(value) = channel.fields.get("format") else {
-            return Ok(None);
+        let prefixed = |rest: Vec<String>| {
+            let mut full: Vec<String> = path.iter().map(|s| s.to_string()).collect();
+            full.extend(rest);
+            full
         };
-
         let invalid = |message: String| {
             vec![ParseError::Invalid {
-                path: Some(vec!["format".into()]),
+                path: Some(prefixed(vec![])),
                 message,
             }]
         };
@@ -62,14 +69,12 @@ impl FormatContext<'_> {
             .map_err(|errors| {
                 errors
                     .into_iter()
-                    .map(|ParseError::Invalid { path, message }| {
-                        let mut full = vec!["format".to_string()];
-                        full.extend(path.unwrap_or_default());
-                        ParseError::Invalid {
-                            path: Some(full),
+                    .map(
+                        |ParseError::Invalid { path, message }| ParseError::Invalid {
+                            path: Some(prefixed(path.unwrap_or_default())),
                             message,
-                        }
-                    })
+                        },
+                    )
                     .collect()
             })
     }

@@ -6,6 +6,6 @@ mod signal;
 
 pub use channel::ChannelParser;
 pub use dialect::Dialect;
-pub use format::{FormatContext, FormatParser};
+pub use format::{FormatParseContext, FormatParser};
 pub use generator::{GeneratorParseVisitor, GeneratorParser};
 pub use signal::SignalParser;

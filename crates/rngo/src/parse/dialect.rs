@@ -1,4 +1,4 @@
-use super::format::{FormatContext, FormatParser};
+use super::format::{FormatParseContext, FormatParser};
 use super::generator::{GeneratorParseVisitor, GeneratorParser};
 use super::signal::SignalParser;
 use crate::audit::signal::Signal;
@@ -201,10 +201,7 @@ impl Dialect {
             }
         }
 
-        let formats = FormatContext {
-            parsers: &self.format_parsers,
-            spec: &spec,
-        };
+        let formats = FormatParseContext::new(&self.format_parsers, &spec);
 
         for (key, channel) in &spec.channels {
             if channel.fields.contains_key("target") {
@@ -286,7 +283,7 @@ impl Dialect {
     fn parse_channel(
         &self,
         channel: &spec::Channel,
-        formats: &FormatContext,
+        formats: &FormatParseContext,
     ) -> Result<Box<dyn ChannelBuilder>, Vec<ParseError>> {
         let matching: Vec<_> = self
             .channel_parsers
