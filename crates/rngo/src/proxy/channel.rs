@@ -1,158 +1,57 @@
-pub mod sink;
+pub(crate) mod exec;
+pub(crate) mod stdout;
+pub(crate) mod stream;
 
-use crate::BuildError;
+pub use exec::Exec;
+pub use stdout::Stdout;
+pub use stream::Stream;
+
 use crate::effect::Input;
-use crate::proxy::output::{Output, OutputSender, SinkOutput};
+use crate::proxy::format::Format;
+use crate::proxy::output::{ChannelOutput, OutputSender};
+use crate::{BuildError, Level};
+use serde_json::Value;
 use std::error::Error;
-use std::sync::mpsc::Sender;
+use std::process::Command;
 
-#[derive(Debug)]
-pub struct Channel {
-    pub(super) key: String,
-    pub(super) sink: Box<dyn ChannelSink>,
-    pub(super) effects: Vec<String>,
-}
-
-impl Channel {
-    pub fn builder(key: String) -> ChannelBuilder {
-        ChannelBuilder::new(key)
-    }
-}
-
-pub trait ChannelSink: std::fmt::Debug {
-    /// Sends one input, formatted by the sink's own format if it has one. The proxy ties returned
-    /// outputs to the input.
-    fn send(&mut self, input: &Input) -> Result<Vec<SinkOutput>, Box<dyn Error>>;
+/// Where a proxy delivers the inputs of the effects assigned to it.
+pub trait Channel: std::fmt::Debug {
+    /// Sends one input, formatted by the channel's own format if it has one. The proxy ties
+    /// returned outputs to the input.
+    fn send(&mut self, input: &Input) -> Result<Vec<ChannelOutput>, Box<dyn Error>>;
     fn finish(&mut self) {}
 }
 
 /// Built with the channel's own key passed in at build time, rather than baked in at
-/// construction - lets a sink builder (e.g. [`crate::build::exec`]) be constructed generically,
-/// before the channel it'll belong to is known, mirroring how `outputs` is threaded in.
-pub trait ChannelSinkBuilder {
+/// construction - lets a builder (e.g. [`crate::build::exec`]) be constructed generically,
+/// before the key it'll be added under is known, mirroring how `outputs` is threaded in.
+pub trait ChannelBuilder {
     fn build(
         &self,
         channel_key: &str,
         outputs: OutputSender,
-    ) -> Result<Box<dyn ChannelSink>, Vec<BuildError>>;
+    ) -> Result<Box<dyn Channel>, Vec<BuildError>>;
 }
 
-pub struct ChannelBuilder {
-    key: String,
-    channel_sink_builder: Option<Box<dyn ChannelSinkBuilder>>,
-    output_tx: Option<Sender<Output>>,
-    effects: Vec<String>,
-}
-
-impl ChannelBuilder {
-    fn new(key: String) -> Self {
-        ChannelBuilder {
-            key,
-            channel_sink_builder: None,
-            output_tx: None,
-            effects: vec![],
-        }
-    }
-
-    pub fn sink(mut self, builder: impl ChannelSinkBuilder + 'static) -> Self {
-        self.set_sink(Box::new(builder));
-        self
-    }
-
-    pub fn set_sink(&mut self, builder: Box<dyn ChannelSinkBuilder>) -> &mut Self {
-        self.channel_sink_builder = Some(builder);
-        self
-    }
-
-    pub fn output_tx(mut self, output_tx: Sender<Output>) -> Self {
-        self.set_output_tx(output_tx);
-        self
-    }
-
-    pub fn set_output_tx(&mut self, output_tx: Sender<Output>) -> &mut Self {
-        self.output_tx = Some(output_tx);
-        self
-    }
-
-    pub fn effects(mut self, effects: Vec<String>) -> Self {
-        self.set_effects(effects);
-        self
-    }
-
-    pub fn set_effects(&mut self, effects: Vec<String>) -> &mut Self {
-        self.effects = effects;
-        self
-    }
-
-    pub fn build(self) -> Result<Channel, Vec<BuildError>> {
-        let sink = if let Some(sink_builder) = self.channel_sink_builder {
-            if let Some(output_tx) = self.output_tx {
-                sink_builder.build(&self.key, OutputSender::new(&self.key, output_tx))
-            } else {
-                Err(vec![BuildError::Channel {
-                    channel: self.key.clone(),
-                    message: "output_tx was not set".into(),
-                }])
-            }
-        } else {
-            Err(vec![BuildError::Channel {
-                channel: self.key.clone(),
-                message: "sink was not set".into(),
-            }])
-        }?;
-
-        Ok(Channel {
-            key: self.key,
-            sink,
-            effects: self.effects,
-        })
+/// The value a channel delivers for `input`: its formatted string, or its own `data` without a
+/// format. A format failure comes back as the error output to report instead.
+pub(crate) fn render(format: Option<&dyn Format>, input: &Input) -> Result<Value, ChannelOutput> {
+    match format.map(|f| f.format(input)) {
+        Some(Ok(data)) => Ok(Value::String(data)),
+        Some(Err(message)) => Err(ChannelOutput::new(
+            Level::Error,
+            format!("format failed: {message}"),
+        )),
+        None => Ok(input.data.clone()),
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::cell::RefCell;
-    use std::rc::Rc;
-    use std::sync::mpsc;
-
-    /// Records whatever `channel_key` it's built with, so a test can confirm `ChannelBuilder`
-    /// threads its own key through to a sink builder constructed with no key of its own - the
-    /// case a Rust-DSL builder like `exec()`/`stream()` relies on.
-    #[derive(Debug)]
-    struct RecordingSink;
-
-    impl ChannelSink for RecordingSink {
-        fn send(&mut self, _input: &Input) -> Result<Vec<SinkOutput>, Box<dyn Error>> {
-            Ok(vec![])
-        }
-    }
-
-    #[derive(Debug)]
-    struct RecordingSinkBuilder(Rc<RefCell<Option<String>>>);
-
-    impl ChannelSinkBuilder for RecordingSinkBuilder {
-        fn build(
-            &self,
-            channel_key: &str,
-            _outputs: OutputSender,
-        ) -> Result<Box<dyn ChannelSink>, Vec<BuildError>> {
-            *self.0.borrow_mut() = Some(channel_key.to_string());
-            Ok(Box::new(RecordingSink))
-        }
-    }
-
-    #[test]
-    fn build_passes_the_channel_own_key_to_the_sink_builder() {
-        let seen = Rc::new(RefCell::new(None));
-        let (output_tx, _output_rx) = mpsc::channel();
-
-        Channel::builder("db".into())
-            .sink(RecordingSinkBuilder(seen.clone()))
-            .output_tx(output_tx)
-            .build()
-            .unwrap();
-
-        assert_eq!(seen.borrow().as_deref(), Some("db"));
-    }
+/// Builds an `sh -c <command>` process in its own process group, so a terminal Ctrl-C
+/// reaches rngo but not its channel subprocesses.
+fn shell(command: &str) -> Command {
+    let mut cmd = Command::new("sh");
+    cmd.arg("-c").arg(command);
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+    cmd
 }

@@ -11,7 +11,7 @@ use uuid::Uuid;
 /// Options for a single `rngo eval`.
 #[derive(Default)]
 pub struct EvalOptions<'a> {
-    /// Print events to stdout instead of sending them to channel sinks.
+    /// Print events to stdout instead of sending them to channels.
     pub stdout: bool,
     /// Load this spec file instead of the `.rngo` directory.
     pub spec_path: Option<&'a Path>,
@@ -385,7 +385,7 @@ mod tests {
     }
 
     #[test]
-    fn stdout_prints_instead_of_running_sinks_and_records_the_rewritten_spec() {
+    fn stdout_prints_instead_of_running_channels_and_records_the_rewritten_spec() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
         let marker = base.join("ran");
@@ -400,7 +400,10 @@ mod tests {
         )
         .unwrap();
 
-        assert!(!marker.exists(), "no sink should have run under --stdout");
+        assert!(
+            !marker.exists(),
+            "no channel should have run under --stdout"
+        );
 
         let read = |name: &str| -> serde_json::Value {
             serde_json::from_str(
@@ -431,7 +434,7 @@ mod tests {
     }
 
     #[test]
-    fn exec_sink_runs_command_per_event() {
+    fn exec_channel_runs_command_per_event() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
         let output = base.join("exec_output.txt");
@@ -481,7 +484,7 @@ mod tests {
     }
 
     #[test]
-    fn exec_sink_runs_string_data_without_a_format() {
+    fn exec_channel_runs_string_data_without_a_format() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
         let output = base.join("exec_output.txt");
@@ -521,7 +524,7 @@ mod tests {
     }
 
     #[test]
-    fn exec_sink_records_output_when_command_fails() {
+    fn exec_channel_records_output_when_command_fails() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
@@ -576,7 +579,7 @@ mod tests {
     }
 
     #[test]
-    fn stream_sink_does_not_drop_trailing_output() {
+    fn stream_channel_does_not_drop_trailing_output() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
@@ -637,7 +640,7 @@ mod tests {
     }
 
     #[test]
-    fn stream_sink_pipes_events_to_subprocess() {
+    fn stream_channel_pipes_events_to_subprocess() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
         let output = base.join("stream_output.txt");
@@ -687,7 +690,7 @@ mod tests {
     }
 
     #[test]
-    fn template_format_is_written_to_a_stream_sink() {
+    fn template_format_is_written_to_a_stream_channel() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
         let output = base.join("template_output.txt");

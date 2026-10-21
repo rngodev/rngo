@@ -7,8 +7,8 @@ use crate::effect::generator::custom::CustomParser;
 use crate::effect::simulation::{Simulation, SimulationBuilder};
 use crate::effect::{Effect, generator};
 use crate::moment::Moment;
-use crate::parse::ChannelSinkParser;
-use crate::proxy::channel::{Channel, ChannelSinkBuilder, sink};
+use crate::parse::ChannelParser;
+use crate::proxy::channel::{self, ChannelBuilder};
 use crate::proxy::{Proxy, ProxyBuilder, format};
 use crate::spec::{self, ParseError, Spec};
 use std::collections::HashMap;
@@ -17,7 +17,7 @@ use std::rc::Rc;
 pub struct Dialect {
     generator_parsers: Rc<Vec<Box<dyn GeneratorParser>>>,
     format_parsers: Rc<Vec<Box<dyn FormatParser>>>,
-    channel_sink_parsers: Rc<Vec<Box<dyn ChannelSinkParser>>>,
+    channel_parsers: Rc<Vec<Box<dyn ChannelParser>>>,
     signal_parsers: Rc<Vec<Box<dyn SignalParser>>>,
 }
 
@@ -25,13 +25,13 @@ impl Dialect {
     pub fn new(
         generator_parsers: Vec<Box<dyn GeneratorParser>>,
         format_parsers: Vec<Box<dyn FormatParser>>,
-        channel_sink_parsers: Vec<Box<dyn ChannelSinkParser>>,
+        channel_parsers: Vec<Box<dyn ChannelParser>>,
         signal_parsers: Vec<Box<dyn SignalParser>>,
     ) -> Self {
         Dialect {
             generator_parsers: Rc::new(generator_parsers),
             format_parsers: Rc::new(format_parsers),
-            channel_sink_parsers: Rc::new(channel_sink_parsers),
+            channel_parsers: Rc::new(channel_parsers),
             signal_parsers: Rc::new(signal_parsers),
         }
     }
@@ -54,9 +54,9 @@ impl Dialect {
                 Box::new(format::TemplateFormat::parser()),
             ],
             vec![
-                Box::new(sink::Exec::parser()),
-                Box::new(sink::Stdout::parser()),
-                Box::new(sink::Stream::parser()),
+                Box::new(channel::Exec::parser()),
+                Box::new(channel::Stdout::parser()),
+                Box::new(channel::Stream::parser()),
             ],
             vec![Box::new(signal::SqlSignal::parser())],
         )
@@ -207,8 +207,6 @@ impl Dialect {
         };
 
         for (key, channel) in &spec.channels {
-            let mut channel_builder = Channel::builder(key.clone());
-
             if channel.fields.contains_key("target") {
                 errors.push(ParseError::Invalid {
                     path: Some(vec!["channels".into(), key.clone(), "target".into()]),
@@ -217,23 +215,21 @@ impl Dialect {
                         .into(),
                 });
             } else {
-                match self.parse_sink(channel, &formats) {
-                    Ok(sink_builder) => {
-                        channel_builder.set_sink(sink_builder);
+                match self.parse_channel(channel, &formats) {
+                    Ok(channel_builder) => {
+                        proxy_builder.set_channel(key.clone(), channel_builder);
                     }
                     Err(e) => errors.extend(prefix_paths(e, &["channels", key])),
                 }
             }
 
-            let effects = effect_channels
+            let effects: Vec<_> = effect_channels
                 .iter()
                 .filter(|(_, channel_key)| *channel_key == key)
-                .map(|(effect_key, _)| effect_key.clone())
+                .map(|(effect_key, _)| effect_key.as_str())
                 .collect();
 
-            channel_builder.set_effects(effects);
-
-            proxy_builder.set_channel(channel_builder);
+            proxy_builder.set_channel_effects(key.clone(), &effects);
         }
 
         if !errors.is_empty() {
@@ -287,13 +283,13 @@ impl Dialect {
         }
     }
 
-    fn parse_sink(
+    fn parse_channel(
         &self,
         channel: &spec::Channel,
         formats: &FormatContext,
-    ) -> Result<Box<dyn ChannelSinkBuilder>, Vec<ParseError>> {
+    ) -> Result<Box<dyn ChannelBuilder>, Vec<ParseError>> {
         let matching: Vec<_> = self
-            .channel_sink_parsers
+            .channel_parsers
             .iter()
             .filter(|p| channel.ctype.as_deref() == Some(p.key()))
             .collect();
@@ -306,7 +302,7 @@ impl Dialect {
             }]),
             _ => Err(vec![ParseError::Invalid {
                 path: None,
-                message: format!("{} sink parsers matched", matching.len()),
+                message: format!("{} channel parsers matched", matching.len()),
             }]),
         }
     }
@@ -349,14 +345,14 @@ mod tests {
 
     #[test]
     fn format_errors_name_the_channel() {
-        let sink = serde_json::json!({ "type": "stream", "command": "cat" });
+        let channel = serde_json::json!({ "type": "stream", "command": "cat" });
         for format in [
             serde_json::json!({ "type": "template" }),
             serde_json::json!({ "type": "template", "template": 1 }),
             serde_json::json!({ "type": "template", "template": "{{#if}}" }),
             serde_json::json!({ "type": "nope" }),
         ] {
-            let mut channel = sink.clone();
+            let mut channel = channel.clone();
             channel["format"] = format;
             let errors = proxy_errors(serde_json::json!({ "logger": channel }));
             assert_eq!(paths(&errors).len(), 1);

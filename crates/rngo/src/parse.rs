@@ -4,7 +4,7 @@ mod format;
 mod generator;
 mod signal;
 
-pub use channel::ChannelSinkParser;
+pub use channel::ChannelParser;
 pub use dialect::Dialect;
 pub use format::{FormatContext, FormatParser};
 pub use generator::{GeneratorParseVisitor, GeneratorParser};

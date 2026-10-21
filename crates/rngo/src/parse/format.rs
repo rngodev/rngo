@@ -11,7 +11,7 @@ pub trait FormatParser {
     ) -> Result<Box<dyn Format>, Vec<ParseError>>;
 }
 
-/// Lets a sink parser build the optional `format` of its channel with the dialect's format parsers.
+/// Lets a channel parser build the optional `format` of its channel with the dialect's format parsers.
 pub struct FormatContext<'a> {
     pub(super) parsers: &'a [Box<dyn FormatParser>],
     pub(super) spec: &'a spec::Spec,

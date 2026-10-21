@@ -1,8 +1,8 @@
 use crate::effect::Input;
-use crate::parse::{ChannelSinkParser, FormatContext};
-use crate::proxy::channel::{ChannelSink, ChannelSinkBuilder};
+use crate::parse::{ChannelParser, FormatContext};
+use crate::proxy::channel::{Channel, ChannelBuilder};
 use crate::proxy::format::Format;
-use crate::proxy::output::{OutputSender, SinkOutput};
+use crate::proxy::output::{ChannelOutput, OutputSender};
 use crate::{BuildError, Level, ParseError, spec};
 use serde_json::Value;
 use std::io::{BufRead, BufReader};
@@ -24,15 +24,15 @@ impl Exec {
     }
 }
 
-impl ChannelSink for Exec {
-    fn send(&mut self, input: &Input) -> Result<Vec<SinkOutput>, Box<dyn std::error::Error>> {
+impl Channel for Exec {
+    fn send(&mut self, input: &Input) -> Result<Vec<ChannelOutput>, Box<dyn std::error::Error>> {
         let data = match super::render(self.format.as_deref(), input) {
             Ok(data) => data,
             Err(output) => return Ok(vec![output]),
         };
 
         let Value::String(command) = data else {
-            return Ok(vec![SinkOutput::new(
+            return Ok(vec![ChannelOutput::new(
                 Level::Error,
                 format!("exec needs a string command, got: {data}"),
             )]);
@@ -54,13 +54,13 @@ impl ChannelSink for Exec {
                 .map_while(Result::ok)
             {
                 if !line.is_empty() {
-                    outputs.push(SinkOutput::new(level, line));
+                    outputs.push(ChannelOutput::new(level, line));
                 }
             }
         }
 
         if !output.status.success() {
-            outputs.push(SinkOutput::new(
+            outputs.push(ChannelOutput::new(
                 Level::Error,
                 format!("command exited with {}", output.status),
             ));
@@ -87,12 +87,12 @@ impl ExecBuilder {
     }
 }
 
-impl ChannelSinkBuilder for ExecBuilder {
+impl ChannelBuilder for ExecBuilder {
     fn build(
         &self,
         _channel_key: &str,
         _outputs: OutputSender,
-    ) -> Result<Box<dyn ChannelSink>, Vec<BuildError>> {
+    ) -> Result<Box<dyn Channel>, Vec<BuildError>> {
         Ok(Box::new(Exec {
             format: self.format.clone(),
         }))
@@ -101,7 +101,7 @@ impl ChannelSinkBuilder for ExecBuilder {
 
 pub struct ExecParser {}
 
-impl ChannelSinkParser for ExecParser {
+impl ChannelParser for ExecParser {
     fn key(&self) -> &str {
         "exec"
     }
@@ -110,7 +110,7 @@ impl ChannelSinkParser for ExecParser {
         &self,
         channel: &spec::Channel,
         formats: &FormatContext,
-    ) -> Result<Box<dyn ChannelSinkBuilder>, Vec<ParseError>> {
+    ) -> Result<Box<dyn ChannelBuilder>, Vec<ParseError>> {
         if channel.fields.contains_key("command") {
             return Err(vec![ParseError::Invalid {
                 path: Some(vec!["command".into()]),
@@ -146,7 +146,7 @@ mod tests {
         }
     }
 
-    fn exec() -> Box<dyn ChannelSink> {
+    fn exec() -> Box<dyn Channel> {
         let (tx, _rx) = mpsc::channel();
         Exec::builder()
             .build("logger", OutputSender::new("logger", tx))
@@ -156,7 +156,10 @@ mod tests {
     #[test]
     fn runs_string_data_as_its_command() {
         let outputs = exec().send(&input(json!("echo '<a> & \"b\"'"))).unwrap();
-        assert_eq!(outputs, vec![SinkOutput::new(Level::Info, "<a> & \"b\"")]);
+        assert_eq!(
+            outputs,
+            vec![ChannelOutput::new(Level::Info, "<a> & \"b\"")]
+        );
     }
 
     #[test]

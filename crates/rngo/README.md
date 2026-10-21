@@ -74,27 +74,18 @@ And then the `Proxy`:
 
 ```rust
 let proxy = rngo::Proxy::builder()
-    .with_channel("db", |channel| {
-        channel
-            .effects("user", "post")
-            .sink(
-                stream()
-                    .command("psql -q $DATABASE_URL")
-                    .format(
-                        sql_format()
-                            .effect_table("user", "USERS")
-                            .effect_table("post", "POSTS")
-                    )
+    .channel(
+        "db",
+        stream()
+            .command("psql -q $DATABASE_URL")
+            .format(
+                sql_format()
+                    .effect_table("user", "USERS")
+                    .effect_table("post", "POSTS")
             )
-            
-    })
-    .with_channel("log", |channel| {
-        channel
-            .sink(
-                stream().command("tail -F logs/app.log")
-            )
-            
-    })
+    )
+    .channel_effects("db", &["user", "post"])
+    .channel("log", stream().command("tail -F logs/app.log"))
     .run_log(run_log.clone())
     .build()?
 ```
