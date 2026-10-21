@@ -77,13 +77,14 @@ let proxy = rngo::Proxy::builder()
     .with_channel("db", |channel| {
         channel
             .effects("user", "post")
-            .format(
-                sql_format()
-                    .effect_table("user", "USERS")
-                    .effect_table("post", "POSTS")
-            )
             .sink(
-                stream().command("psql -q $DATABASE_URL")
+                stream()
+                    .command("psql -q $DATABASE_URL")
+                    .format(
+                        sql_format()
+                            .effect_table("user", "USERS")
+                            .effect_table("post", "POSTS")
+                    )
             )
             
     })

@@ -44,20 +44,21 @@ pub fn eval(base: &Path, options: EvalOptions) -> Result<bool, Box<dyn Error>> {
 
     let dialect = Dialect::primitive();
 
+    let rewritten = stdout.then(|| to_stdout_channels(&spec));
+    let effective = rewritten.as_ref().unwrap_or(&spec);
+
     let mut simulation_builder = dialect
         .parse_simulation(spec.clone())
         .map_err(join_errors)?;
 
-    let mut proxy_builder = dialect.parse_proxy(spec.clone()).map_err(join_errors)?;
+    let mut proxy_builder = dialect
+        .parse_proxy(effective.clone())
+        .map_err(join_errors)?;
 
     let audit_builder = dialect.parse_audit(spec.clone()).map_err(join_errors)?;
 
     if let Some(limit) = limit {
         simulation_builder = simulation_builder.limit(limit.get());
-    }
-
-    if stdout {
-        proxy_builder.set_stdout(true);
     }
 
     if dry_run {
@@ -68,7 +69,7 @@ pub fn eval(base: &Path, options: EvalOptions) -> Result<bool, Box<dyn Error>> {
         return Ok(true);
     }
 
-    let eval_dir = prepare_eval_dir(base, &spec)?;
+    let eval_dir = prepare_eval_dir(base, &spec, rewritten.as_ref())?;
 
     let sqlite_run_log = SqliteRunLog::new(eval_dir.clone());
     let reader = sqlite_run_log.clone();
@@ -262,13 +263,39 @@ fn load_spec(base: &Path) -> Result<spec::Spec, Box<dyn Error>> {
     Ok(spec::from_value(spec).map_err(join_errors)?)
 }
 
-fn prepare_eval_dir(base: &Path, spec: &spec::Spec) -> Result<PathBuf, Box<dyn Error>> {
+/// Replaces every channel with a `stdout` one that keeps only its `format`.
+fn to_stdout_channels(spec: &spec::Spec) -> spec::Spec {
+    let mut spec = spec.clone();
+    for channel in spec.channels.values_mut() {
+        let format = channel.fields.get("format").cloned();
+        channel.ctype = Some("stdout".into());
+        channel.fields.clear();
+        channel
+            .fields
+            .extend(format.map(|f| ("format".to_string(), f)));
+    }
+    spec
+}
+
+/// Creates the eval directory with `spec.json`, plus `spec.rewritten.json` when the spec that ran
+/// differs from the one written.
+fn prepare_eval_dir(
+    base: &Path,
+    spec: &spec::Spec,
+    rewritten: Option<&spec::Spec>,
+) -> Result<PathBuf, Box<dyn Error>> {
     let eval_dir = new_eval_dir(base)?;
     fs::create_dir_all(&eval_dir)?;
     fs::write(
         eval_dir.join("spec.json"),
         serde_json::to_string_pretty(spec)?,
     )?;
+    if let Some(rewritten) = rewritten {
+        fs::write(
+            eval_dir.join("spec.rewritten.json"),
+            serde_json::to_string_pretty(rewritten)?,
+        )?;
+    }
     update_last_symlink(base, &eval_dir)?;
     Ok(eval_dir)
 }
@@ -326,6 +353,81 @@ mod tests {
 
         let passed = outcome["eval"]["passed"].as_bool().unwrap_or(false);
         (outcome["value"].clone(), passed)
+    }
+
+    fn write_stdout_fixture(base: &Path, marker: &Path) {
+        fs::create_dir_all(base.join(".rngo/effects")).unwrap();
+        fs::create_dir_all(base.join(".rngo/channels")).unwrap();
+
+        write_yaml(
+            base.join(".rngo/spec.yml"),
+            &json!({ "seed": 1, "start": "2024-01-01", "end": "2024-01-04" }),
+        );
+        write_yaml(
+            base.join(".rngo/effects/ping.yml"),
+            &json!({
+                "channel": "logger",
+                "trigger": "hz(1, day)",
+                "generator": { "type": "constant", "value": "x" }
+            }),
+        );
+        write_yaml(
+            base.join(".rngo/channels/logger.yml"),
+            &json!({
+                "type": "exec",
+                "format": { "type": "template", "template": format!("touch {}", marker.display()) }
+            }),
+        );
+        write_yaml(
+            base.join(".rngo/channels/tail.yml"),
+            &json!({ "type": "stream", "command": format!("touch {}; cat", marker.display()) }),
+        );
+    }
+
+    #[test]
+    fn stdout_prints_instead_of_running_sinks_and_records_the_rewritten_spec() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+        let marker = base.join("ran");
+        write_stdout_fixture(base, &marker);
+
+        eval(
+            base,
+            EvalOptions {
+                stdout: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert!(!marker.exists(), "no sink should have run under --stdout");
+
+        let read = |name: &str| -> serde_json::Value {
+            serde_json::from_str(
+                &fs::read_to_string(base.join(".rngo/evals/last").join(name)).unwrap(),
+            )
+            .unwrap()
+        };
+        assert_eq!(read("spec.json")["channels"]["logger"]["type"], "exec");
+        let rewritten = read("spec.rewritten.json");
+        assert_eq!(rewritten["channels"]["logger"]["type"], "stdout");
+        assert_eq!(
+            rewritten["channels"]["logger"]["format"]["type"],
+            "template"
+        );
+        assert_eq!(rewritten["channels"]["tail"], json!({ "type": "stdout" }));
+    }
+
+    #[test]
+    fn no_rewritten_spec_is_recorded_without_stdout() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+        write_stdout_fixture(base, &base.join("ran"));
+
+        eval(base, EvalOptions::default()).unwrap();
+
+        assert!(base.join(".rngo/evals/last/spec.json").exists());
+        assert!(!base.join(".rngo/evals/last/spec.rewritten.json").exists());
     }
 
     #[test]

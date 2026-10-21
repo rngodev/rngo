@@ -99,7 +99,6 @@ pub struct GeneratorType {
 pub struct Channel {
     #[serde(rename = "type")]
     pub ctype: Option<String>,
-    pub format: Option<Format>,
     #[serde(flatten)]
     pub fields: IndexMap<String, Value>,
 }

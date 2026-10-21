@@ -1,16 +1,14 @@
 pub mod sink;
 
 use crate::BuildError;
-use crate::proxy::format::Format;
+use crate::effect::Input;
 use crate::proxy::output::{Output, OutputSender, SinkOutput};
-use serde_json::Value;
 use std::error::Error;
 use std::sync::mpsc::Sender;
 
 #[derive(Debug)]
 pub struct Channel {
     pub(super) key: String,
-    pub(super) format: Option<Box<dyn Format>>,
     pub(super) sink: Box<dyn ChannelSink>,
     pub(super) effects: Vec<String>,
 }
@@ -22,9 +20,9 @@ impl Channel {
 }
 
 pub trait ChannelSink: std::fmt::Debug {
-    /// Sends one event's `data`: the channel's formatted data as a string, or the input's own
-    /// `data` when the channel has no format. The proxy ties returned outputs to the input.
-    fn send(&mut self, data: Value) -> Result<Vec<SinkOutput>, Box<dyn Error>>;
+    /// Sends one input, formatted by the sink's own format if it has one. The proxy ties returned
+    /// outputs to the input.
+    fn send(&mut self, input: &Input) -> Result<Vec<SinkOutput>, Box<dyn Error>>;
     fn finish(&mut self) {}
 }
 
@@ -41,7 +39,6 @@ pub trait ChannelSinkBuilder {
 
 pub struct ChannelBuilder {
     key: String,
-    format: Option<Box<dyn Format>>,
     channel_sink_builder: Option<Box<dyn ChannelSinkBuilder>>,
     output_tx: Option<Sender<Output>>,
     effects: Vec<String>,
@@ -51,21 +48,10 @@ impl ChannelBuilder {
     fn new(key: String) -> Self {
         ChannelBuilder {
             key,
-            format: None,
             channel_sink_builder: None,
             output_tx: None,
             effects: vec![],
         }
-    }
-
-    pub fn format(mut self, format: impl Format + 'static) -> Self {
-        self.set_format(Box::new(format));
-        self
-    }
-
-    pub fn set_format(&mut self, format: Box<dyn Format>) -> &mut Self {
-        self.format = Some(format);
-        self
     }
 
     pub fn sink(mut self, builder: impl ChannelSinkBuilder + 'static) -> Self {
@@ -117,7 +103,6 @@ impl ChannelBuilder {
 
         Ok(Channel {
             key: self.key,
-            format: self.format,
             sink,
             effects: self.effects,
         })
@@ -138,7 +123,7 @@ mod tests {
     struct RecordingSink;
 
     impl ChannelSink for RecordingSink {
-        fn send(&mut self, _data: Value) -> Result<Vec<SinkOutput>, Box<dyn Error>> {
+        fn send(&mut self, _input: &Input) -> Result<Vec<SinkOutput>, Box<dyn Error>> {
             Ok(vec![])
         }
     }

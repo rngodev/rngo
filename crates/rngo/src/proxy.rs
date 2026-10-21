@@ -3,12 +3,10 @@ pub mod format;
 pub mod output;
 mod stop;
 
-use crate::{BuildError, Input, Level, Metadata, RunLogWriter, SimpleEventRunLog};
-use channel::sink::Stdout;
+use crate::{BuildError, Input, Metadata, RunLogWriter, SimpleEventRunLog};
 use channel::{Channel, ChannelBuilder};
 use chrono::{DateTime, FixedOffset, Utc};
-use output::{Output, SinkOutput};
-use serde_json::Value;
+use output::Output;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver};
@@ -56,20 +54,7 @@ impl Proxy {
         };
 
         if let Some(channel) = self.channels.get_mut(channel_key) {
-            let data = match channel.format.as_ref().map(|f| f.format(input)) {
-                Some(Ok(data)) => Value::String(data),
-                Some(Err(message)) => {
-                    self.run_log_writer.push_output(
-                        SinkOutput::new(Level::Error, format!("format failed: {message}"))
-                            .into_output(&channel.key, Some(input.id)),
-                    );
-                    self.drain_outputs();
-                    return Ok(());
-                }
-                None => input.data.clone(),
-            };
-
-            for output in channel.sink.send(data)? {
+            for output in channel.sink.send(input)? {
                 self.run_log_writer
                     .push_output(output.into_output(&channel.key, Some(input.id)));
             }
@@ -143,7 +128,6 @@ impl Proxy {
 pub struct ProxyBuilder {
     run_log_writer: Option<Rc<dyn RunLogWriter>>,
     channel_builders: Vec<ChannelBuilder>,
-    stdout: bool,
     realtime: bool,
     on_wait: Option<OnWait>,
     stop: StopHandle,
@@ -154,7 +138,6 @@ impl ProxyBuilder {
         Self {
             run_log_writer: None,
             channel_builders: vec![],
-            stdout: false,
             realtime: false,
             on_wait: None,
             stop: StopHandle::new(),
@@ -200,16 +183,6 @@ impl ProxyBuilder {
         self
     }
 
-    pub fn stdout(mut self, value: bool) -> Self {
-        self.set_stdout(value);
-        self
-    }
-
-    pub fn set_stdout(&mut self, value: bool) -> &mut Self {
-        self.stdout = value;
-        self
-    }
-
     pub fn set_channel(&mut self, channel: ChannelBuilder) {
         self.channel_builders.push(channel)
     }
@@ -235,9 +208,6 @@ impl ProxyBuilder {
             .unwrap_or_else(|| SimpleEventRunLog::new());
 
         for mut channel_builder in self.channel_builders {
-            if self.stdout {
-                channel_builder.set_sink(Box::new(Stdout::builder()));
-            }
             channel_builder.set_output_tx(output_tx.clone());
 
             match channel_builder.build() {
@@ -285,12 +255,14 @@ impl Default for ProxyBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Level;
     use crate::log::Metadata;
+    use crate::proxy::channel::sink::render;
     use crate::proxy::channel::{ChannelSink, ChannelSinkBuilder};
     use crate::proxy::format::Format;
-    use crate::proxy::output::OutputSender;
+    use crate::proxy::output::{OutputSender, SinkOutput};
     use chrono::TimeDelta;
-    use serde_json::json;
+    use serde_json::{Value, json};
     use std::cell::RefCell;
     use std::time::Instant;
 
@@ -327,16 +299,36 @@ mod tests {
     }
 
     #[derive(Debug)]
-    struct RecordingSink(Rc<RefCell<Vec<Value>>>);
+    struct RecordingSink {
+        sent: Rc<RefCell<Vec<Value>>>,
+        format: Option<Rc<dyn Format>>,
+    }
 
     impl ChannelSink for RecordingSink {
-        fn send(&mut self, data: Value) -> Result<Vec<SinkOutput>, Box<dyn std::error::Error>> {
-            self.0.borrow_mut().push(data);
-            Ok(vec![])
+        fn send(&mut self, input: &Input) -> Result<Vec<SinkOutput>, Box<dyn std::error::Error>> {
+            match render(self.format.as_deref(), input) {
+                Ok(data) => {
+                    self.sent.borrow_mut().push(data);
+                    Ok(vec![])
+                }
+                Err(output) => Ok(vec![output]),
+            }
         }
     }
 
-    struct RecordingSinkBuilder(Rc<RefCell<Vec<Value>>>);
+    struct RecordingSinkBuilder {
+        sent: Rc<RefCell<Vec<Value>>>,
+        format: Option<Rc<dyn Format>>,
+    }
+
+    impl RecordingSinkBuilder {
+        fn new(sent: &Rc<RefCell<Vec<Value>>>) -> Self {
+            RecordingSinkBuilder {
+                sent: sent.clone(),
+                format: None,
+            }
+        }
+    }
 
     impl ChannelSinkBuilder for RecordingSinkBuilder {
         fn build(
@@ -344,7 +336,10 @@ mod tests {
             _channel_key: &str,
             _outputs: OutputSender,
         ) -> Result<Box<dyn ChannelSink>, Vec<BuildError>> {
-            Ok(Box::new(RecordingSink(self.0.clone())))
+            Ok(Box::new(RecordingSink {
+                sent: self.sent.clone(),
+                format: self.format.clone(),
+            }))
         }
     }
 
@@ -364,9 +359,9 @@ mod tests {
         let sent = Rc::new(RefCell::new(vec![]));
         let mut builder = Proxy::builder().run_log_writer(log.clone());
         builder.with_channel("logger", |c| {
-            c.format(FailOnEvenIds)
-                .sink(RecordingSinkBuilder(sent.clone()))
-                .effects(vec!["ping".into()])
+            let mut sink = RecordingSinkBuilder::new(&sent);
+            sink.format = Some(Rc::new(FailOnEvenIds));
+            c.sink(sink).effects(vec!["ping".into()])
         });
         let mut proxy = builder.build().unwrap();
 
@@ -388,7 +383,7 @@ mod tests {
         let sent = Rc::new(RefCell::new(vec![]));
         let mut builder = Proxy::builder();
         builder.with_channel("logger", |c| {
-            c.sink(RecordingSinkBuilder(sent.clone()))
+            c.sink(RecordingSinkBuilder::new(&sent))
                 .effects(vec!["ping".into()])
         });
         let mut proxy = builder.build().unwrap();
@@ -423,7 +418,7 @@ mod tests {
     fn recording_proxy(builder: ProxyBuilder, sent: &Rc<RefCell<Vec<Value>>>) -> Proxy {
         let mut builder = builder;
         builder.with_channel("logger", |c| {
-            c.sink(RecordingSinkBuilder(sent.clone()))
+            c.sink(RecordingSinkBuilder::new(sent))
                 .effects(vec!["ping".into()])
         });
         builder.build().unwrap()

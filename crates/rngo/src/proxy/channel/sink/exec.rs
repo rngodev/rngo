@@ -1,13 +1,18 @@
-use crate::parse::ChannelSinkParser;
+use crate::effect::Input;
+use crate::parse::{ChannelSinkParser, FormatContext};
 use crate::proxy::channel::{ChannelSink, ChannelSinkBuilder};
+use crate::proxy::format::Format;
 use crate::proxy::output::{OutputSender, SinkOutput};
 use crate::{BuildError, Level, ParseError, spec};
 use serde_json::Value;
 use std::io::{BufRead, BufReader};
 use std::process::Stdio;
+use std::rc::Rc;
 
 #[derive(Debug)]
-pub struct Exec;
+pub struct Exec {
+    format: Option<Rc<dyn Format>>,
+}
 
 impl Exec {
     pub fn parser() -> ExecParser {
@@ -15,12 +20,17 @@ impl Exec {
     }
 
     pub fn builder() -> ExecBuilder {
-        ExecBuilder
+        ExecBuilder::default()
     }
 }
 
 impl ChannelSink for Exec {
-    fn send(&mut self, data: Value) -> Result<Vec<SinkOutput>, Box<dyn std::error::Error>> {
+    fn send(&mut self, input: &Input) -> Result<Vec<SinkOutput>, Box<dyn std::error::Error>> {
+        let data = match super::render(self.format.as_deref(), input) {
+            Ok(data) => data,
+            Err(output) => return Ok(vec![output]),
+        };
+
         let Value::String(command) = data else {
             return Ok(vec![SinkOutput::new(
                 Level::Error,
@@ -61,7 +71,21 @@ impl ChannelSink for Exec {
 }
 
 #[derive(Default)]
-pub struct ExecBuilder;
+pub struct ExecBuilder {
+    format: Option<Rc<dyn Format>>,
+}
+
+impl ExecBuilder {
+    pub fn format(mut self, format: impl Format + 'static) -> Self {
+        self.set_format(Rc::new(format));
+        self
+    }
+
+    pub fn set_format(&mut self, format: Rc<dyn Format>) -> &mut Self {
+        self.format = Some(format);
+        self
+    }
+}
 
 impl ChannelSinkBuilder for ExecBuilder {
     fn build(
@@ -69,7 +93,9 @@ impl ChannelSinkBuilder for ExecBuilder {
         _channel_key: &str,
         _outputs: OutputSender,
     ) -> Result<Box<dyn ChannelSink>, Vec<BuildError>> {
-        Ok(Box::new(Exec))
+        Ok(Box::new(Exec {
+            format: self.format.clone(),
+        }))
     }
 }
 
@@ -83,6 +109,7 @@ impl ChannelSinkParser for ExecParser {
     fn parse(
         &self,
         channel: &spec::Channel,
+        formats: &FormatContext,
     ) -> Result<Box<dyn ChannelSinkBuilder>, Vec<ParseError>> {
         if channel.fields.contains_key("command") {
             return Err(vec![ParseError::Invalid {
@@ -93,7 +120,13 @@ impl ChannelSinkParser for ExecParser {
             }]);
         }
 
-        Ok(Box::new(ExecBuilder))
+        let mut builder = ExecBuilder::default();
+
+        if let Some(format) = formats.parse(channel)? {
+            builder.set_format(format);
+        }
+
+        Ok(Box::new(builder))
     }
 }
 
@@ -102,6 +135,16 @@ mod tests {
     use super::*;
     use serde_json::json;
     use std::sync::mpsc;
+
+    fn input(data: Value) -> Input {
+        Input {
+            id: 1,
+            effect: "ping".into(),
+            timestamp: chrono::Utc::now().fixed_offset(),
+            data,
+            metadata: vec![],
+        }
+    }
 
     fn exec() -> Box<dyn ChannelSink> {
         let (tx, _rx) = mpsc::channel();
@@ -112,13 +155,13 @@ mod tests {
 
     #[test]
     fn runs_string_data_as_its_command() {
-        let outputs = exec().send(json!("echo '<a> & \"b\"'")).unwrap();
+        let outputs = exec().send(&input(json!("echo '<a> & \"b\"'"))).unwrap();
         assert_eq!(outputs, vec![SinkOutput::new(Level::Info, "<a> & \"b\"")]);
     }
 
     #[test]
     fn non_string_data_is_an_error_output() {
-        let outputs = exec().send(json!({ "a": 1 })).unwrap();
+        let outputs = exec().send(&input(json!({ "a": 1 }))).unwrap();
         assert_eq!(outputs.len(), 1);
         assert_eq!(outputs[0].level, Level::Error);
     }

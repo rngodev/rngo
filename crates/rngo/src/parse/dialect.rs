@@ -1,4 +1,4 @@
-use super::format::FormatParser;
+use super::format::{FormatContext, FormatParser};
 use super::generator::{GeneratorParseVisitor, GeneratorParser};
 use super::signal::SignalParser;
 use crate::audit::signal::Signal;
@@ -9,7 +9,6 @@ use crate::effect::{Effect, generator};
 use crate::moment::Moment;
 use crate::parse::ChannelSinkParser;
 use crate::proxy::channel::{Channel, ChannelSinkBuilder, sink};
-use crate::proxy::format::Format;
 use crate::proxy::{Proxy, ProxyBuilder, format};
 use crate::spec::{self, ParseError, Spec};
 use std::collections::HashMap;
@@ -56,6 +55,7 @@ impl Dialect {
             ],
             vec![
                 Box::new(sink::Exec::parser()),
+                Box::new(sink::Stdout::parser()),
                 Box::new(sink::Stream::parser()),
             ],
             vec![Box::new(signal::SqlSignal::parser())],
@@ -201,18 +201,13 @@ impl Dialect {
             }
         }
 
+        let formats = FormatContext {
+            parsers: &self.format_parsers,
+            spec: &spec,
+        };
+
         for (key, channel) in &spec.channels {
             let mut channel_builder = Channel::builder(key.clone());
-
-            match &channel.format {
-                Some(format) if format.ftype.is_some() => match self.parse_format(format, &spec) {
-                    Ok(format) => {
-                        channel_builder.set_format(format);
-                    }
-                    Err(e) => errors.extend(prefix_paths(e, &["channels", key, "format"])),
-                },
-                _ => (),
-            };
 
             if channel.fields.contains_key("target") {
                 errors.push(ParseError::Invalid {
@@ -222,7 +217,7 @@ impl Dialect {
                         .into(),
                 });
             } else {
-                match self.parse_sink(channel) {
+                match self.parse_sink(channel, &formats) {
                     Ok(sink_builder) => {
                         channel_builder.set_sink(sink_builder);
                     }
@@ -292,33 +287,10 @@ impl Dialect {
         }
     }
 
-    fn parse_format(
-        &self,
-        format: &spec::Format,
-        spec: &Spec,
-    ) -> Result<Box<dyn Format>, Vec<ParseError>> {
-        let matching: Vec<_> = self
-            .format_parsers
-            .iter()
-            .filter(|p| format.ftype.as_deref() == Some(p.key()))
-            .collect();
-
-        match matching.as_slice() {
-            [parser] => parser.parse(format, spec),
-            [] => Err(vec![ParseError::Invalid {
-                path: None,
-                message: "unknown format type".to_string(),
-            }]),
-            _ => Err(vec![ParseError::Invalid {
-                path: None,
-                message: format!("{} format parsers matched", matching.len()),
-            }]),
-        }
-    }
-
     fn parse_sink(
         &self,
         channel: &spec::Channel,
+        formats: &FormatContext,
     ) -> Result<Box<dyn ChannelSinkBuilder>, Vec<ParseError>> {
         let matching: Vec<_> = self
             .channel_sink_parsers
@@ -327,7 +299,7 @@ impl Dialect {
             .collect();
 
         match matching.as_slice() {
-            [parser] => parser.parse(channel),
+            [parser] => parser.parse(channel, formats),
             [] => Err(vec![ParseError::Invalid {
                 path: Some(vec!["type".into()]),
                 message: "unknown channel type".to_string(),

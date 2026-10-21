@@ -13,8 +13,9 @@ use crate::effect::generator::{
     Array, Constant, Context, Function, Number, Object, Reference, Select, Str,
 };
 pub use crate::proxy::channel::sink::exec::ExecBuilder;
+pub use crate::proxy::channel::sink::stdout::StdoutBuilder;
 pub use crate::proxy::channel::sink::stream::StreamBuilder;
-use crate::proxy::channel::sink::{Exec, Stream};
+use crate::proxy::channel::sink::{Exec, Stdout, Stream};
 pub use crate::proxy::format::{SqlFormat, TemplateFormat};
 use thiserror::Error;
 
@@ -68,6 +69,10 @@ pub fn stream() -> StreamBuilder {
 
 pub fn exec() -> ExecBuilder {
     Exec::builder()
+}
+
+pub fn stdout() -> StdoutBuilder {
+    Stdout::builder()
 }
 
 #[derive(Error, Debug)]
