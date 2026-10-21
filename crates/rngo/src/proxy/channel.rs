@@ -1,8 +1,8 @@
-pub mod target;
+pub mod sink;
 
 use crate::BuildError;
 use crate::proxy::format::Format;
-use crate::proxy::output::{Output, OutputSender, TargetOutput};
+use crate::proxy::output::{Output, OutputSender, SinkOutput};
 use serde_json::Value;
 use std::error::Error;
 use std::sync::mpsc::Sender;
@@ -11,7 +11,7 @@ use std::sync::mpsc::Sender;
 pub struct Channel {
     pub(super) key: String,
     pub(super) format: Option<Box<dyn Format>>,
-    pub(super) target: Box<dyn ChannelTarget>,
+    pub(super) sink: Box<dyn ChannelSink>,
     pub(super) effects: Vec<String>,
 }
 
@@ -21,28 +21,28 @@ impl Channel {
     }
 }
 
-pub trait ChannelTarget: std::fmt::Debug {
+pub trait ChannelSink: std::fmt::Debug {
     /// Sends one event's `data`: the channel's formatted data as a string, or the input's own
     /// `data` when the channel has no format. The proxy ties returned outputs to the input.
-    fn send(&mut self, data: Value) -> Result<Vec<TargetOutput>, Box<dyn Error>>;
+    fn send(&mut self, data: Value) -> Result<Vec<SinkOutput>, Box<dyn Error>>;
     fn finish(&mut self) {}
 }
 
 /// Built with the channel's own key passed in at build time, rather than baked in at
-/// construction - lets a target builder (e.g. [`crate::build::exec`]) be constructed generically,
+/// construction - lets a sink builder (e.g. [`crate::build::exec`]) be constructed generically,
 /// before the channel it'll belong to is known, mirroring how `outputs` is threaded in.
-pub trait ChannelTargetBuilder {
+pub trait ChannelSinkBuilder {
     fn build(
         &self,
         channel_key: &str,
         outputs: OutputSender,
-    ) -> Result<Box<dyn ChannelTarget>, Vec<BuildError>>;
+    ) -> Result<Box<dyn ChannelSink>, Vec<BuildError>>;
 }
 
 pub struct ChannelBuilder {
     key: String,
     format: Option<Box<dyn Format>>,
-    channel_target_builder: Option<Box<dyn ChannelTargetBuilder>>,
+    channel_sink_builder: Option<Box<dyn ChannelSinkBuilder>>,
     output_tx: Option<Sender<Output>>,
     effects: Vec<String>,
 }
@@ -52,7 +52,7 @@ impl ChannelBuilder {
         ChannelBuilder {
             key,
             format: None,
-            channel_target_builder: None,
+            channel_sink_builder: None,
             output_tx: None,
             effects: vec![],
         }
@@ -68,13 +68,13 @@ impl ChannelBuilder {
         self
     }
 
-    pub fn target(mut self, builder: impl ChannelTargetBuilder + 'static) -> Self {
-        self.set_target(Box::new(builder));
+    pub fn sink(mut self, builder: impl ChannelSinkBuilder + 'static) -> Self {
+        self.set_sink(Box::new(builder));
         self
     }
 
-    pub fn set_target(&mut self, builder: Box<dyn ChannelTargetBuilder>) -> &mut Self {
-        self.channel_target_builder = Some(builder);
+    pub fn set_sink(&mut self, builder: Box<dyn ChannelSinkBuilder>) -> &mut Self {
+        self.channel_sink_builder = Some(builder);
         self
     }
 
@@ -99,9 +99,9 @@ impl ChannelBuilder {
     }
 
     pub fn build(self) -> Result<Channel, Vec<BuildError>> {
-        let target = if let Some(target_builder) = self.channel_target_builder {
+        let sink = if let Some(sink_builder) = self.channel_sink_builder {
             if let Some(output_tx) = self.output_tx {
-                target_builder.build(&self.key, OutputSender::new(&self.key, output_tx))
+                sink_builder.build(&self.key, OutputSender::new(&self.key, output_tx))
             } else {
                 Err(vec![BuildError::Channel {
                     channel: self.key.clone(),
@@ -111,14 +111,14 @@ impl ChannelBuilder {
         } else {
             Err(vec![BuildError::Channel {
                 channel: self.key.clone(),
-                message: "target was not set".into(),
+                message: "sink was not set".into(),
             }])
         }?;
 
         Ok(Channel {
             key: self.key,
             format: self.format,
-            target,
+            sink,
             effects: self.effects,
         })
     }
@@ -132,38 +132,38 @@ mod tests {
     use std::sync::mpsc;
 
     /// Records whatever `channel_key` it's built with, so a test can confirm `ChannelBuilder`
-    /// threads its own key through to a target builder constructed with no key of its own - the
+    /// threads its own key through to a sink builder constructed with no key of its own - the
     /// case a Rust-DSL builder like `exec()`/`stream()` relies on.
     #[derive(Debug)]
-    struct RecordingTarget;
+    struct RecordingSink;
 
-    impl ChannelTarget for RecordingTarget {
-        fn send(&mut self, _data: Value) -> Result<Vec<TargetOutput>, Box<dyn Error>> {
+    impl ChannelSink for RecordingSink {
+        fn send(&mut self, _data: Value) -> Result<Vec<SinkOutput>, Box<dyn Error>> {
             Ok(vec![])
         }
     }
 
     #[derive(Debug)]
-    struct RecordingTargetBuilder(Rc<RefCell<Option<String>>>);
+    struct RecordingSinkBuilder(Rc<RefCell<Option<String>>>);
 
-    impl ChannelTargetBuilder for RecordingTargetBuilder {
+    impl ChannelSinkBuilder for RecordingSinkBuilder {
         fn build(
             &self,
             channel_key: &str,
             _outputs: OutputSender,
-        ) -> Result<Box<dyn ChannelTarget>, Vec<BuildError>> {
+        ) -> Result<Box<dyn ChannelSink>, Vec<BuildError>> {
             *self.0.borrow_mut() = Some(channel_key.to_string());
-            Ok(Box::new(RecordingTarget))
+            Ok(Box::new(RecordingSink))
         }
     }
 
     #[test]
-    fn build_passes_the_channel_own_key_to_the_target_builder() {
+    fn build_passes_the_channel_own_key_to_the_sink_builder() {
         let seen = Rc::new(RefCell::new(None));
         let (output_tx, _output_rx) = mpsc::channel();
 
         Channel::builder("db".into())
-            .target(RecordingTargetBuilder(seen.clone()))
+            .sink(RecordingSinkBuilder(seen.clone()))
             .output_tx(output_tx)
             .build()
             .unwrap();

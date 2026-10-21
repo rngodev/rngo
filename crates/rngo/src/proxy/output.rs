@@ -21,16 +21,16 @@ pub struct Output {
     pub metadata: Vec<Metadata>,
 }
 
-/// A message a channel target reports; the proxy turns it into an [`Output`].
+/// A message a channel sink reports; the proxy turns it into an [`Output`].
 #[derive(Clone, Debug, PartialEq)]
-pub struct TargetOutput {
+pub struct SinkOutput {
     pub level: Level,
     pub message: String,
 }
 
-impl TargetOutput {
+impl SinkOutput {
     pub fn new(level: Level, message: impl Into<String>) -> Self {
-        TargetOutput {
+        SinkOutput {
             level,
             message: message.into(),
         }
@@ -49,7 +49,7 @@ impl TargetOutput {
     }
 }
 
-/// Lets a channel target report outputs outside of `send` (e.g. from a reader thread); each is
+/// Lets a channel sink report outputs outside of `send` (e.g. from a reader thread); each is
 /// timestamped when sent and tied to no input.
 #[derive(Clone, Debug)]
 pub struct OutputSender {
@@ -65,7 +65,7 @@ impl OutputSender {
         }
     }
 
-    pub fn send(&self, output: TargetOutput) {
+    pub fn send(&self, output: SinkOutput) {
         let _ = self.tx.send(output.into_output(&self.channel, None));
     }
 }

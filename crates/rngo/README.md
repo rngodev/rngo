@@ -82,14 +82,14 @@ let proxy = rngo::Proxy::builder()
                     .effect_table("user", "USERS")
                     .effect_table("post", "POSTS")
             )
-            .target(
+            .sink(
                 stream().command("psql -q $DATABASE_URL")
             )
             
     })
     .with_channel("log", |channel| {
         channel
-            .target(
+            .sink(
                 stream().command("tail -F logs/app.log")
             )
             
@@ -200,11 +200,13 @@ You can also define the above in JSON (or YAML) spec - it would look like this:
     },
     "channels": {
         "db": {
-            "format": { "type": "sql" },
-            "target": { "type": "stream", "command": "psql -q $DATABASE_URL" }
+            "type": "stream",
+            "command": "psql -q $DATABASE_URL",
+            "format": { "type": "sql" }
         },
         "log": {
-            "target": { "type": "stream", "command": "tail -F logs/app.log" }
+            "type": "stream",
+            "command": "tail -F logs/app.log"
         }
     },
     "signals": {

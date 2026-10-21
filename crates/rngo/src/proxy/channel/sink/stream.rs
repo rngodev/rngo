@@ -1,6 +1,6 @@
-use crate::parse::ChannelTargetParser;
-use crate::proxy::channel::{ChannelTarget, ChannelTargetBuilder};
-use crate::proxy::output::{OutputSender, TargetOutput};
+use crate::parse::ChannelSinkParser;
+use crate::proxy::channel::{ChannelSink, ChannelSinkBuilder};
+use crate::proxy::output::{OutputSender, SinkOutput};
 use crate::{BuildError, Level, ParseError, spec};
 use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
@@ -31,8 +31,8 @@ impl Stream {
     }
 }
 
-impl ChannelTarget for Stream {
-    fn send(&mut self, data: Value) -> Result<Vec<TargetOutput>, Box<dyn std::error::Error>> {
+impl ChannelSink for Stream {
+    fn send(&mut self, data: Value) -> Result<Vec<SinkOutput>, Box<dyn std::error::Error>> {
         let Some(stdin) = self.stdin.as_mut() else {
             return Ok(vec![]);
         };
@@ -95,14 +95,14 @@ impl StreamBuilder {
     }
 }
 
-impl ChannelTargetBuilder for StreamBuilder {
+impl ChannelSinkBuilder for StreamBuilder {
     fn build(
         &self,
         channel_key: &str,
         outputs: OutputSender,
-    ) -> Result<Box<dyn ChannelTarget>, Vec<BuildError>> {
+    ) -> Result<Box<dyn ChannelSink>, Vec<BuildError>> {
         let Some(command) = self.command.clone() else {
-            return Err(vec![BuildError::ChannelTarget {
+            return Err(vec![BuildError::ChannelSink {
                 channel: channel_key.to_string(),
                 message: "command not specified".into(),
             }]);
@@ -114,7 +114,7 @@ impl ChannelTargetBuilder for StreamBuilder {
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| {
-                vec![BuildError::ChannelTarget {
+                vec![BuildError::ChannelSink {
                     channel: channel_key.to_string(),
                     message: format!("failed to spawn command: {e}"),
                 }]
@@ -149,7 +149,7 @@ fn spawn_reader(
     thread::spawn(move || {
         for line in BufReader::new(pipe).lines().map_while(Result::ok) {
             if !line.is_empty() {
-                outputs.send(TargetOutput::new(level, line));
+                outputs.send(SinkOutput::new(level, line));
             }
         }
     })
@@ -157,29 +157,29 @@ fn spawn_reader(
 
 pub struct StreamParser {}
 
-impl ChannelTargetParser for StreamParser {
+impl ChannelSinkParser for StreamParser {
     fn key(&self) -> &str {
         "stream"
     }
 
     fn parse(
         &self,
-        channel_target: &spec::ChannelTarget,
-    ) -> Result<Box<dyn ChannelTargetBuilder>, Vec<ParseError>> {
-        let command = match channel_target.fields.get("command") {
+        channel: &spec::Channel,
+    ) -> Result<Box<dyn ChannelSinkBuilder>, Vec<ParseError>> {
+        let command = match channel.fields.get("command") {
             Some(value) => match value.as_str() {
                 Some(command) => command,
                 None => {
                     return Err(vec![ParseError::Invalid {
-                        path: None,
-                        message: "FIX ME must be a string".into(),
+                        path: Some(vec!["command".into()]),
+                        message: "must be a string".into(),
                     }]);
                 }
             },
             None => {
                 return Err(vec![ParseError::Invalid {
-                    path: None,
-                    message: "FIX ME must be a string".into(),
+                    path: Some(vec!["command".into()]),
+                    message: "is required for a stream channel".into(),
                 }]);
             }
         };

@@ -1,10 +1,10 @@
-use crate::proxy::channel::ChannelTargetBuilder;
+use crate::proxy::channel::ChannelSinkBuilder;
 use crate::{ParseError, spec};
 
-pub trait ChannelTargetParser {
+pub trait ChannelSinkParser {
     fn key(&self) -> &str;
     fn parse(
         &self,
-        channel_target: &spec::ChannelTarget,
-    ) -> Result<Box<dyn ChannelTargetBuilder>, Vec<ParseError>>;
+        channel: &spec::Channel,
+    ) -> Result<Box<dyn ChannelSinkBuilder>, Vec<ParseError>>;
 }

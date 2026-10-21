@@ -11,7 +11,7 @@ use uuid::Uuid;
 /// Options for a single `rngo eval`.
 #[derive(Default)]
 pub struct EvalOptions<'a> {
-    /// Print events to stdout instead of sending them to channel targets.
+    /// Print events to stdout instead of sending them to channel sinks.
     pub stdout: bool,
     /// Load this spec file instead of the `.rngo` directory.
     pub spec_path: Option<&'a Path>,
@@ -329,7 +329,7 @@ mod tests {
     }
 
     #[test]
-    fn exec_target_runs_command_per_event() {
+    fn exec_sink_runs_command_per_event() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
         let output = base.join("exec_output.txt");
@@ -365,7 +365,7 @@ mod tests {
             base.join(".rngo/channels/logger.yml"),
             &json!({
                 "format": { "type": "template", "template": command },
-                "target": { "type": "exec" }
+                "type": "exec"
             }),
         );
 
@@ -379,7 +379,7 @@ mod tests {
     }
 
     #[test]
-    fn exec_target_runs_string_data_without_a_format() {
+    fn exec_sink_runs_string_data_without_a_format() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
         let output = base.join("exec_output.txt");
@@ -408,7 +408,7 @@ mod tests {
 
         write_yaml(
             base.join(".rngo/channels/logger.yml"),
-            &json!({ "target": { "type": "exec" } }),
+            &json!({ "type": "exec" }),
         );
 
         eval(base, EvalOptions::default()).unwrap();
@@ -419,7 +419,7 @@ mod tests {
     }
 
     #[test]
-    fn exec_target_records_output_when_command_fails() {
+    fn exec_sink_records_output_when_command_fails() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
@@ -463,7 +463,7 @@ mod tests {
             base.join(".rngo/channels/logger.yml"),
             &json!({
                 "format": { "type": "template", "template": "exit 1" },
-                "target": { "type": "exec" }
+                "type": "exec"
             }),
         );
 
@@ -474,7 +474,7 @@ mod tests {
     }
 
     #[test]
-    fn stream_target_does_not_drop_trailing_output() {
+    fn stream_sink_does_not_drop_trailing_output() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
 
@@ -521,7 +521,7 @@ mod tests {
             base.join(".rngo/channels/logger.yml"),
             &json!({
                 "format": {},
-                "target": { "type": "stream", "command": "cat" }
+                "type": "stream", "command": "cat"
             }),
         );
 
@@ -535,7 +535,7 @@ mod tests {
     }
 
     #[test]
-    fn stream_target_pipes_events_to_subprocess() {
+    fn stream_sink_pipes_events_to_subprocess() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
         let output = base.join("stream_output.txt");
@@ -571,7 +571,7 @@ mod tests {
             base.join(".rngo/channels/logger.yml"),
             &json!({
                 "format": {},
-                "target": { "type": "stream", "command": command }
+                "type": "stream", "command": command
             }),
         );
 
@@ -585,7 +585,7 @@ mod tests {
     }
 
     #[test]
-    fn template_format_is_written_to_a_stream_target() {
+    fn template_format_is_written_to_a_stream_sink() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path();
         let output = base.join("template_output.txt");
@@ -619,7 +619,7 @@ mod tests {
             base.join(".rngo/channels/logger.yml"),
             &json!({
                 "format": { "type": "template", "template": "{{effect.key}} {{data.tag}} {{json data}}" },
-                "target": { "type": "stream", "command": command }
+                "type": "stream", "command": command
             }),
         );
 
@@ -671,7 +671,7 @@ mod tests {
             base.join(".rngo/channels/db.yml"),
             &json!({
                 "format": { "type": "sql" },
-                "target": { "type": "stream", "command": command }
+                "type": "stream", "command": command
             }),
         );
 
@@ -711,7 +711,7 @@ mod tests {
                 "channels": {
                     "logger": {
                         "format": {},
-                        "target": { "type": "stream", "command": command }
+                        "type": "stream", "command": command
                     }
                 },
                 "effects": {
@@ -797,7 +797,7 @@ mod tests {
             base.join(".rngo/channels/logger.yml"),
             &json!({
                 "format": {},
-                "target": { "type": "stream", "command": command }
+                "type": "stream", "command": command
             }),
         );
 
@@ -1030,7 +1030,7 @@ mod tests {
         write_yaml(
             base.join(".rngo/channels/tail.yml"),
             &json!({
-                "target": { "type": "stream", "command": "printf 'one\\ntwo\\n'" }
+                "type": "stream", "command": "printf 'one\\ntwo\\n'"
             }),
         );
 
@@ -1089,7 +1089,7 @@ mod tests {
             base.join(".rngo/channels/logger.yml"),
             &json!({
                 "format": { "type": "template", "template": command },
-                "target": { "type": "exec" }
+                "type": "exec"
             }),
         );
 
@@ -1237,7 +1237,7 @@ mod tests {
             base.join(".rngo/channels/logger.yml"),
             &json!({
                 "format": { "type": "template", "template": command },
-                "target": { "type": "exec" }
+                "type": "exec"
             }),
         );
 
@@ -1328,7 +1328,7 @@ mod tests {
             base.join(".rngo/channels/logger.yml"),
             &json!({
                 "format": { "type": "template", "template": command },
-                "target": { "type": "exec" }
+                "type": "exec"
             }),
         );
 

@@ -1,6 +1,6 @@
-use crate::parse::ChannelTargetParser;
-use crate::proxy::channel::{ChannelTarget, ChannelTargetBuilder};
-use crate::proxy::output::{OutputSender, TargetOutput};
+use crate::parse::ChannelSinkParser;
+use crate::proxy::channel::{ChannelSink, ChannelSinkBuilder};
+use crate::proxy::output::{OutputSender, SinkOutput};
 use crate::{BuildError, Level, ParseError, spec};
 use serde_json::Value;
 use std::io::{BufRead, BufReader};
@@ -19,10 +19,10 @@ impl Exec {
     }
 }
 
-impl ChannelTarget for Exec {
-    fn send(&mut self, data: Value) -> Result<Vec<TargetOutput>, Box<dyn std::error::Error>> {
+impl ChannelSink for Exec {
+    fn send(&mut self, data: Value) -> Result<Vec<SinkOutput>, Box<dyn std::error::Error>> {
         let Value::String(command) = data else {
-            return Ok(vec![TargetOutput::new(
+            return Ok(vec![SinkOutput::new(
                 Level::Error,
                 format!("exec needs a string command, got: {data}"),
             )]);
@@ -44,13 +44,13 @@ impl ChannelTarget for Exec {
                 .map_while(Result::ok)
             {
                 if !line.is_empty() {
-                    outputs.push(TargetOutput::new(level, line));
+                    outputs.push(SinkOutput::new(level, line));
                 }
             }
         }
 
         if !output.status.success() {
-            outputs.push(TargetOutput::new(
+            outputs.push(SinkOutput::new(
                 Level::Error,
                 format!("command exited with {}", output.status),
             ));
@@ -63,28 +63,28 @@ impl ChannelTarget for Exec {
 #[derive(Default)]
 pub struct ExecBuilder;
 
-impl ChannelTargetBuilder for ExecBuilder {
+impl ChannelSinkBuilder for ExecBuilder {
     fn build(
         &self,
         _channel_key: &str,
         _outputs: OutputSender,
-    ) -> Result<Box<dyn ChannelTarget>, Vec<BuildError>> {
+    ) -> Result<Box<dyn ChannelSink>, Vec<BuildError>> {
         Ok(Box::new(Exec))
     }
 }
 
 pub struct ExecParser {}
 
-impl ChannelTargetParser for ExecParser {
+impl ChannelSinkParser for ExecParser {
     fn key(&self) -> &str {
         "exec"
     }
 
     fn parse(
         &self,
-        channel_target: &spec::ChannelTarget,
-    ) -> Result<Box<dyn ChannelTargetBuilder>, Vec<ParseError>> {
-        if channel_target.fields.contains_key("command") {
+        channel: &spec::Channel,
+    ) -> Result<Box<dyn ChannelSinkBuilder>, Vec<ParseError>> {
+        if channel.fields.contains_key("command") {
             return Err(vec![ParseError::Invalid {
                 path: Some(vec!["command".into()]),
                 message: "exec no longer takes a command; set the channel's format to a template \
@@ -103,7 +103,7 @@ mod tests {
     use serde_json::json;
     use std::sync::mpsc;
 
-    fn exec() -> Box<dyn ChannelTarget> {
+    fn exec() -> Box<dyn ChannelSink> {
         let (tx, _rx) = mpsc::channel();
         Exec::builder()
             .build("logger", OutputSender::new("logger", tx))
@@ -113,7 +113,7 @@ mod tests {
     #[test]
     fn runs_string_data_as_its_command() {
         let outputs = exec().send(json!("echo '<a> & \"b\"'")).unwrap();
-        assert_eq!(outputs, vec![TargetOutput::new(Level::Info, "<a> & \"b\"")]);
+        assert_eq!(outputs, vec![SinkOutput::new(Level::Info, "<a> & \"b\"")]);
     }
 
     #[test]

@@ -12,9 +12,9 @@ pub use crate::effect::generator::string::StrBuilder;
 use crate::effect::generator::{
     Array, Constant, Context, Function, Number, Object, Reference, Select, Str,
 };
-pub use crate::proxy::channel::target::exec::ExecBuilder;
-pub use crate::proxy::channel::target::stream::StreamBuilder;
-use crate::proxy::channel::target::{Exec, Stream};
+pub use crate::proxy::channel::sink::exec::ExecBuilder;
+pub use crate::proxy::channel::sink::stream::StreamBuilder;
+use crate::proxy::channel::sink::{Exec, Stream};
 pub use crate::proxy::format::{SqlFormat, TemplateFormat};
 use thiserror::Error;
 
@@ -94,7 +94,7 @@ pub enum BuildError {
         channel: String,
         message: String,
     },
-    ChannelTarget {
+    ChannelSink {
         channel: String,
         message: String,
     },
