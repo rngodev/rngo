@@ -1,4 +1,4 @@
-use super::format::FormatParser;
+use super::format::{FormatParseContext, FormatParser};
 use super::generator::{GeneratorParseVisitor, GeneratorParser};
 use super::signal::SignalParser;
 use crate::audit::signal::Signal;
@@ -7,9 +7,8 @@ use crate::effect::generator::custom::CustomParser;
 use crate::effect::simulation::{Simulation, SimulationBuilder};
 use crate::effect::{Effect, generator};
 use crate::moment::Moment;
-use crate::parse::ChannelTargetParser;
-use crate::proxy::channel::{Channel, ChannelTargetBuilder, target};
-use crate::proxy::format::Format;
+use crate::parse::ChannelParser;
+use crate::proxy::channel::{self, ChannelBuilder};
 use crate::proxy::{Proxy, ProxyBuilder, format};
 use crate::spec::{self, ParseError, Spec};
 use std::collections::HashMap;
@@ -18,7 +17,7 @@ use std::rc::Rc;
 pub struct Dialect {
     generator_parsers: Rc<Vec<Box<dyn GeneratorParser>>>,
     format_parsers: Rc<Vec<Box<dyn FormatParser>>>,
-    channel_target_parsers: Rc<Vec<Box<dyn ChannelTargetParser>>>,
+    channel_parsers: Rc<Vec<Box<dyn ChannelParser>>>,
     signal_parsers: Rc<Vec<Box<dyn SignalParser>>>,
 }
 
@@ -26,13 +25,13 @@ impl Dialect {
     pub fn new(
         generator_parsers: Vec<Box<dyn GeneratorParser>>,
         format_parsers: Vec<Box<dyn FormatParser>>,
-        channel_target_parsers: Vec<Box<dyn ChannelTargetParser>>,
+        channel_parsers: Vec<Box<dyn ChannelParser>>,
         signal_parsers: Vec<Box<dyn SignalParser>>,
     ) -> Self {
         Dialect {
             generator_parsers: Rc::new(generator_parsers),
             format_parsers: Rc::new(format_parsers),
-            channel_target_parsers: Rc::new(channel_target_parsers),
+            channel_parsers: Rc::new(channel_parsers),
             signal_parsers: Rc::new(signal_parsers),
         }
     }
@@ -55,8 +54,9 @@ impl Dialect {
                 Box::new(format::TemplateFormat::parser()),
             ],
             vec![
-                Box::new(target::Exec::parser()),
-                Box::new(target::Stream::parser()),
+                Box::new(channel::Exec::parser()),
+                Box::new(channel::Stdout::parser()),
+                Box::new(channel::Stream::parser()),
             ],
             vec![Box::new(signal::SqlSignal::parser())],
         )
@@ -201,35 +201,32 @@ impl Dialect {
             }
         }
 
+        let formats = FormatParseContext::new(&self.format_parsers, &spec);
+
         for (key, channel) in &spec.channels {
-            let mut channel_builder = Channel::builder(key.clone());
-
-            match &channel.format {
-                Some(format) if format.ftype.is_some() => match self.parse_format(format, &spec) {
-                    Ok(format) => {
-                        channel_builder.set_format(format);
+            if channel.fields.contains_key("target") {
+                errors.push(ParseError::Invalid {
+                    path: Some(vec!["channels".into(), key.clone(), "target".into()]),
+                    message: "channels no longer take a target; set `type` (and e.g. `command`) \
+                              directly on the channel"
+                        .into(),
+                });
+            } else {
+                match self.parse_channel(channel, &formats) {
+                    Ok(channel_builder) => {
+                        proxy_builder.set_channel(key.clone(), channel_builder);
                     }
-                    Err(e) => errors.extend(prefix_paths(e, &["channels", key, "format"])),
-                },
-                _ => (),
-            };
-
-            match self.parse_target(&channel.target) {
-                Ok(target_builder) => {
-                    channel_builder.set_target(target_builder);
+                    Err(e) => errors.extend(prefix_paths(e, &["channels", key])),
                 }
-                Err(e) => errors.extend(prefix_paths(e, &["channels", key, "target"])),
             }
 
-            let effects = effect_channels
+            let effects: Vec<_> = effect_channels
                 .iter()
                 .filter(|(_, channel_key)| *channel_key == key)
-                .map(|(effect_key, _)| effect_key.clone())
+                .map(|(effect_key, _)| effect_key.as_str())
                 .collect();
 
-            channel_builder.set_effects(effects);
-
-            proxy_builder.set_channel(channel_builder);
+            proxy_builder.set_channel_effects(key.clone(), &effects);
         }
 
         if !errors.is_empty() {
@@ -283,49 +280,26 @@ impl Dialect {
         }
     }
 
-    fn parse_format(
+    fn parse_channel(
         &self,
-        format: &spec::Format,
-        spec: &Spec,
-    ) -> Result<Box<dyn Format>, Vec<ParseError>> {
+        channel: &spec::Channel,
+        formats: &FormatParseContext,
+    ) -> Result<Box<dyn ChannelBuilder>, Vec<ParseError>> {
         let matching: Vec<_> = self
-            .format_parsers
+            .channel_parsers
             .iter()
-            .filter(|p| format.ftype.as_deref() == Some(p.key()))
+            .filter(|p| channel.ctype.as_deref() == Some(p.key()))
             .collect();
 
         match matching.as_slice() {
-            [parser] => parser.parse(format, spec),
+            [parser] => parser.parse(channel, formats),
             [] => Err(vec![ParseError::Invalid {
-                path: None,
-                message: "unknown format type".to_string(),
+                path: Some(vec!["type".into()]),
+                message: "unknown channel type".to_string(),
             }]),
             _ => Err(vec![ParseError::Invalid {
                 path: None,
-                message: format!("{} format parsers matched", matching.len()),
-            }]),
-        }
-    }
-
-    fn parse_target(
-        &self,
-        channel_target: &spec::ChannelTarget,
-    ) -> Result<Box<dyn ChannelTargetBuilder>, Vec<ParseError>> {
-        let matching: Vec<_> = self
-            .channel_target_parsers
-            .iter()
-            .filter(|p| channel_target.ttype.as_deref() == Some(p.key()))
-            .collect();
-
-        match matching.as_slice() {
-            [parser] => parser.parse(channel_target),
-            [] => Err(vec![ParseError::Invalid {
-                path: None,
-                message: "unknown target type".to_string(),
-            }]),
-            _ => Err(vec![ParseError::Invalid {
-                path: None,
-                message: format!("{} target parsers matched", matching.len()),
+                message: format!("{} channel parsers matched", matching.len()),
             }]),
         }
     }
@@ -368,16 +342,16 @@ mod tests {
 
     #[test]
     fn format_errors_name_the_channel() {
-        let target = serde_json::json!({ "type": "stream", "command": "cat" });
+        let channel = serde_json::json!({ "type": "stream", "command": "cat" });
         for format in [
             serde_json::json!({ "type": "template" }),
             serde_json::json!({ "type": "template", "template": 1 }),
             serde_json::json!({ "type": "template", "template": "{{#if}}" }),
             serde_json::json!({ "type": "nope" }),
         ] {
-            let errors = proxy_errors(serde_json::json!({
-                "logger": { "format": format, "target": target }
-            }));
+            let mut channel = channel.clone();
+            channel["format"] = format;
+            let errors = proxy_errors(serde_json::json!({ "logger": channel }));
             assert_eq!(paths(&errors).len(), 1);
             assert!(
                 paths(&errors)[0].starts_with("channels.logger.format"),
@@ -390,10 +364,25 @@ mod tests {
     #[test]
     fn exec_command_is_rejected_with_a_pointer_to_format() {
         let errors = proxy_errors(serde_json::json!({
-            "logger": { "target": { "type": "exec", "command": "echo hi" } }
+            "logger": { "type": "exec", "command": "echo hi" }
         }));
-        assert_eq!(paths(&errors), vec!["channels.logger.target.command"]);
+        assert_eq!(paths(&errors), vec!["channels.logger.command"]);
         assert!(errors[0].to_string().contains("format"));
+    }
+
+    #[test]
+    fn nested_target_is_rejected_with_a_pointer_to_the_flat_form() {
+        let errors = proxy_errors(serde_json::json!({
+            "logger": { "target": { "type": "stream", "command": "cat" } }
+        }));
+        assert_eq!(paths(&errors), vec!["channels.logger.target"]);
+        assert!(errors[0].to_string().contains("type"));
+    }
+
+    #[test]
+    fn unknown_channel_type_names_the_type_field() {
+        let errors = proxy_errors(serde_json::json!({ "logger": { "type": "nope" } }));
+        assert_eq!(paths(&errors), vec!["channels.logger.type"]);
     }
 
     #[test]

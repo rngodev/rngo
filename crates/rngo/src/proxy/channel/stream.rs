@@ -1,10 +1,13 @@
-use crate::parse::ChannelTargetParser;
-use crate::proxy::channel::{ChannelTarget, ChannelTargetBuilder};
-use crate::proxy::output::{OutputSender, TargetOutput};
+use crate::effect::Input;
+use crate::parse::{ChannelParser, FormatParseContext};
+use crate::proxy::channel::{Channel, ChannelBuilder};
+use crate::proxy::format::Format;
+use crate::proxy::output::{ChannelOutput, OutputSender};
 use crate::{BuildError, Level, ParseError, spec};
 use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Stdio};
+use std::rc::Rc;
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -16,6 +19,7 @@ const READER_JOIN_GRACE: Duration = Duration::from_millis(200);
 #[derive(Debug)]
 pub struct Stream {
     channel_key: String,
+    format: Option<Rc<dyn Format>>,
     child: Child,
     stdin: Option<ChildStdin>,
     reader_threads: Vec<JoinHandle<()>>,
@@ -31,10 +35,15 @@ impl Stream {
     }
 }
 
-impl ChannelTarget for Stream {
-    fn send(&mut self, data: Value) -> Result<Vec<TargetOutput>, Box<dyn std::error::Error>> {
+impl Channel for Stream {
+    fn send(&mut self, input: &Input) -> Result<Vec<ChannelOutput>, Box<dyn std::error::Error>> {
         let Some(stdin) = self.stdin.as_mut() else {
             return Ok(vec![]);
+        };
+
+        let data = match super::render(self.format.as_deref(), input) {
+            Ok(data) => data,
+            Err(output) => return Ok(vec![output]),
         };
 
         let data = match data {
@@ -81,9 +90,20 @@ impl Drop for Stream {
 #[derive(Default)]
 pub struct StreamBuilder {
     command: Option<String>,
+    format: Option<Rc<dyn Format>>,
 }
 
 impl StreamBuilder {
+    pub fn format(mut self, format: impl Format + 'static) -> Self {
+        self.set_format(Rc::new(format));
+        self
+    }
+
+    pub fn set_format(&mut self, format: Rc<dyn Format>) -> &mut Self {
+        self.format = Some(format);
+        self
+    }
+
     pub fn command(mut self, value: impl Into<String>) -> Self {
         self.set_command(value);
         self
@@ -95,14 +115,14 @@ impl StreamBuilder {
     }
 }
 
-impl ChannelTargetBuilder for StreamBuilder {
+impl ChannelBuilder for StreamBuilder {
     fn build(
         &self,
         channel_key: &str,
         outputs: OutputSender,
-    ) -> Result<Box<dyn ChannelTarget>, Vec<BuildError>> {
+    ) -> Result<Box<dyn Channel>, Vec<BuildError>> {
         let Some(command) = self.command.clone() else {
-            return Err(vec![BuildError::ChannelTarget {
+            return Err(vec![BuildError::Channel {
                 channel: channel_key.to_string(),
                 message: "command not specified".into(),
             }]);
@@ -114,7 +134,7 @@ impl ChannelTargetBuilder for StreamBuilder {
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| {
-                vec![BuildError::ChannelTarget {
+                vec![BuildError::Channel {
                     channel: channel_key.to_string(),
                     message: format!("failed to spawn command: {e}"),
                 }]
@@ -134,6 +154,7 @@ impl ChannelTargetBuilder for StreamBuilder {
 
         Ok(Box::new(Stream {
             channel_key: channel_key.to_string(),
+            format: self.format.clone(),
             child,
             stdin,
             reader_threads,
@@ -149,7 +170,7 @@ fn spawn_reader(
     thread::spawn(move || {
         for line in BufReader::new(pipe).lines().map_while(Result::ok) {
             if !line.is_empty() {
-                outputs.send(TargetOutput::new(level, line));
+                outputs.send(ChannelOutput::new(level, line));
             }
         }
     })
@@ -157,34 +178,43 @@ fn spawn_reader(
 
 pub struct StreamParser {}
 
-impl ChannelTargetParser for StreamParser {
+impl ChannelParser for StreamParser {
     fn key(&self) -> &str {
         "stream"
     }
 
     fn parse(
         &self,
-        channel_target: &spec::ChannelTarget,
-    ) -> Result<Box<dyn ChannelTargetBuilder>, Vec<ParseError>> {
-        let command = match channel_target.fields.get("command") {
+        channel: &spec::Channel,
+        formats: &FormatParseContext,
+    ) -> Result<Box<dyn ChannelBuilder>, Vec<ParseError>> {
+        let command = match channel.fields.get("command") {
             Some(value) => match value.as_str() {
                 Some(command) => command,
                 None => {
                     return Err(vec![ParseError::Invalid {
-                        path: None,
-                        message: "FIX ME must be a string".into(),
+                        path: Some(vec!["command".into()]),
+                        message: "must be a string".into(),
                     }]);
                 }
             },
             None => {
                 return Err(vec![ParseError::Invalid {
-                    path: None,
-                    message: "FIX ME must be a string".into(),
+                    path: Some(vec!["command".into()]),
+                    message: "is required for a stream channel".into(),
                 }]);
             }
         };
 
-        Ok(Box::new(StreamBuilder::default().command(command)))
+        let mut builder = StreamBuilder::default().command(command);
+
+        if let Some(value) = channel.fields.get("format")
+            && let Some(format) = formats.parse(&["format"], value)?
+        {
+            builder.set_format(format);
+        }
+
+        Ok(Box::new(builder))
     }
 }
 

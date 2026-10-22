@@ -12,9 +12,10 @@ pub use crate::effect::generator::string::StrBuilder;
 use crate::effect::generator::{
     Array, Constant, Context, Function, Number, Object, Reference, Select, Str,
 };
-pub use crate::proxy::channel::target::exec::ExecBuilder;
-pub use crate::proxy::channel::target::stream::StreamBuilder;
-use crate::proxy::channel::target::{Exec, Stream};
+pub use crate::proxy::channel::exec::ExecBuilder;
+pub use crate::proxy::channel::stdout::StdoutBuilder;
+pub use crate::proxy::channel::stream::StreamBuilder;
+use crate::proxy::channel::{Exec, Stdout, Stream};
 pub use crate::proxy::format::{SqlFormat, TemplateFormat};
 use thiserror::Error;
 
@@ -70,6 +71,10 @@ pub fn exec() -> ExecBuilder {
     Exec::builder()
 }
 
+pub fn stdout() -> StdoutBuilder {
+    Stdout::builder()
+}
+
 #[derive(Error, Debug)]
 #[error("failed to build: `{message}`")]
 pub enum BuildError {
@@ -91,10 +96,6 @@ pub enum BuildError {
         message: String,
     },
     Channel {
-        channel: String,
-        message: String,
-    },
-    ChannelTarget {
         channel: String,
         message: String,
     },

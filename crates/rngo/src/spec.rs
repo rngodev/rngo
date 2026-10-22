@@ -95,16 +95,10 @@ pub struct GeneratorType {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Channel {
-    pub format: Option<Format>,
-    pub target: ChannelTarget,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ChannelTarget {
+pub struct Channel {
     #[serde(rename = "type")]
-    pub ttype: Option<String>,
+    pub ctype: Option<String>,
     #[serde(flatten)]
     pub fields: IndexMap<String, Value>,
 }

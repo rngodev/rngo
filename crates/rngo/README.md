@@ -74,26 +74,18 @@ And then the `Proxy`:
 
 ```rust
 let proxy = rngo::Proxy::builder()
-    .with_channel("db", |channel| {
-        channel
-            .effects("user", "post")
+    .channel(
+        "db",
+        stream()
+            .command("psql -q $DATABASE_URL")
             .format(
                 sql_format()
                     .effect_table("user", "USERS")
                     .effect_table("post", "POSTS")
             )
-            .target(
-                stream().command("psql -q $DATABASE_URL")
-            )
-            
-    })
-    .with_channel("log", |channel| {
-        channel
-            .target(
-                stream().command("tail -F logs/app.log")
-            )
-            
-    })
+    )
+    .channel_effects("db", &["user", "post"])
+    .channel("log", stream().command("tail -F logs/app.log"))
     .run_log(run_log.clone())
     .build()?
 ```
@@ -200,11 +192,13 @@ You can also define the above in JSON (or YAML) spec - it would look like this:
     },
     "channels": {
         "db": {
-            "format": { "type": "sql" },
-            "target": { "type": "stream", "command": "psql -q $DATABASE_URL" }
+            "type": "stream",
+            "command": "psql -q $DATABASE_URL",
+            "format": { "type": "sql" }
         },
         "log": {
-            "target": { "type": "stream", "command": "tail -F logs/app.log" }
+            "type": "stream",
+            "command": "tail -F logs/app.log"
         }
     },
     "signals": {

@@ -1,3 +1,2 @@
-target:
-  type: stream
-  command: tail -F logs/app.log
+type: stream
+command: tail -F logs/app.log
