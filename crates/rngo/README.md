@@ -14,7 +14,7 @@ An **audit** surfaces patterns in the `RunLog` and usually sets expectations of 
 You can define a cell using a builder DSL. First we'll define a `SqliteRunLog`:
 
 ```rust
-let run_log = rngo::SqliteRunLog::new(".")
+let run_log = rngo::SqliteRunLog::new(".".into())?;
 ```
 
 Next a `Simulation`:
@@ -97,7 +97,7 @@ for input in &mut simulation {
     proxy.send(&input)?;
 }
 
-proxy.finish();
+proxy.finish()?;
 ```
 
 Finally, we can build an `Audit` and set some expectations for the inputs and ouputs
@@ -122,7 +122,7 @@ let audit = rngo::Audit::builder()
     .run_log(run_log)
     .build()?;
 
-let audit_report = audit.run();
+let audit_report = audit.run()?;
 assert!(audit_report.passed())
 ```
 
@@ -227,7 +227,7 @@ You can parse and run like this:
 let value: serde_json::Value = serde_json::from_str(raw).unwrap();
 let spec = rngo::spec::from_value(value)?;
 let dialect = rngo::Dialect::primitive();
-let run_log = rngo::SqliteRunLog::new(".")
+let run_log = rngo::SqliteRunLog::new(".".into())?;
 
 let mut simulation = dialect
     .parse_simulation(spec.clone())?
@@ -248,8 +248,8 @@ for input in &mut simulation {
     proxy.send(&input)?;
 }
 
-proxy.finish();
+proxy.finish()?;
 
-let audit_report = audit.run();
+let audit_report = audit.run()?;
 assert!(audit_report.passed())
 ```

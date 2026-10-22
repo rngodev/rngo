@@ -45,20 +45,14 @@ impl GeneratorParseVisitor {
     }
 
     pub fn invalid(&self, message: impl Into<String>) -> ParseError {
-        ParseError::Invalid {
-            path: Some(self.source_path().clone()),
-            message: message.into(),
-        }
+        ParseError::invalid(message).at(self.source_path())
     }
 
     pub fn input_error(&self, input: impl Into<String>, message: impl Into<String>) -> ParseError {
         let mut path = self.source_path().clone();
         path.push(input.into());
 
-        ParseError::Invalid {
-            path: Some(path),
-            message: message.into(),
-        }
+        ParseError::invalid(message).at(path)
     }
 
     pub fn parse_custom_generator(
@@ -69,10 +63,13 @@ impl GeneratorParseVisitor {
         if self.type_stack.contains(&name) {
             let mut cyclic_type_stack = self.type_stack.clone();
             cyclic_type_stack.push(name.clone());
-            return Err(vec![ParseError::Invalid {
-                path: Some(vec!["generators".into(), name, "generator".into()]),
-                message: format!("cyclical types: {}", cyclic_type_stack.join(" -> ")),
-            }]);
+            return Err(vec![
+                ParseError::invalid(format!(
+                    "cyclical types: {}",
+                    cyclic_type_stack.join(" -> ")
+                ))
+                .at(["generators", name.as_str(), "generator"]),
+            ]);
         }
 
         self.type_stack.push(name.clone());
@@ -113,15 +110,11 @@ impl GeneratorParseVisitor {
             .collect();
 
         match matching.len() {
-            0 => Err(vec![ParseError::Invalid {
-                path: None,
-                message: "no generator parser matched".into(),
-            }]),
+            0 => Err(vec![ParseError::invalid("no generator parser matched")]),
             1 => matching[0].parse(self),
-            total => Err(vec![ParseError::Invalid {
-                path: None,
-                message: format!("{total} generator parsers matched"),
-            }]),
+            total => Err(vec![ParseError::invalid(format!(
+                "{total} generator parsers matched"
+            ))]),
         }
     }
 }

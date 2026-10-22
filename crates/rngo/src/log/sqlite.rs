@@ -1,7 +1,7 @@
 use crate::effect::Input;
 use crate::log::pool::InputPool;
 use crate::log::{Metadata, RunLogReader, RunLogWriter};
-use crate::{Level, Output};
+use crate::{Level, Output, RunLogError};
 use chrono::{DateTime, Utc};
 use rand_pcg::Pcg32;
 use rusqlite::types::Value as SqlValue;
@@ -17,15 +17,16 @@ pub struct SqliteRunLog {
     connection: RefCell<Connection>,
     pending: Cell<usize>,
     pool: RefCell<InputPool<u64>>,
+    failure: RefCell<Option<RunLogError>>,
 }
 
 impl SqliteRunLog {
-    pub fn new(directory: PathBuf) -> Rc<Self> {
-        let connection = Connection::open(directory.join("log.sqlite")).unwrap();
+    /// Opens (creating if needed) `log.sqlite` in `directory`.
+    pub fn new(directory: PathBuf) -> Result<Rc<Self>, RunLogError> {
+        let connection = Connection::open(directory.join("log.sqlite"))?;
 
-        connection
-            .execute_batch(
-                "
+        connection.execute_batch(
+            "
                 PRAGMA journal_mode = WAL;
                 PRAGMA synchronous = NORMAL;
 
@@ -66,34 +67,54 @@ impl SqliteRunLog {
 
                 BEGIN;
                 ",
-            )
-            .unwrap();
+        )?;
 
-        Rc::new(SqliteRunLog {
+        Ok(Rc::new(SqliteRunLog {
             connection: RefCell::new(connection),
             pending: Cell::new(0),
             pool: RefCell::new(InputPool::default()),
-        })
+            failure: RefCell::new(None),
+        }))
     }
 
-    pub fn commit(&self) {
-        commit(&self.connection, &self.pending);
+    /// Commits pending writes, or returns the first failure a lookup has hit since the last check.
+    pub fn commit(&self) -> Result<(), RunLogError> {
+        self.check()?;
+        commit(&self.connection, &self.pending)
+    }
+
+    fn check(&self) -> Result<(), RunLogError> {
+        match self.failure.borrow_mut().take() {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
+    }
+
+    fn lookup<T>(&self, result: Result<Option<T>, RunLogError>) -> Option<T> {
+        match result {
+            Ok(found) => found,
+            Err(error) => {
+                self.failure.borrow_mut().get_or_insert(error);
+                None
+            }
+        }
     }
 
     /// The input pool, with `effect` tracked.
-    fn pool(&self, effect: &str) -> RefMut<'_, InputPool<u64>> {
+    fn pool(&self, effect: &str) -> Result<RefMut<'_, InputPool<u64>>, RunLogError> {
         let mut pool = self.pool.borrow_mut();
         if !pool.is_tracked(effect) {
-            load_effect(&self.connection.borrow(), &mut pool, effect);
+            load_effect(&self.connection.borrow(), &mut pool, effect)?;
         }
-        pool
+        Ok(pool)
     }
 
-    fn record(&self) {
+    fn record(&self) -> Result<(), RunLogError> {
         self.pending.set(self.pending.get() + 1);
         if self.pending.get() >= BATCH_SIZE {
-            commit(&self.connection, &self.pending);
+            commit(&self.connection, &self.pending)?;
         }
+        Ok(())
     }
 }
 
@@ -105,39 +126,39 @@ impl Drop for SqliteRunLog {
 
 /// Starts tracking `effect` in `pool`, seeded with its logged input ids and replaying its
 /// `_unique_reference` markers.
-fn load_effect(connection: &Connection, pool: &mut InputPool<u64>, effect: &str) {
+fn load_effect(
+    connection: &Connection,
+    pool: &mut InputPool<u64>,
+    effect: &str,
+) -> Result<(), RunLogError> {
     let ids = connection
-        .prepare_cached("SELECT id FROM inputs WHERE effect = ?1 ORDER BY id ASC")
-        .unwrap()
-        .query_map(rusqlite::params![effect], |row| row.get::<_, i64>(0))
-        .unwrap()
-        .map(|id| id.unwrap() as u64)
-        .collect();
+        .prepare_cached("SELECT id FROM inputs WHERE effect = ?1 ORDER BY id ASC")?
+        .query_map(rusqlite::params![effect], |row| row.get::<_, i64>(0))?
+        .map(|id| id.map(|id| id as u64))
+        .collect::<Result<_, _>>()?;
     pool.track(effect, ids);
 
-    let mut markers = connection
-        .prepare_cached(
-            "SELECT DISTINCT m.segment, m.input_id FROM metadata m
-            JOIN inputs i ON i.id = m.input_id
-            WHERE m.type = '_unique_reference' AND i.effect = ?1",
-        )
-        .unwrap();
-    let rows = markers
-        .query_map(rusqlite::params![effect], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
-        })
-        .unwrap();
+    let mut markers = connection.prepare_cached(
+        "SELECT DISTINCT m.segment, m.input_id FROM metadata m
+        JOIN inputs i ON i.id = m.input_id
+        WHERE m.type = '_unique_reference' AND i.effect = ?1",
+    )?;
+    let rows = markers.query_map(rusqlite::params![effect], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+    })?;
     for row in rows {
-        let (cursor, id) = row.unwrap();
+        let (cursor, id) = row?;
         pool.mark(effect, &cursor, &(id as u64));
     }
+    Ok(())
 }
 
-fn commit(connection: &RefCell<Connection>, pending: &Cell<usize>) {
+fn commit(connection: &RefCell<Connection>, pending: &Cell<usize>) -> Result<(), RunLogError> {
     if pending.get() > 0 {
-        connection.borrow().execute_batch("COMMIT; BEGIN;").unwrap();
+        connection.borrow().execute_batch("COMMIT; BEGIN;")?;
         pending.set(0);
     }
+    Ok(())
 }
 
 fn insert_metadata_row(
@@ -148,12 +169,11 @@ fn insert_metadata_row(
     data: Option<&serde_json::Value>,
     segment: Option<&str>,
     timestamp: Option<DateTime<chrono::FixedOffset>>,
-) {
+) -> Result<(), RunLogError> {
     connection
         .prepare_cached(
             "INSERT INTO metadata (type, input_id, output_id, data, segment, timestamp) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        )
-        .unwrap()
+        )?
         .execute(rusqlite::params![
             mtype,
             input_id,
@@ -161,11 +181,11 @@ fn insert_metadata_row(
             data.map(|v| v.to_string()),
             segment,
             timestamp.map(|t| t.timestamp_millis()),
-        ])
-        .unwrap();
+        ])?;
+    Ok(())
 }
 
-fn insert_metadata(connection: &Connection, metadata: &Metadata) {
+fn insert_metadata(connection: &Connection, metadata: &Metadata) -> Result<(), RunLogError> {
     insert_metadata_row(
         connection,
         &metadata.mtype,
@@ -174,37 +194,36 @@ fn insert_metadata(connection: &Connection, metadata: &Metadata) {
         metadata.data.as_ref(),
         metadata.segment.as_deref(),
         metadata.timestamp,
-    );
+    )
 }
 
 impl RunLogWriter for SqliteRunLog {
-    fn push_input(&self, input: Input) {
+    fn push_input(&self, input: Input) -> Result<(), RunLogError> {
+        self.check()?;
         self.connection
             .borrow()
             .prepare_cached(
                 "INSERT INTO inputs (id, effect, timestamp, data, metadata) VALUES (?1, ?2, ?3, ?4, ?5)",
-            )
-            .unwrap()
+            )?
             .execute(rusqlite::params![
                 input.id as i64,
                 input.effect,
                 input.timestamp.timestamp_millis(),
-                serde_json::to_string(&input.data).unwrap(),
-                serde_json::to_string(&input.metadata).unwrap(),
-            ])
-            .unwrap();
+                serde_json::to_string(&input.data)?,
+                serde_json::to_string(&input.metadata)?,
+            ])?;
 
         self.pool.borrow_mut().push(&input.effect, input.id);
-        self.record();
+        self.record()
     }
 
-    fn push_output(&self, output: Output) {
+    fn push_output(&self, output: Output) -> Result<(), RunLogError> {
+        self.check()?;
         self.connection
             .borrow()
             .prepare_cached(
                 "INSERT INTO outputs (input_id, timestamp, channel, level, data, metadata) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            )
-            .unwrap()
+            )?
             .execute(rusqlite::params![
                 output.input_id.map(|id| id as i64),
                 output.timestamp.timestamp_millis(),
@@ -215,19 +234,19 @@ impl RunLogWriter for SqliteRunLog {
                     Level::Info => "info",
                 },
                 output.data,
-                serde_json::to_string(&output.metadata).unwrap(),
-            ])
-            .unwrap();
-        self.record();
+                serde_json::to_string(&output.metadata)?,
+            ])?;
+        self.record()
     }
 
-    fn push_metadata(&self, metadata: Metadata) {
-        insert_metadata(&self.connection.borrow(), &metadata);
-        self.record();
+    fn push_metadata(&self, metadata: Metadata) -> Result<(), RunLogError> {
+        self.check()?;
+        insert_metadata(&self.connection.borrow(), &metadata)?;
+        self.record()
     }
 
-    fn flush(&self) {
-        self.commit();
+    fn flush(&self) -> Result<(), RunLogError> {
+        self.commit()
     }
 }
 
@@ -237,24 +256,23 @@ fn timestamp_from_millis(millis: i64) -> DateTime<chrono::FixedOffset> {
         .fixed_offset()
 }
 
-fn sql_value_to_json(value: SqlValue) -> Option<serde_json::Value> {
-    Some(match value {
+fn sql_value_to_json(value: SqlValue) -> Result<serde_json::Value, RunLogError> {
+    Ok(match value {
         SqlValue::Null => serde_json::Value::Null,
         SqlValue::Integer(i) => serde_json::Value::from(i),
         SqlValue::Real(f) => serde_json::Number::from_f64(f)
             .map(serde_json::Value::Number)
             .unwrap_or(serde_json::Value::Null),
         SqlValue::Text(s) => serde_json::Value::String(s),
-        SqlValue::Blob(_) => return None,
+        SqlValue::Blob(_) => return Err(RunLogError::UnrepresentableValue),
     })
 }
 
-fn query_last(connection: &Connection) -> Option<Rc<Input>> {
+fn query_last(connection: &Connection) -> Result<Option<Rc<Input>>, RunLogError> {
     let row = connection
         .prepare_cached(
             "SELECT id, effect, timestamp, data, metadata FROM inputs ORDER BY id DESC LIMIT 1",
-        )
-        .unwrap()
+        )?
         .query_row([], |row| {
             let id: i64 = row.get(0)?;
             let effect: String = row.get(1)?;
@@ -263,26 +281,29 @@ fn query_last(connection: &Connection) -> Option<Rc<Input>> {
             let metadata: String = row.get(4)?;
             Ok((id, effect, timestamp, data, metadata))
         })
-        .optional()
-        .unwrap()?;
+        .optional()?;
 
-    let (id, effect, timestamp, data, metadata) = row;
+    let Some((id, effect, timestamp, data, metadata)) = row else {
+        return Ok(None);
+    };
 
-    Some(Rc::new(Input {
+    Ok(Some(Rc::new(Input {
         id: id as u64,
         effect,
         timestamp: timestamp_from_millis(timestamp),
-        data: serde_json::from_str(&data).unwrap(),
-        metadata: serde_json::from_str(&metadata).unwrap(),
-    }))
+        data: serde_json::from_str(&data)?,
+        metadata: serde_json::from_str(&metadata)?,
+    })))
 }
 
-fn query_last_for_effect(connection: &Connection, key: &str) -> Option<Rc<Input>> {
+fn query_last_for_effect(
+    connection: &Connection,
+    key: &str,
+) -> Result<Option<Rc<Input>>, RunLogError> {
     let row = connection
         .prepare_cached(
             "SELECT id, timestamp, data, metadata FROM inputs WHERE effect = ?1 ORDER BY id DESC LIMIT 1",
-        )
-        .unwrap()
+        )?
         .query_row(rusqlite::params![key], |row| {
             let id: i64 = row.get(0)?;
             let timestamp: i64 = row.get(1)?;
@@ -290,39 +311,38 @@ fn query_last_for_effect(connection: &Connection, key: &str) -> Option<Rc<Input>
             let metadata: String = row.get(3)?;
             Ok((id, timestamp, data, metadata))
         })
-        .optional()
-        .unwrap()?;
+        .optional()?;
 
-    let (id, timestamp, data, metadata) = row;
+    let Some((id, timestamp, data, metadata)) = row else {
+        return Ok(None);
+    };
 
-    Some(Rc::new(Input {
+    Ok(Some(Rc::new(Input {
         id: id as u64,
         effect: key.to_string(),
         timestamp: timestamp_from_millis(timestamp),
-        data: serde_json::from_str(&data).unwrap(),
-        metadata: serde_json::from_str(&metadata).unwrap(),
-    }))
+        data: serde_json::from_str(&data)?,
+        metadata: serde_json::from_str(&metadata)?,
+    })))
 }
 
-fn query_by_id(connection: &Connection, key: &str, id: u64) -> Input {
+fn query_by_id(connection: &Connection, key: &str, id: u64) -> Result<Input, RunLogError> {
     let (timestamp, data, metadata) = connection
-        .prepare_cached("SELECT timestamp, data, metadata FROM inputs WHERE id = ?1")
-        .unwrap()
+        .prepare_cached("SELECT timestamp, data, metadata FROM inputs WHERE id = ?1")?
         .query_row(rusqlite::params![id as i64], |row| {
             let timestamp: i64 = row.get(0)?;
             let data: String = row.get(1)?;
             let metadata: String = row.get(2)?;
             Ok((timestamp, data, metadata))
-        })
-        .unwrap();
+        })?;
 
-    Input {
+    Ok(Input {
         id,
         effect: key.to_string(),
         timestamp: timestamp_from_millis(timestamp),
-        data: serde_json::from_str(&data).unwrap(),
-        metadata: serde_json::from_str(&metadata).unwrap(),
-    }
+        data: serde_json::from_str(&data)?,
+        metadata: serde_json::from_str(&metadata)?,
+    })
 }
 
 fn query_random_for_effect(
@@ -330,9 +350,11 @@ fn query_random_for_effect(
     pool: &InputPool<u64>,
     key: &str,
     rng: &mut Pcg32,
-) -> Option<Rc<Input>> {
-    let id = pool.random(key, rng)?;
-    Some(Rc::new(query_by_id(connection, key, id)))
+) -> Result<Option<Rc<Input>>, RunLogError> {
+    let Some(id) = pool.random(key, rng) else {
+        return Ok(None);
+    };
+    Ok(Some(Rc::new(query_by_id(connection, key, id)?)))
 }
 
 fn query_unique_for_effect(
@@ -341,9 +363,11 @@ fn query_unique_for_effect(
     key: &str,
     cursor: &str,
     rng: &mut Pcg32,
-) -> Option<Rc<Input>> {
-    let id = pool.take(key, cursor, rng)?;
-    let input = query_by_id(connection, key, id);
+) -> Result<Option<Rc<Input>>, RunLogError> {
+    let Some(id) = pool.take(key, cursor, rng) else {
+        return Ok(None);
+    };
+    let input = query_by_id(connection, key, id)?;
 
     insert_metadata_row(
         connection,
@@ -353,40 +377,40 @@ fn query_unique_for_effect(
         None,
         Some(cursor),
         None,
-    );
+    )?;
 
-    Some(Rc::new(input))
+    Ok(Some(Rc::new(input)))
 }
 
 impl RunLogReader for SqliteRunLog {
     fn last(&self) -> Option<Rc<Input>> {
-        query_last(&self.connection.borrow())
+        self.lookup(query_last(&self.connection.borrow()))
     }
 
     fn last_for_effect(&self, key: &str) -> Option<Rc<Input>> {
-        query_last_for_effect(&self.connection.borrow(), key)
+        self.lookup(query_last_for_effect(&self.connection.borrow(), key))
     }
 
     fn random_for_effect(&self, key: &str, rng: &mut Pcg32) -> Option<Rc<Input>> {
-        query_random_for_effect(&self.connection.borrow(), &self.pool(key), key, rng)
+        let result = self
+            .pool(key)
+            .and_then(|pool| query_random_for_effect(&self.connection.borrow(), &pool, key, rng));
+        self.lookup(result)
     }
 
     fn unique_for_effect(&self, key: &str, cursor: &str, rng: &mut Pcg32) -> Option<Rc<Input>> {
-        query_unique_for_effect(
-            &self.connection.borrow(),
-            &mut self.pool(key),
-            key,
-            cursor,
-            rng,
-        )
+        let result = self.pool(key).and_then(|mut pool| {
+            query_unique_for_effect(&self.connection.borrow(), &mut pool, key, cursor, rng)
+        });
+        self.lookup(result)
     }
 
-    fn query(&self, query: &str) -> Option<serde_json::Value> {
-        self.connection
+    fn query(&self, query: &str) -> Result<serde_json::Value, RunLogError> {
+        let value = self
+            .connection
             .borrow()
-            .query_row(query, [], |row| row.get::<_, rusqlite::types::Value>(0))
-            .ok()
-            .and_then(sql_value_to_json)
+            .query_row(query, [], |row| row.get::<_, rusqlite::types::Value>(0))?;
+        sql_value_to_json(value)
     }
 }
 
@@ -405,18 +429,20 @@ mod tests {
     #[test]
     fn reads_back_input_timestamps_as_milliseconds() {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
         let timestamp = DateTime::<Utc>::from_timestamp_millis(1_700_000_000_123)
             .unwrap()
             .fixed_offset();
 
-        run_log.push_input(Input {
-            id: 1,
-            effect: "ping".to_string(),
-            timestamp,
-            data: serde_json::json!(1),
-            metadata: vec![],
-        });
+        run_log
+            .push_input(Input {
+                id: 1,
+                effect: "ping".to_string(),
+                timestamp,
+                data: serde_json::json!(1),
+                metadata: vec![],
+            })
+            .unwrap();
 
         assert_eq!(run_log.last().unwrap().timestamp, timestamp);
         assert_eq!(
@@ -434,35 +460,39 @@ mod tests {
     #[test]
     fn writes_input_and_output_metadata_inline() {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
 
-        run_log.push_input(Input {
-            id: 1,
-            effect: "ping".to_string(),
-            timestamp: Utc::now().fixed_offset(),
-            data: serde_json::json!({ "a": 1 }),
-            metadata: vec![GeneratorMetadata {
-                mtype: "error".into(),
-                attribute: None,
-                data: Some(serde_json::json!({ "message": "partial value" })),
-            }],
-        });
+        run_log
+            .push_input(Input {
+                id: 1,
+                effect: "ping".to_string(),
+                timestamp: Utc::now().fixed_offset(),
+                data: serde_json::json!({ "a": 1 }),
+                metadata: vec![GeneratorMetadata {
+                    mtype: "error".into(),
+                    attribute: None,
+                    data: Some(serde_json::json!({ "message": "partial value" })),
+                }],
+            })
+            .unwrap();
         let output_timestamp = DateTime::<Utc>::from_timestamp_millis(1_700_000_000_456).unwrap();
-        run_log.push_output(Output {
-            input_id: Some(1),
-            timestamp: output_timestamp,
-            channel: "logger".to_string(),
-            level: Level::Info,
-            data: "hello".to_string(),
-            metadata: vec![GeneratorMetadata {
-                mtype: "error".into(),
-                attribute: None,
-                data: Some(serde_json::json!({ "message": "delivery failed" })),
-            }],
-        });
+        run_log
+            .push_output(Output {
+                input_id: Some(1),
+                timestamp: output_timestamp,
+                channel: "logger".to_string(),
+                level: Level::Info,
+                data: "hello".to_string(),
+                metadata: vec![GeneratorMetadata {
+                    mtype: "error".into(),
+                    attribute: None,
+                    data: Some(serde_json::json!({ "message": "delivery failed" })),
+                }],
+            })
+            .unwrap();
 
         // Force the pending transaction closed so the rows are visible to a fresh connection.
-        run_log.commit();
+        run_log.commit().unwrap();
 
         let conn = open(tmp.path());
 
@@ -503,22 +533,24 @@ mod tests {
     #[test]
     fn skipped_inputs_write_metadata_with_no_input_row() {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
 
-        run_log.push_metadata(Metadata {
-            mtype: "skipped".into(),
-            input_id: None,
-            output_id: None,
-            data: None,
-            segment: None,
-            timestamp: Some(
-                DateTime::<Utc>::from_timestamp_millis(1_700_000_000_123)
-                    .unwrap()
-                    .fixed_offset(),
-            ),
-        });
+        run_log
+            .push_metadata(Metadata {
+                mtype: "skipped".into(),
+                input_id: None,
+                output_id: None,
+                data: None,
+                segment: None,
+                timestamp: Some(
+                    DateTime::<Utc>::from_timestamp_millis(1_700_000_000_123)
+                        .unwrap()
+                        .fixed_offset(),
+                ),
+            })
+            .unwrap();
 
-        run_log.commit();
+        run_log.commit().unwrap();
 
         let conn = open(tmp.path());
 
@@ -552,18 +584,20 @@ mod tests {
     #[test]
     fn standalone_metadata_can_carry_an_output_id() {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
 
-        run_log.push_metadata(Metadata {
-            mtype: "delivery_failed".into(),
-            input_id: None,
-            output_id: Some(7),
-            data: None,
-            segment: None,
-            timestamp: None,
-        });
+        run_log
+            .push_metadata(Metadata {
+                mtype: "delivery_failed".into(),
+                input_id: None,
+                output_id: Some(7),
+                data: None,
+                segment: None,
+                timestamp: None,
+            })
+            .unwrap();
 
-        run_log.commit();
+        run_log.commit().unwrap();
 
         let conn = open(tmp.path());
         let output_id: Option<i64> = conn
@@ -575,18 +609,20 @@ mod tests {
     #[test]
     fn batches_across_commits() {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
 
         for i in 0..(BATCH_SIZE * 2 + 3) {
-            run_log.push_input(Input {
-                id: (i + 1) as u64,
-                effect: "ping".to_string(),
-                timestamp: Utc::now().fixed_offset(),
-                data: serde_json::json!(i),
-                metadata: vec![],
-            });
+            run_log
+                .push_input(Input {
+                    id: (i + 1) as u64,
+                    effect: "ping".to_string(),
+                    timestamp: Utc::now().fixed_offset(),
+                    data: serde_json::json!(i),
+                    metadata: vec![],
+                })
+                .unwrap();
         }
-        run_log.commit();
+        run_log.commit().unwrap();
 
         let conn = open(tmp.path());
         let count: i64 = conn
@@ -598,34 +634,38 @@ mod tests {
     #[test]
     fn last_returns_none_when_empty() {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
         assert!(run_log.last().is_none());
     }
 
     #[test]
     fn last_returns_most_recently_inserted_input_including_uncommitted() {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
 
-        run_log.push_input(Input {
-            id: 1,
-            effect: "ping".to_string(),
-            timestamp: Utc::now().fixed_offset(),
-            data: serde_json::json!(1),
-            metadata: vec![],
-        });
+        run_log
+            .push_input(Input {
+                id: 1,
+                effect: "ping".to_string(),
+                timestamp: Utc::now().fixed_offset(),
+                data: serde_json::json!(1),
+                metadata: vec![],
+            })
+            .unwrap();
         // Not committed yet - `last` must still see it, since it queries the same connection and
         // effect.rs computes ids mid-batch.
         let last = run_log.last().unwrap();
         assert_eq!(last.id, 1);
 
-        run_log.push_input(Input {
-            id: 2,
-            effect: "ping".to_string(),
-            timestamp: Utc::now().fixed_offset(),
-            data: serde_json::json!(2),
-            metadata: vec![],
-        });
+        run_log
+            .push_input(Input {
+                id: 2,
+                effect: "ping".to_string(),
+                timestamp: Utc::now().fixed_offset(),
+                data: serde_json::json!(2),
+                metadata: vec![],
+            })
+            .unwrap();
         let last = run_log.last().unwrap();
         assert_eq!(last.id, 2);
         assert_eq!(last.data, serde_json::json!(2));
@@ -634,16 +674,18 @@ mod tests {
     #[test]
     fn last_for_effect_only_returns_most_recent_matching_effect() {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
 
         for (i, effect) in [(1, "a"), (2, "b"), (3, "a")] {
-            run_log.push_input(Input {
-                id: i,
-                effect: effect.to_string(),
-                timestamp: Utc::now().fixed_offset(),
-                data: serde_json::json!(i),
-                metadata: vec![],
-            });
+            run_log
+                .push_input(Input {
+                    id: i,
+                    effect: effect.to_string(),
+                    timestamp: Utc::now().fixed_offset(),
+                    data: serde_json::json!(i),
+                    metadata: vec![],
+                })
+                .unwrap();
         }
 
         assert_eq!(run_log.last_for_effect("a").unwrap().id, 3);
@@ -660,17 +702,19 @@ mod tests {
     /// ids.
     fn sampled_ids(seed: u64, draws: usize) -> Vec<u64> {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
         let mut rng = rng(seed);
 
         for i in 1..=10u64 {
-            run_log.push_input(Input {
-                id: i,
-                effect: "a".to_string(),
-                timestamp: Utc::now().fixed_offset(),
-                data: serde_json::json!(i),
-                metadata: vec![],
-            });
+            run_log
+                .push_input(Input {
+                    id: i,
+                    effect: "a".to_string(),
+                    timestamp: Utc::now().fixed_offset(),
+                    data: serde_json::json!(i),
+                    metadata: vec![],
+                })
+                .unwrap();
         }
 
         (0..draws)
@@ -691,7 +735,7 @@ mod tests {
     #[test]
     fn random_for_effect_returns_none_when_no_matching_effect() {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
         let mut rng = rng(1);
 
         assert!(run_log.random_for_effect("nonexistent", &mut rng).is_none());
@@ -699,20 +743,22 @@ mod tests {
 
     fn push_inputs(run_log: &SqliteRunLog, effect: &str, count: u64) {
         for i in 1..=count {
-            run_log.push_input(Input {
-                id: i,
-                effect: effect.to_string(),
-                timestamp: Utc::now().fixed_offset(),
-                data: serde_json::json!(i),
-                metadata: vec![],
-            });
+            run_log
+                .push_input(Input {
+                    id: i,
+                    effect: effect.to_string(),
+                    timestamp: Utc::now().fixed_offset(),
+                    data: serde_json::json!(i),
+                    metadata: vec![],
+                })
+                .unwrap();
         }
     }
 
     #[test]
     fn unique_cursor_never_repeats_and_exhausts() {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
         push_inputs(&run_log, "a", 5);
         let mut rng = rng(1);
 
@@ -733,7 +779,7 @@ mod tests {
     fn unique_cursor_is_deterministic_for_a_fixed_seed() {
         fn draw_all(seed: u64) -> Vec<u64> {
             let tmp = TempDir::new().unwrap();
-            let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
+            let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
             push_inputs(&run_log, "a", 10);
             let mut rng = rng(seed);
 
@@ -751,7 +797,7 @@ mod tests {
     #[test]
     fn unique_cursor_state_is_independent_per_cursor() {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
         push_inputs(&run_log, "a", 1);
         let mut rng = rng(1);
 
@@ -775,7 +821,7 @@ mod tests {
     #[test]
     fn unique_cursor_consumed_markers_do_not_leak_into_input_metadata() {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
         push_inputs(&run_log, "a", 1);
         let mut rng = rng(1);
 
@@ -791,7 +837,7 @@ mod tests {
         let mut rng = rng(1);
         let mut seen = std::collections::HashSet::new();
 
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
         push_inputs(&run_log, "a", 6);
         for _ in 0..3 {
             let sampled = run_log.unique_for_effect("a", "cursor", &mut rng).unwrap();
@@ -799,7 +845,7 @@ mod tests {
         }
         drop(run_log);
 
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
         for _ in 0..3 {
             let sampled = run_log.unique_for_effect("a", "cursor", &mut rng).unwrap();
             assert!(
@@ -814,22 +860,22 @@ mod tests {
     #[test]
     fn get_signal_returns_query_value() {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
         push_inputs(&run_log, "a", 3);
-        run_log.commit();
+        run_log.commit().unwrap();
 
         let value = run_log.query("SELECT COUNT(*) FROM inputs");
 
-        assert_eq!(value, Some(serde_json::json!(3)));
+        assert_eq!(value.unwrap(), serde_json::json!(3));
     }
 
     #[test]
     fn get_signal_returns_none_on_query_error() {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
+        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
 
         let value = run_log.query("SELECT COUNT(*) FROM missing_table");
 
-        assert_eq!(value, None);
+        assert!(matches!(value, Err(RunLogError::Sqlite(_))));
     }
 }

@@ -1,7 +1,7 @@
 use chrono::{DateTime, FixedOffset, TimeDelta, Utc};
 use console::{Term, style};
 use rngo::spec::Spec;
-use rngo::{Input, Metadata, Output, RunLogWriter};
+use rngo::{Input, Metadata, Output, RunLogError, RunLogWriter};
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
@@ -151,7 +151,7 @@ impl std::fmt::Debug for StatusWriter {
 }
 
 impl RunLogWriter for StatusWriter {
-    fn push_input(&self, input: Input) {
+    fn push_input(&self, input: Input) -> Result<(), RunLogError> {
         self.last_timestamp.set(Some(input.timestamp));
         if let Some(channel) = self.effect_channels.get(&input.effect) {
             self.stats
@@ -163,10 +163,10 @@ impl RunLogWriter for StatusWriter {
 
         self.dirty.set(true);
         self.render(false);
-        self.child.push_input(input);
+        self.child.push_input(input)
     }
 
-    fn push_output(&self, output: Output) {
+    fn push_output(&self, output: Output) -> Result<(), RunLogError> {
         self.stats
             .borrow_mut()
             .entry(output.channel.clone())
@@ -175,16 +175,16 @@ impl RunLogWriter for StatusWriter {
 
         self.dirty.set(true);
         self.render(false);
-        self.child.push_output(output);
+        self.child.push_output(output)
     }
 
-    fn push_metadata(&self, metadata: Metadata) {
+    fn push_metadata(&self, metadata: Metadata) -> Result<(), RunLogError> {
         self.render(false);
-        self.child.push_metadata(metadata);
+        self.child.push_metadata(metadata)
     }
 
-    fn flush(&self) {
-        self.child.flush();
+    fn flush(&self) -> Result<(), RunLogError> {
+        self.child.flush()
     }
 }
 

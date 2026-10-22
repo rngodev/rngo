@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use crate::effect::Input;
 use crate::parse::FormatParser;
 use crate::proxy::format::Format;
-use crate::{ParseError, spec};
+use crate::{FormatError, ParseError, spec};
 
 #[derive(Debug)]
 pub struct SqlFormat {
@@ -29,7 +29,7 @@ impl SqlFormat {
 }
 
 impl Format for SqlFormat {
-    fn format(&self, event: &Input) -> Result<String, String> {
+    fn format(&self, event: &Input) -> Result<String, FormatError> {
         let table = self
             .effect_tables
             .get(&event.effect)

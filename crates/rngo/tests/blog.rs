@@ -1,5 +1,3 @@
-mod common;
-
 use rngo::build::*;
 use rngo::{Dialect, Simulation, SimulationBuilder};
 use serde_json::Value;

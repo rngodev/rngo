@@ -1,6 +1,3 @@
-mod common;
-
-use common::ParseErrorTestExt;
 use rngo::build::*;
 use rngo::{Dialect, Input, Simulation};
 use std::num::NonZeroU64;
@@ -159,7 +156,7 @@ fn invalid_spec_limit_is_rejected_with_effect_path() {
 
         assert_eq!(errors.len(), 1, "limit {invalid} should be rejected");
         assert_eq!(
-            errors[0].path().unwrap().as_slice(),
+            errors[0].path(),
             ["effects", "ping", "limit"],
             "limit {invalid} should be rejected at the effect's limit path"
         );

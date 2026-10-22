@@ -13,10 +13,10 @@ fn log_all(simulation: Simulation, log: &impl RunLogWriter) -> Vec<Input> {
     for item in simulation {
         match item {
             Ok(input) => {
-                log.push_input(input.clone());
+                log.push_input(input.clone()).unwrap();
                 inputs.push(input);
             }
-            Err(skipped) => log.push_metadata(Metadata::from(skipped)),
+            Err(skipped) => log.push_metadata(Metadata::from(skipped)).unwrap(),
         }
     }
     inputs
@@ -25,7 +25,7 @@ fn log_all(simulation: Simulation, log: &impl RunLogWriter) -> Vec<Input> {
 #[test]
 fn reference_with_no_prior_events_is_skipped_not_logged() {
     let tmp = TempDir::new().unwrap();
-    let run_log = SqliteRunLog::new(tmp.path().to_path_buf());
+    let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
 
     let mut simulation_builder = Simulation::builder();
     simulation_builder.with_effect("derived", |e| {

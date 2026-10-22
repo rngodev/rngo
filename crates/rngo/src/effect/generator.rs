@@ -123,10 +123,6 @@ impl GeneratorBuildVisitor {
     }
 
     pub fn error(&self, message: impl Into<String>) -> BuildError {
-        BuildError::Generator {
-            effect: self.effect_key.clone(),
-            path: self.path.clone(),
-            message: message.into(),
-        }
+        BuildError::generator(self.effect_key.clone(), self.path.clone(), message.into())
     }
 }

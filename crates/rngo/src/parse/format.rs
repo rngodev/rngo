@@ -30,17 +30,7 @@ impl<'a> FormatParseContext<'a> {
         path: &[&str],
         value: &Value,
     ) -> Result<Option<Rc<dyn Format>>, Vec<ParseError>> {
-        let prefixed = |rest: Vec<String>| {
-            let mut full: Vec<String> = path.iter().map(|s| s.to_string()).collect();
-            full.extend(rest);
-            full
-        };
-        let invalid = |message: String| {
-            vec![ParseError::Invalid {
-                path: Some(prefixed(vec![])),
-                message,
-            }]
-        };
+        let invalid = |message: String| vec![ParseError::invalid(message).at(path.iter().copied())];
 
         let format: spec::Format =
             serde_json::from_value(value.clone()).map_err(|e| invalid(e.to_string()))?;
@@ -69,12 +59,7 @@ impl<'a> FormatParseContext<'a> {
             .map_err(|errors| {
                 errors
                     .into_iter()
-                    .map(
-                        |ParseError::Invalid { path, message }| ParseError::Invalid {
-                            path: Some(prefixed(path.unwrap_or_default())),
-                            message,
-                        },
-                    )
+                    .map(|error| error.prefixed(path))
                     .collect()
             })
     }

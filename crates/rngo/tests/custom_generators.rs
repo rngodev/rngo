@@ -1,6 +1,3 @@
-mod common;
-
-use common::ParseErrorTestExt;
 use rngo::{Dialect, ParseError, Simulation};
 use std::fmt;
 
@@ -121,7 +118,7 @@ fn custom_generator_name_cannot_shadow_primitive_type() {
         .iter()
         .find(|e| e.message().contains("primitive generator type"))
         .unwrap();
-    assert_eq!(error.path().unwrap().as_slice(), ["generators", "object"]);
+    assert_eq!(error.path(), ["generators", "object"]);
 }
 
 #[test]
@@ -166,10 +163,7 @@ fn malformed_custom_generator_errors() {
         .iter()
         .find(|e| e.message().contains("minimum must be a number"))
         .unwrap();
-    assert_eq!(
-        error.path().unwrap().as_slice(),
-        ["generators", "age", "generator", "minimum"]
-    );
+    assert_eq!(error.path(), ["generators", "age", "generator", "minimum"]);
 }
 
 #[test]

@@ -1,6 +1,6 @@
 use crate::log::pool::InputPool;
 use crate::log::{Metadata, RunLogReader, RunLogWriter};
-use crate::{Input, Output};
+use crate::{Input, Output, RunLogError};
 use rand_pcg::Pcg32;
 use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
@@ -16,6 +16,12 @@ pub struct SimpleEventRunLog {
 impl SimpleEventRunLog {
     pub fn new() -> Rc<Self> {
         Rc::new(Self::default())
+    }
+
+    pub(crate) fn insert_input(&self, input: Input) {
+        let input = Rc::new(input);
+        self.pool.borrow_mut().push(&input.effect, input.clone());
+        self.inputs.borrow_mut().push(input);
     }
 
     /// The input pool, with `effect` tracked.
@@ -52,24 +58,25 @@ impl RunLogReader for SimpleEventRunLog {
         self.pool(key).take(key, cursor, rng)
     }
 
-    fn query(&self, _query: &str) -> Option<serde_json::Value> {
-        None
+    fn query(&self, _query: &str) -> Result<serde_json::Value, RunLogError> {
+        Err(RunLogError::Unsupported)
     }
 }
 
 impl RunLogWriter for SimpleEventRunLog {
-    fn push_input(&self, input: Input) {
-        let input = Rc::new(input);
-        self.pool.borrow_mut().push(&input.effect, input.clone());
-        self.inputs.borrow_mut().push(input);
+    fn push_input(&self, input: Input) -> Result<(), RunLogError> {
+        self.insert_input(input);
+        Ok(())
     }
 
-    fn push_output(&self, output: Output) {
+    fn push_output(&self, output: Output) -> Result<(), RunLogError> {
         self.outputs.borrow_mut().push(output);
+        Ok(())
     }
 
-    fn push_metadata(&self, metadata: Metadata) {
+    fn push_metadata(&self, metadata: Metadata) -> Result<(), RunLogError> {
         self.metadata.borrow_mut().push(metadata);
+        Ok(())
     }
 }
 
@@ -91,13 +98,15 @@ mod tests {
         let mut rng = rng(seed);
 
         for i in 1..=10u64 {
-            run_log.push_input(Input {
-                id: i,
-                effect: "a".to_string(),
-                timestamp: Utc::now().fixed_offset(),
-                data: serde_json::json!(i),
-                metadata: vec![],
-            });
+            run_log
+                .push_input(Input {
+                    id: i,
+                    effect: "a".to_string(),
+                    timestamp: Utc::now().fixed_offset(),
+                    data: serde_json::json!(i),
+                    metadata: vec![],
+                })
+                .unwrap();
         }
 
         (0..draws)
@@ -125,13 +134,15 @@ mod tests {
 
     fn push_inputs(run_log: &SimpleEventRunLog, effect: &str, count: u64) {
         for i in 1..=count {
-            run_log.push_input(Input {
-                id: i,
-                effect: effect.to_string(),
-                timestamp: Utc::now().fixed_offset(),
-                data: serde_json::json!(i),
-                metadata: vec![],
-            });
+            run_log
+                .push_input(Input {
+                    id: i,
+                    effect: effect.to_string(),
+                    timestamp: Utc::now().fixed_offset(),
+                    data: serde_json::json!(i),
+                    metadata: vec![],
+                })
+                .unwrap();
         }
     }
 
@@ -211,13 +222,15 @@ mod tests {
         let run_log = SimpleEventRunLog::new();
 
         for (i, effect) in [(1, "a"), (2, "b"), (3, "a")] {
-            run_log.push_input(Input {
-                id: i,
-                effect: effect.to_string(),
-                timestamp: Utc::now().fixed_offset(),
-                data: serde_json::json!(i),
-                metadata: vec![],
-            });
+            run_log
+                .push_input(Input {
+                    id: i,
+                    effect: effect.to_string(),
+                    timestamp: Utc::now().fixed_offset(),
+                    data: serde_json::json!(i),
+                    metadata: vec![],
+                })
+                .unwrap();
         }
 
         assert_eq!(run_log.last_for_effect("a").unwrap().id, 3);

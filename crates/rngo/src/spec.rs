@@ -2,33 +2,15 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::num::NonZeroU64;
-use thiserror::Error;
+
+pub use crate::error::ParseError;
 
 pub fn from_value(value: serde_json::Value) -> Result<Spec, Vec<ParseError>> {
     let mut track = serde_path_to_error::Track::new();
     let deserializer = serde_path_to_error::Deserializer::new(value, &mut track);
     serde_path_to_error::deserialize(deserializer).map_err(|e| {
-        vec![ParseError::Invalid {
-            path: Some(e.path().to_string().split('.').map(String::from).collect()),
-            message: e.inner().to_string(),
-        }]
+        vec![ParseError::invalid(e.inner().to_string()).at(e.path().to_string().split('.'))]
     })
-}
-
-#[derive(Error, Debug)]
-#[error("failed to parse{}: `{message}`", display_path(.path))]
-pub enum ParseError {
-    Invalid {
-        path: Option<Vec<String>>,
-        message: String,
-    },
-}
-
-fn display_path(path: &Option<Vec<String>>) -> String {
-    match path {
-        Some(path) if !path.is_empty() => format!(" `{}`", path.join(".")),
-        _ => String::new(),
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

@@ -3,7 +3,7 @@ use crate::parse::{ChannelParser, FormatParseContext};
 use crate::proxy::channel::{Channel, ChannelBuilder};
 use crate::proxy::format::Format;
 use crate::proxy::output::{ChannelOutput, OutputSender};
-use crate::{BuildError, Level, ParseError, spec};
+use crate::{BuildError, ChannelError, Level, ParseError, spec};
 use serde_json::Value;
 use std::io::{BufRead, BufReader};
 use std::process::Stdio;
@@ -11,6 +11,7 @@ use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct Exec {
+    channel_key: String,
     format: Option<Rc<dyn Format>>,
 }
 
@@ -25,7 +26,7 @@ impl Exec {
 }
 
 impl Channel for Exec {
-    fn send(&mut self, input: &Input) -> Result<Vec<ChannelOutput>, Box<dyn std::error::Error>> {
+    fn send(&mut self, input: &Input) -> Result<Vec<ChannelOutput>, ChannelError> {
         let data = match super::render(self.format.as_deref(), input) {
             Ok(data) => data,
             Err(output) => return Ok(vec![output]),
@@ -41,7 +42,11 @@ impl Channel for Exec {
         let output = super::shell(&command)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .output()?;
+            .output()
+            .map_err(|source| ChannelError::Spawn {
+                channel: self.channel_key.clone(),
+                source,
+            })?;
 
         let mut outputs = vec![];
 
@@ -90,10 +95,11 @@ impl ExecBuilder {
 impl ChannelBuilder for ExecBuilder {
     fn build(
         &self,
-        _channel_key: &str,
+        channel_key: &str,
         _outputs: OutputSender,
     ) -> Result<Box<dyn Channel>, Vec<BuildError>> {
         Ok(Box::new(Exec {
+            channel_key: channel_key.to_string(),
             format: self.format.clone(),
         }))
     }
@@ -112,12 +118,13 @@ impl ChannelParser for ExecParser {
         formats: &FormatParseContext,
     ) -> Result<Box<dyn ChannelBuilder>, Vec<ParseError>> {
         if channel.fields.contains_key("command") {
-            return Err(vec![ParseError::Invalid {
-                path: Some(vec!["command".into()]),
-                message: "exec no longer takes a command; set the channel's format to a template \
-                          format, or have the effect produce the command as a string, instead"
-                    .into(),
-            }]);
+            return Err(vec![
+                ParseError::invalid(
+                    "exec no longer takes a command; set the channel's format to a template \
+                          format, or have the effect produce the command as a string, instead",
+                )
+                .at(["command"]),
+            ]);
         }
 
         let mut builder = ExecBuilder::default();

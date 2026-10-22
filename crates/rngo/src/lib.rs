@@ -2,6 +2,7 @@ mod audit;
 pub mod build;
 mod cel;
 mod effect;
+pub mod error;
 mod log;
 mod moment;
 mod parse;
@@ -10,12 +11,14 @@ pub mod spec;
 
 pub use audit::signal::{self, Signal, SignalBuilder, SignalOutcome};
 pub use audit::{Audit, AuditBuilder, AuditReport};
-pub use build::{BuildError, EffectKey, GeneratorEdge, SimulationKey};
 pub use effect::simulation::{Simulation, SimulationBuilder, StandaloneSimulation};
 pub use effect::{Effect, EffectBuilder, Input, SkippedInput, generator};
+pub use error::{
+    BuildError, ChannelError, EffectKey, FormatError, GeneratorEdge, ParseError, ParseErrorKind,
+    ProxyError, RunLogError, SignalError, SimulationKey,
+};
 pub use log::{Metadata, RunLogReader, RunLogWriter, SimpleEventRunLog, SqliteRunLog};
 pub use moment::Moment;
 pub use parse::Dialect;
 pub use proxy::output::{Level, Output};
 pub use proxy::{Proxy, ProxyBuilder, StopHandle};
-pub use spec::ParseError;
