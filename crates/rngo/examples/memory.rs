@@ -77,7 +77,7 @@ fn spec() -> serde_json::Value {
 /// produced and the peak heap bytes allocated during the run (excluding setup).
 fn measure(limit: u64) -> (usize, usize) {
     let tmp = TempDir::new().unwrap();
-    let log = SqliteRunLog::new(tmp.path().to_path_buf());
+    let log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
     let simulation = Dialect::primitive()
         .parse_simulation_json(spec())
         .unwrap()
@@ -91,10 +91,10 @@ fn measure(limit: u64) -> (usize, usize) {
 
     let mut inputs = 0;
     for input in simulation.flatten() {
-        log.push_input(input);
+        log.push_input(input).unwrap();
         inputs += 1;
     }
-    log.commit();
+    log.commit().unwrap();
 
     (inputs, PEAK.load(Ordering::Relaxed) - baseline)
 }

@@ -2,7 +2,7 @@ use crate::build::BuildError;
 use crate::log::Metadata;
 pub mod signal;
 
-use crate::{RunLogReader, RunLogWriter};
+use crate::{RunLogError, RunLogReader, RunLogWriter};
 use indexmap::IndexMap;
 use signal::{Signal, SignalBuilder, SignalOutcome};
 use std::rc::Rc;
@@ -31,7 +31,8 @@ impl Audit {
         AuditBuilder::new()
     }
 
-    pub fn run(&self) -> AuditReport {
+    /// Evaluates every signal and writes each outcome to the run log as metadata.
+    pub fn run(&self) -> Result<AuditReport, RunLogError> {
         let outcomes: IndexMap<String, SignalOutcome> = self
             .signals
             .iter()
@@ -39,7 +40,7 @@ impl Audit {
             .collect();
 
         for (key, outcome) in &outcomes {
-            let mut data = serde_json::to_value(outcome).unwrap();
+            let mut data = serde_json::to_value(outcome)?;
             if let serde_json::Value::Object(map) = &mut data {
                 map.insert("key".to_string(), serde_json::Value::String(key.clone()));
             }
@@ -51,10 +52,10 @@ impl Audit {
                 data: Some(data),
                 segment: None,
                 timestamp: None,
-            });
+            })?;
         }
 
-        AuditReport { outcomes }
+        Ok(AuditReport { outcomes })
     }
 }
 
@@ -129,9 +130,7 @@ impl AuditBuilder {
         let run_log = match (self.run_log_reader, self.run_log_writer) {
             (Some(reader), Some(writer)) => Some((reader, writer)),
             _ => {
-                errors.push(BuildError::Audit {
-                    message: "run_log was not set".into(),
-                });
+                errors.push(BuildError::audit("run_log was not set"));
                 None
             }
         };
@@ -246,8 +245,8 @@ mod tests {
             None
         }
 
-        fn query(&self, _query: &str) -> Option<serde_json::Value> {
-            None
+        fn query(&self, _query: &str) -> Result<serde_json::Value, RunLogError> {
+            Err(RunLogError::Unsupported)
         }
 
         fn random_for_effect(&self, _key: &str, _rng: &mut rand_pcg::Pcg32) -> Option<Rc<Input>> {
@@ -265,16 +264,17 @@ mod tests {
     }
 
     impl RunLogWriter for MockRunLog {
-        fn push_input(&self, _input: Input) {
+        fn push_input(&self, _input: Input) -> Result<(), RunLogError> {
             unimplemented!("not exercised by these tests")
         }
 
-        fn push_output(&self, _output: crate::Output) {
+        fn push_output(&self, _output: crate::Output) -> Result<(), RunLogError> {
             unimplemented!("not exercised by these tests")
         }
 
-        fn push_metadata(&self, metadata: Metadata) {
+        fn push_metadata(&self, metadata: Metadata) -> Result<(), RunLogError> {
             self.metadata.borrow_mut().push(metadata);
+            Ok(())
         }
     }
 
@@ -319,7 +319,7 @@ mod tests {
         let run_log = Rc::new(MockRunLog::default());
         let audit = Audit::new(signals, run_log.clone(), run_log);
 
-        let audit_report = audit.run();
+        let audit_report = audit.run().unwrap();
 
         let keys: Vec<_> = audit_report.outcomes.keys().collect();
         assert_eq!(keys, vec!["b", "a"]);
@@ -337,7 +337,7 @@ mod tests {
         let run_log = Rc::new(MockRunLog::default());
         let audit = Audit::new(signals, run_log.clone(), run_log.clone());
 
-        audit.run();
+        audit.run().unwrap();
 
         let written = run_log.metadata.borrow();
         assert_eq!(written.len(), 2);
@@ -379,7 +379,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let report = audit.run();
+        let report = audit.run().unwrap();
 
         assert_eq!(report.outcomes.keys().collect::<Vec<_>>(), vec!["check"]);
     }

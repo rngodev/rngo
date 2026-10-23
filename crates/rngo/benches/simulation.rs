@@ -75,7 +75,7 @@ fn builder(spec: &Value, limit: u64) -> SimulationBuilder {
 fn drain(simulation: Simulation, log: &impl RunLogWriter) -> usize {
     let mut count = 0;
     for input in simulation.flatten() {
-        log.push_input(input);
+        log.push_input(input).unwrap();
         count += 1;
     }
     count
@@ -107,7 +107,7 @@ fn bench_spec(c: &mut Criterion, name: &str, spec: Value, sizes: &[u64]) {
             b.iter_batched(
                 || {
                     let tmp = TempDir::new().unwrap();
-                    let log = SqliteRunLog::new(tmp.path().to_path_buf());
+                    let log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
                     let simulation = builder(&spec, size)
                         .run_log_reader(log.clone())
                         .build()
@@ -116,7 +116,7 @@ fn bench_spec(c: &mut Criterion, name: &str, spec: Value, sizes: &[u64]) {
                 },
                 |(tmp, log, simulation)| {
                     let count = drain(simulation, log.as_ref());
-                    log.commit();
+                    log.commit().unwrap();
                     (tmp, log, count)
                 },
                 BatchSize::PerIteration,

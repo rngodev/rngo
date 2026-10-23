@@ -87,10 +87,10 @@ impl ClockBuilder {
             ClockRate::Hertz(hertz) => RateFunction::Fixed(hertz),
             ClockRate::Expression(expression) => {
                 let program = Program::compile(&expression).map_err(|e| {
-                    vec![BuildError::Effect {
-                        effect: self.key.clone(),
-                        key: crate::EffectKey::Trigger,
-                        message: format!(
+                    vec![BuildError::effect(
+                        self.key.clone(),
+                        crate::EffectKey::Trigger,
+                        format!(
                             "could not compile expression: {}",
                             e.errors
                                 .into_iter()
@@ -98,7 +98,7 @@ impl ClockBuilder {
                                 .collect::<Vec<_>>()
                                 .join(",")
                         ),
-                    }]
+                    )]
                 })?;
 
                 let mut context = Context::default();
@@ -109,11 +109,11 @@ impl ClockBuilder {
                     let _ = context.add_variable("offset", 0.0);
 
                     program.execute(&context).map_err(|e| {
-                        vec![BuildError::Effect {
-                            effect: self.key.clone(),
-                            key: crate::EffectKey::Trigger,
-                            message: format!("could not execute expression: {e}"),
-                        }]
+                        vec![BuildError::effect(
+                            self.key.clone(),
+                            crate::EffectKey::Trigger,
+                            format!("could not execute expression: {e}"),
+                        )]
                     })?;
 
                     RateFunction::Dynamic {
@@ -122,11 +122,11 @@ impl ClockBuilder {
                     }
                 } else {
                     let value = program.execute(&context).map_err(|e| {
-                        vec![BuildError::Effect {
-                            effect: self.key.clone(),
-                            key: crate::EffectKey::Trigger,
-                            message: format!("could not execute expression: {e}"),
-                        }]
+                        vec![BuildError::effect(
+                            self.key.clone(),
+                            crate::EffectKey::Trigger,
+                            format!("could not execute expression: {e}"),
+                        )]
                     })?;
 
                     let static_rate = match value {
@@ -139,11 +139,11 @@ impl ClockBuilder {
                     match static_rate {
                         Some(rate) => RateFunction::Fixed(rate),
                         None => {
-                            return Err(vec![BuildError::Effect {
-                                effect: self.key,
-                                key: crate::EffectKey::Trigger,
-                                message: format!("rate expression non-numeric: {expression}"),
-                            }]);
+                            return Err(vec![BuildError::effect(
+                                self.key,
+                                crate::EffectKey::Trigger,
+                                format!("rate expression non-numeric: {expression}"),
+                            )]);
                         }
                     }
                 }

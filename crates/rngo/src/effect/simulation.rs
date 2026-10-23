@@ -1,8 +1,8 @@
+use crate::RunLogReader;
 use crate::build::{BuildError, SimulationKey};
 use crate::effect::{Effect, EffectBuilder, Input, SkippedInput};
 use crate::log::SimpleEventRunLog;
 use crate::moment::Moment;
-use crate::{RunLogReader, RunLogWriter};
 use chrono::{TimeDelta, Utc};
 use std::rc::Rc;
 
@@ -58,7 +58,7 @@ impl Iterator for StandaloneSimulation {
     fn next(&mut self) -> Option<Self::Item> {
         let item = self.simulation.next()?;
         if let Ok(input) = &item {
-            self.log.push_input(input.clone());
+            self.log.insert_input(input.clone());
         }
         Some(item)
     }
@@ -155,17 +155,17 @@ impl SimulationBuilder {
         let end = self.end.resolve(now);
 
         if start >= end {
-            errors.push(BuildError::Simulation {
-                key: SimulationKey::Start,
-                message: "start must be before end".into(),
-            });
+            errors.push(BuildError::simulation(
+                SimulationKey::Start,
+                "start must be before end",
+            ));
         }
 
         let Some(run_log_reader) = self.run_log_reader else {
-            errors.push(BuildError::Simulation {
-                key: SimulationKey::RunLogReader,
-                message: "run_log_reader was not set".into(),
-            });
+            errors.push(BuildError::simulation(
+                SimulationKey::RunLogReader,
+                "run_log_reader was not set",
+            ));
             return Err(errors);
         };
 

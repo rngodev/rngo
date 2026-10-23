@@ -8,7 +8,7 @@ use serde_json::json;
 use crate::effect::Input;
 use crate::parse::FormatParser;
 use crate::proxy::format::Format;
-use crate::{ParseError, spec};
+use crate::{FormatError, ParseError, spec};
 
 const TEMPLATE_NAME: &str = "template";
 
@@ -24,13 +24,13 @@ impl TemplateFormat {
         TemplateFormatParser {}
     }
 
-    /// Compiles `template`, returning the Handlebars error message if it is invalid.
-    pub fn new(template: &str) -> Result<Self, String> {
+    /// Compiles `template`, failing if it is invalid.
+    pub fn new(template: &str) -> Result<Self, FormatError> {
         let mut hbs = Handlebars::new();
         hbs.register_escape_fn(handlebars::no_escape);
         hbs.register_helper("json", Box::new(json_helper));
         hbs.register_template_string(TEMPLATE_NAME, template)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| FormatError::Template(e.to_string()))?;
         Ok(TemplateFormat { hbs })
     }
 }
@@ -57,12 +57,12 @@ fn json_helper(
 }
 
 impl Format for TemplateFormat {
-    fn format(&self, event: &Input) -> Result<String, String> {
-        let mut context = serde_json::to_value(event).map_err(|e| e.to_string())?;
+    fn format(&self, event: &Input) -> Result<String, FormatError> {
+        let mut context = serde_json::to_value(event)?;
         context["effect"] = json!({ "key": event.effect });
         self.hbs
             .render(TEMPLATE_NAME, &context)
-            .map_err(|e| e.to_string())
+            .map_err(|e| FormatError::Render(e.to_string()))
     }
 }
 
@@ -78,12 +78,7 @@ impl FormatParser for TemplateFormatParser {
         format: &spec::Format,
         _spec: &spec::Spec,
     ) -> Result<Box<dyn Format>, Vec<ParseError>> {
-        let error = |message: String| {
-            vec![ParseError::Invalid {
-                path: Some(vec!["template".into()]),
-                message,
-            }]
-        };
+        let error = |message: String| vec![ParseError::invalid(message).at(["template"])];
 
         let template = match format.fields.get("template") {
             Some(value) => value
@@ -92,8 +87,7 @@ impl FormatParser for TemplateFormatParser {
             None => return Err(error("template is required".into())),
         };
 
-        let format =
-            TemplateFormat::new(template).map_err(|e| error(format!("invalid template: {e}")))?;
+        let format = TemplateFormat::new(template).map_err(|e| error(e.to_string()))?;
 
         Ok(Box::new(format))
     }
@@ -115,7 +109,7 @@ mod tests {
         }
     }
 
-    fn render(template: &str, data: Value) -> Result<String, String> {
+    fn render(template: &str, data: Value) -> Result<String, FormatError> {
         TemplateFormat::new(template).unwrap().format(&event(data))
     }
 
@@ -180,7 +174,7 @@ mod tests {
         let errors = parse(json!({ "type": "template" })).unwrap_err();
         assert!(matches!(
             &errors[..],
-            [ParseError::Invalid { path: Some(p), .. }] if p == &["template"]
+            [e] if e.path() == ["template"]
         ));
     }
 

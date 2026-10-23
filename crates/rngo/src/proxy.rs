@@ -3,7 +3,9 @@ pub mod format;
 pub mod output;
 mod stop;
 
-use crate::{BuildError, Input, Metadata, RunLogWriter, SimpleEventRunLog};
+use crate::{
+    BuildError, Input, Metadata, ProxyError, RunLogError, RunLogWriter, SimpleEventRunLog,
+};
 use channel::{Channel, ChannelBuilder};
 use chrono::{DateTime, FixedOffset, Utc};
 use output::{Output, OutputSender};
@@ -36,17 +38,17 @@ impl Proxy {
 
     /// Logs `input` and sends it to its effect's channel. In realtime mode, first waits until its
     /// timestamp. Once stopped, does nothing. The first call records the `simulation_start` timing.
-    pub fn send(&mut self, input: &Input) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn send(&mut self, input: &Input) -> Result<(), ProxyError> {
         if !self.started {
             self.started = true;
-            self.record_timing("simulation_start");
+            self.record_timing("simulation_start")?;
         }
 
         if self.stop.is_stopped() || (self.realtime && !self.wait_until(input.timestamp)) {
             return Ok(());
         }
 
-        self.run_log_writer.push_input(input.clone());
+        self.run_log_writer.push_input(input.clone())?;
 
         let channel_key = match self.effect_channels.get(&input.effect) {
             Some(k) => k,
@@ -56,11 +58,11 @@ impl Proxy {
         if let Some(channel) = self.channels.get_mut(channel_key) {
             for output in channel.send(input)? {
                 self.run_log_writer
-                    .push_output(output.into_output(channel_key, Some(input.id)));
+                    .push_output(output.into_output(channel_key, Some(input.id)))?;
             }
         };
 
-        self.drain_outputs();
+        self.drain_outputs()?;
         Ok(())
     }
 
@@ -92,19 +94,19 @@ impl Proxy {
     }
 
     /// Records the `simulation_end` timing (if anything was sent) and drains the channels.
-    pub fn finish(&mut self) {
+    pub fn finish(&mut self) -> Result<(), RunLogError> {
         if self.started && !self.finished {
             self.finished = true;
-            self.record_timing("simulation_end");
+            self.record_timing("simulation_end")?;
         }
 
         for channel in self.channels.values_mut() {
             channel.finish();
         }
-        self.drain_outputs();
+        self.drain_outputs()
     }
 
-    fn record_timing(&self, key: &str) {
+    fn record_timing(&self, key: &str) -> Result<(), RunLogError> {
         self.run_log_writer.push_metadata(Metadata {
             mtype: "timing".to_string(),
             input_id: None,
@@ -115,13 +117,14 @@ impl Proxy {
             })),
             segment: None,
             timestamp: None,
-        });
+        })
     }
 
-    fn drain_outputs(&mut self) {
+    fn drain_outputs(&mut self) -> Result<(), RunLogError> {
         while let Ok(output) = self.output_rx.try_recv() {
-            self.run_log_writer.push_output(output);
+            self.run_log_writer.push_output(output)?;
         }
+        Ok(())
     }
 }
 
@@ -245,9 +248,9 @@ impl ProxyBuilder {
         unknown.sort();
         unknown.dedup();
         for channel in unknown {
-            errors.push(BuildError::Proxy {
-                message: format!("effects were assigned to unknown channel: {channel}"),
-            });
+            errors.push(BuildError::proxy(format!(
+                "effects were assigned to unknown channel: {channel}"
+            )));
         }
 
         for (key, channel_builder) in self.channel_builders {
@@ -306,14 +309,17 @@ mod tests {
     }
 
     impl RunLogWriter for RecordingLog {
-        fn push_input(&self, input: Input) {
+        fn push_input(&self, input: Input) -> Result<(), RunLogError> {
             self.inputs.borrow_mut().push(input);
+            Ok(())
         }
-        fn push_output(&self, output: Output) {
+        fn push_output(&self, output: Output) -> Result<(), RunLogError> {
             self.outputs.borrow_mut().push(output);
+            Ok(())
         }
-        fn push_metadata(&self, metadata: Metadata) {
+        fn push_metadata(&self, metadata: Metadata) -> Result<(), RunLogError> {
             self.metadata.borrow_mut().push(metadata);
+            Ok(())
         }
     }
 
@@ -321,9 +327,9 @@ mod tests {
     struct FailOnEvenIds;
 
     impl Format for FailOnEvenIds {
-        fn format(&self, event: &Input) -> Result<String, String> {
+        fn format(&self, event: &Input) -> Result<String, crate::FormatError> {
             if event.id.is_multiple_of(2) {
-                Err("boom".into())
+                Err(crate::FormatError::Render("boom".into()))
             } else {
                 Ok(event.id.to_string())
             }
@@ -337,10 +343,7 @@ mod tests {
     }
 
     impl Channel for RecordingSink {
-        fn send(
-            &mut self,
-            input: &Input,
-        ) -> Result<Vec<ChannelOutput>, Box<dyn std::error::Error>> {
+        fn send(&mut self, input: &Input) -> Result<Vec<ChannelOutput>, crate::ChannelError> {
             match render(self.format.as_deref(), input) {
                 Ok(data) => {
                     self.sent.borrow_mut().push(data);
@@ -565,12 +568,12 @@ mod tests {
             .build()
             .unwrap();
 
-        proxy.finish();
+        proxy.finish().unwrap();
         assert!(log.metadata.borrow().is_empty(), "nothing sent, no timing");
 
         proxy.send(&input(1)).unwrap();
-        proxy.finish();
-        proxy.finish();
+        proxy.finish().unwrap();
+        proxy.finish().unwrap();
 
         let kinds: Vec<_> = log
             .metadata

@@ -1,6 +1,7 @@
 use super::format::{FormatParseContext, FormatParser};
 use super::generator::{GeneratorParseVisitor, GeneratorParser};
 use super::signal::SignalParser;
+use crate::ParseErrorKind;
 use crate::audit::signal::Signal;
 use crate::audit::{Audit, AuditBuilder, signal};
 use crate::effect::generator::custom::CustomParser;
@@ -99,12 +100,9 @@ impl Dialect {
 
         for name in spec.generators.keys() {
             if self.generator_parsers.iter().any(|p| p.key() == name) {
-                errors.push(ParseError::Invalid {
-                    path: Some(vec!["generators".into(), name.clone()]),
-                    message: format!(
+                errors.push(ParseError::invalid(format!(
                         "\"{name}\" is a primitive generator type and cannot be used as a custom generator name"
-                    ),
-                });
+                    )).at(["generators", name.as_str()]));
             }
         }
 
@@ -194,10 +192,13 @@ impl Dialect {
 
         for (effect_key, channel_key) in &effect_channels {
             if !spec.channels.keys().any(|key| key == channel_key) {
-                errors.push(ParseError::Invalid {
-                    path: Some(vec!["effects".into(), effect_key.clone(), "channel".into()]),
-                    message: format!("unknown channel: {channel_key}"),
-                });
+                errors.push(
+                    ParseError::new(ParseErrorKind::UnknownChannel(channel_key.clone())).at([
+                        "effects",
+                        effect_key.as_str(),
+                        "channel",
+                    ]),
+                );
             }
         }
 
@@ -205,18 +206,19 @@ impl Dialect {
 
         for (key, channel) in &spec.channels {
             if channel.fields.contains_key("target") {
-                errors.push(ParseError::Invalid {
-                    path: Some(vec!["channels".into(), key.clone(), "target".into()]),
-                    message: "channels no longer take a target; set `type` (and e.g. `command`) \
-                              directly on the channel"
-                        .into(),
-                });
+                errors.push(
+                    ParseError::invalid(
+                        "channels no longer take a target; set `type` (and e.g. `command`) \
+                              directly on the channel",
+                    )
+                    .at(["channels", key.as_str(), "target"]),
+                );
             } else {
                 match self.parse_channel(channel, &formats) {
                     Ok(channel_builder) => {
                         proxy_builder.set_channel(key.clone(), channel_builder);
                     }
-                    Err(e) => errors.extend(prefix_paths(e, &["channels", key])),
+                    Err(e) => errors.extend(e.into_iter().map(|e| e.prefixed(&["channels", key]))),
                 }
             }
 
@@ -269,14 +271,13 @@ impl Dialect {
 
         match matching.as_slice() {
             [parser] => parser.parse(key, signal),
-            [] => Err(vec![ParseError::Invalid {
-                path: None,
-                message: "unknown signal type".to_string(),
-            }]),
-            _ => Err(vec![ParseError::Invalid {
-                path: None,
-                message: format!("{} signal parsers matched", matching.len()),
-            }]),
+            [] => Err(vec![ParseError::new(ParseErrorKind::UnknownType {
+                kind: "signal",
+            })]),
+            _ => Err(vec![ParseError::new(ParseErrorKind::AmbiguousType {
+                kind: "signal",
+                count: matching.len(),
+            })]),
         }
     }
 
@@ -293,31 +294,15 @@ impl Dialect {
 
         match matching.as_slice() {
             [parser] => parser.parse(channel, formats),
-            [] => Err(vec![ParseError::Invalid {
-                path: Some(vec!["type".into()]),
-                message: "unknown channel type".to_string(),
-            }]),
-            _ => Err(vec![ParseError::Invalid {
-                path: None,
-                message: format!("{} channel parsers matched", matching.len()),
-            }]),
+            [] => Err(vec![
+                ParseError::new(ParseErrorKind::UnknownType { kind: "channel" }).at(["type"]),
+            ]),
+            _ => Err(vec![ParseError::new(ParseErrorKind::AmbiguousType {
+                kind: "channel",
+                count: matching.len(),
+            })]),
         }
     }
-}
-
-/// Prepends `prefix` to each error's path, so errors from a nested parser say where they came from.
-fn prefix_paths(errors: Vec<ParseError>, prefix: &[&str]) -> Vec<ParseError> {
-    errors
-        .into_iter()
-        .map(|ParseError::Invalid { path, message }| {
-            let mut full: Vec<String> = prefix.iter().map(|s| s.to_string()).collect();
-            full.extend(path.unwrap_or_default());
-            ParseError::Invalid {
-                path: Some(full),
-                message,
-            }
-        })
-        .collect()
 }
 
 #[cfg(test)]
@@ -334,10 +319,7 @@ mod tests {
     }
 
     fn paths(errors: &[ParseError]) -> Vec<String> {
-        errors
-            .iter()
-            .map(|ParseError::Invalid { path, .. }| path.clone().unwrap_or_default().join("."))
-            .collect()
+        errors.iter().map(|e| e.path().join(".")).collect()
     }
 
     #[test]

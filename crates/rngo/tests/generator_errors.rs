@@ -1,6 +1,3 @@
-mod common;
-
-use common::{BuildErrorTestExt, ParseErrorTestExt};
 use rngo::build::*;
 use rngo::{BuildError, Dialect, EffectKey, ParseError, Simulation};
 
@@ -118,23 +115,19 @@ fn spec() {
         .parse_simulation_json(value)
         .unwrap_err();
 
-    let by_effect = |key: &'static str| {
-        move |e: &&ParseError| e.path().is_some_and(|p| p.get(1).is_some_and(|k| k == key))
-    };
+    let by_effect =
+        |key: &'static str| move |e: &&ParseError| e.path().get(1).is_some_and(|k| k == key);
 
     let number_error = errors.iter().find(by_effect("number")).unwrap();
     assert_eq!(number_error.message(), "minimum must be a number");
-    let number_path = number_error.path().unwrap();
-    assert_eq!(
-        number_path.as_slice(),
-        ["effects", "number", "generator", "minimum"]
-    );
+    let number_path = number_error.path();
+    assert_eq!(number_path, ["effects", "number", "generator", "minimum"]);
 
     let object_error = errors.iter().find(by_effect("object")).unwrap();
     assert_eq!(object_error.message(), "not specified");
-    let object_path = object_error.path().unwrap();
+    let object_path = object_error.path();
     assert_eq!(
-        object_path.as_slice(),
+        object_path,
         ["effects", "object", "generator", "properties"]
     );
 
@@ -142,24 +135,24 @@ fn spec() {
         .iter()
         .find(|e| e.message() == "no generator parser matched")
         .unwrap();
-    assert!(unknown_error.path().is_none());
+    assert!(unknown_error.path().is_empty());
 
     let reference_error = errors.iter().find(by_effect("reference")).unwrap();
     assert_eq!(
         reference_error.message(),
         "cursor must be either \"random\" or \"unique\""
     );
-    let reference_path = reference_error.path().unwrap();
+    let reference_path = reference_error.path();
     assert_eq!(
-        reference_path.as_slice(),
+        reference_path,
         ["effects", "reference", "generator", "cursor"]
     );
 
     let nested_error = errors.iter().find(by_effect("nested")).unwrap();
     assert_eq!(nested_error.message(), "minimum must be a number");
-    let nested_path = nested_error.path().unwrap();
+    let nested_path = nested_error.path();
     assert_eq!(
-        nested_path.as_slice(),
+        nested_path,
         [
             "effects",
             "nested",

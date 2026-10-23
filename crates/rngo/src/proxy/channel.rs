@@ -9,16 +9,15 @@ pub use stream::Stream;
 use crate::effect::Input;
 use crate::proxy::format::Format;
 use crate::proxy::output::{ChannelOutput, OutputSender};
-use crate::{BuildError, Level};
+use crate::{BuildError, ChannelError, Level};
 use serde_json::Value;
-use std::error::Error;
 use std::process::Command;
 
 /// Where a proxy delivers the inputs of the effects assigned to it.
 pub trait Channel: std::fmt::Debug {
     /// Sends one input, formatted by the channel's own format if it has one. The proxy ties
     /// returned outputs to the input.
-    fn send(&mut self, input: &Input) -> Result<Vec<ChannelOutput>, Box<dyn Error>>;
+    fn send(&mut self, input: &Input) -> Result<Vec<ChannelOutput>, ChannelError>;
     fn finish(&mut self) {}
 }
 
@@ -38,9 +37,9 @@ pub trait ChannelBuilder {
 pub(crate) fn render(format: Option<&dyn Format>, input: &Input) -> Result<Value, ChannelOutput> {
     match format.map(|f| f.format(input)) {
         Some(Ok(data)) => Ok(Value::String(data)),
-        Some(Err(message)) => Err(ChannelOutput::new(
+        Some(Err(error)) => Err(ChannelOutput::new(
             Level::Error,
-            format!("format failed: {message}"),
+            format!("format failed: {error}"),
         )),
         None => Ok(input.data.clone()),
     }

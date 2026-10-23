@@ -3,7 +3,7 @@ use crate::parse::{ChannelParser, FormatParseContext};
 use crate::proxy::channel::{Channel, ChannelBuilder};
 use crate::proxy::format::Format;
 use crate::proxy::output::{ChannelOutput, OutputSender};
-use crate::{BuildError, ParseError, spec};
+use crate::{BuildError, ChannelError, ParseError, spec};
 use serde_json::Value;
 use std::rc::Rc;
 
@@ -23,7 +23,7 @@ impl Stdout {
 }
 
 impl Channel for Stdout {
-    fn send(&mut self, input: &Input) -> Result<Vec<ChannelOutput>, Box<dyn std::error::Error>> {
+    fn send(&mut self, input: &Input) -> Result<Vec<ChannelOutput>, ChannelError> {
         let data = match super::render(self.format.as_deref(), input) {
             Ok(data) => data,
             Err(output) => return Ok(vec![output]),

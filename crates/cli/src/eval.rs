@@ -3,8 +3,10 @@ mod status;
 use console::style;
 use rngo::{Dialect, RunLogWriter, SignalOutcome, SqliteRunLog, StopHandle, spec};
 use status::StatusWriter;
+use std::cell::RefCell;
 use std::error::Error;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::{fmt, fs};
 use uuid::Uuid;
 
@@ -71,14 +73,19 @@ pub fn eval(base: &Path, options: EvalOptions) -> Result<bool, Box<dyn Error>> {
 
     let eval_dir = prepare_eval_dir(base, &spec, rewritten.as_ref())?;
 
-    let sqlite_run_log = SqliteRunLog::new(eval_dir.clone());
+    let sqlite_run_log = SqliteRunLog::new(eval_dir.clone())?;
     let reader = sqlite_run_log.clone();
     let writer = StatusWriter::new(sqlite_run_log.clone(), &spec);
 
+    let flush_failure = Rc::new(RefCell::new(None));
+
     if realtime {
         let status = writer.clone();
+        let failure = flush_failure.clone();
         proxy_builder.set_realtime(true).set_on_wait(move |until| {
-            status.flush();
+            if let Err(error) = status.flush() {
+                failure.borrow_mut().get_or_insert(error);
+            }
             status.wait(until);
         });
     }
@@ -97,22 +104,26 @@ pub fn eval(base: &Path, options: EvalOptions) -> Result<bool, Box<dyn Error>> {
     for item in simulation {
         match item {
             Ok(input) => proxy.send(&input)?,
-            Err(skipped) => writer.push_metadata(skipped.into()),
+            Err(skipped) => writer.push_metadata(skipped.into())?,
+        }
+        if let Some(error) = flush_failure.borrow_mut().take() {
+            return Err(error.into());
         }
         if stop.is_stopped() {
             break;
         }
     }
 
-    proxy.finish();
+    proxy.finish()?;
     writer.finish();
 
     let audit = audit_builder
-        .run_log(sqlite_run_log)
+        .run_log(sqlite_run_log.clone())
         .build()
         .map_err(join_errors)?;
 
-    let audit_report = audit.run();
+    let audit_report = audit.run()?;
+    sqlite_run_log.commit()?;
 
     if !audit_report.outcomes.is_empty() {
         println!();

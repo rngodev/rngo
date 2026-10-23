@@ -70,17 +70,23 @@ impl<'a> MomentParser<'a> {
         };
 
         let program = Program::compile(expr).map_err(|e| {
-            vec![ParseError::Invalid {
-                path: Some(vec![field_name.to_string()]),
-                message: format!("could not compile {} expression: {}", field_name, e),
-            }]
+            vec![
+                ParseError::invalid(format!(
+                    "could not compile {} expression: {}",
+                    field_name, e
+                ))
+                .at([field_name.to_string()]),
+            ]
         })?;
 
         let value = program.execute(&context).map_err(|e| {
-            vec![ParseError::Invalid {
-                path: Some(vec![field_name.to_string()]),
-                message: format!("could not execute {} expression: {}", field_name, e),
-            }]
+            vec![
+                ParseError::invalid(format!(
+                    "could not execute {} expression: {}",
+                    field_name, e
+                ))
+                .at([field_name.to_string()]),
+            ]
         })?;
 
         let result_secs = match value {
@@ -90,13 +96,10 @@ impl<'a> MomentParser<'a> {
             Value::Timestamp(dt) => dt.timestamp(),
             Value::Duration(d) => (now + d).timestamp(),
             _ => {
-                return Err(vec![ParseError::Invalid {
-                    path: Some(vec![field_name.to_string()]),
-                    message: format!(
+                return Err(vec![ParseError::invalid(format!(
                         "{} expression must evaluate to a number or timestamp (seconds relative to now)",
                         field_name
-                    ),
-                }]);
+                    )).at([field_name.to_string()])]);
             }
         };
 
@@ -214,16 +217,14 @@ mod tests {
     #[test]
     fn error_on_invalid_expression() {
         let errs = parse("???").unwrap_err();
-        let ParseError::Invalid { path, message } = &errs[0];
-        assert_eq!(path, &Some(vec!["field".to_string()]));
-        assert!(message.contains("field"));
+        assert_eq!(errs[0].path(), ["field"]);
+        assert!(errs[0].message().contains("field"));
     }
 
     #[test]
     fn error_on_wrong_type() {
         let errs = parse("true").unwrap_err();
-        let ParseError::Invalid { path, message } = &errs[0];
-        assert_eq!(path, &Some(vec!["field".to_string()]));
-        assert!(message.contains("field"));
+        assert_eq!(errs[0].path(), ["field"]);
+        assert!(errs[0].message().contains("field"));
     }
 }

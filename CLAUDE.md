@@ -86,6 +86,15 @@ An effect opts into a channel by setting `channel: <channel-key>`. Formats are c
 
 If a format fails for an event, the channel reports an error-level `ChannelOutput` (tied to that input and channel by `Proxy::send`), skips the send, and carries on with the run. Channel parse errors are prefixed with `channels.<key>` in `Dialect::parse_proxy` (format errors are `channels.<key>.format...`), so parsers return paths relative to the channel. A `stream` channel with no effects writing to it is still spawned for the run's duration, but only as an output source (e.g. tailing a log file) - its stdout/stderr lines still become `Output` events, just with no associated effect.
 
+### Errors (`rngo/src/error.rs`)
+
+All error types live in `error.rs` and are re-exported from the crate root (`ParseError` and `BuildError` also from `spec` and `build`). Each phase has its own type, built with `thiserror`:
+- `ParseError`: a struct of a `path` (the spec field it concerns, empty for the whole document) and a `ParseErrorKind` (`Invalid` free-form message, `UnknownType`, `AmbiguousType`, `UnknownChannel`). Parsers return `Vec<ParseError>`; build them with `ParseError::invalid(message).at(path)` and nest them with `prefixed(prefix)`, which is how `Dialect::parse_proxy` and `FormatParseContext::parse` add `channels.<key>` and `format`.
+- `BuildError`: one variant per part of the run being built (`Simulation`, `Effect`, `Generator`, `Proxy`, `Channel`, `Signal`, `Audit`), each with a `message`. Build them with the lowercase constructors (`BuildError::effect(..)`). Builders return `Vec<BuildError>`.
+- `RunLogError`: reading or writing a run log. `RunLogWriter` methods and `RunLogReader::query` return it. The `RunLogReader` lookups return `Option`, so `SqliteRunLog` records a failed lookup and returns it from its next write, `flush` or `commit`; check `commit` after the last lookup.
+- `FormatError` (from `Format::format`), `ChannelError` (from `Channel::send`, for failures the run can't continue past, such as a broken pipe) and `ProxyError` (`Proxy::send`, wrapping the channel and run log ones). A format failure isn't fatal: `channel::render` turns it into an error `ChannelOutput`.
+- `SignalError`: why a signal couldn't be evaluated. `SqlSignal::evaluate` turns it into a `SignalOutcome::Error`, adding the `signal `<key>`:` prefix in one place.
+
 ### Schema types (all in `rngo/src/effect/schema/`)
 
 `Array`, `Constant`, `Context`, `Custom`, `Function`, `Number`, `Object`, `Reference`, `Select`, `Str` (module `string.rs`). Each implements `SchemaBuilder` (parse-time) and `Schema` (run-time). `Custom` backs the spec's `schemas:` section, letting effects reference named custom schema types by name. Builder factory functions are re-exported from `rngo/src/build.rs`.

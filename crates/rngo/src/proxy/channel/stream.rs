@@ -3,7 +3,7 @@ use crate::parse::{ChannelParser, FormatParseContext};
 use crate::proxy::channel::{Channel, ChannelBuilder};
 use crate::proxy::format::Format;
 use crate::proxy::output::{ChannelOutput, OutputSender};
-use crate::{BuildError, Level, ParseError, spec};
+use crate::{BuildError, ChannelError, Level, ParseError, spec};
 use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Stdio};
@@ -36,7 +36,7 @@ impl Stream {
 }
 
 impl Channel for Stream {
-    fn send(&mut self, input: &Input) -> Result<Vec<ChannelOutput>, Box<dyn std::error::Error>> {
+    fn send(&mut self, input: &Input) -> Result<Vec<ChannelOutput>, ChannelError> {
         let Some(stdin) = self.stdin.as_mut() else {
             return Ok(vec![]);
         };
@@ -50,7 +50,10 @@ impl Channel for Stream {
             Value::String(s) => s,
             other => other.to_string(),
         };
-        writeln!(stdin, "{data}").map_err(|e| format!("channel '{}': {e}", self.channel_key))?;
+        writeln!(stdin, "{data}").map_err(|source| ChannelError::Write {
+            channel: self.channel_key.clone(),
+            source,
+        })?;
 
         Ok(vec![])
     }
@@ -122,10 +125,10 @@ impl ChannelBuilder for StreamBuilder {
         outputs: OutputSender,
     ) -> Result<Box<dyn Channel>, Vec<BuildError>> {
         let Some(command) = self.command.clone() else {
-            return Err(vec![BuildError::Channel {
-                channel: channel_key.to_string(),
-                message: "command not specified".into(),
-            }]);
+            return Err(vec![BuildError::channel(
+                channel_key,
+                "command not specified",
+            )]);
         };
 
         let mut child = super::shell(&command)
@@ -134,10 +137,10 @@ impl ChannelBuilder for StreamBuilder {
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| {
-                vec![BuildError::Channel {
-                    channel: channel_key.to_string(),
-                    message: format!("failed to spawn command: {e}"),
-                }]
+                vec![BuildError::channel(
+                    channel_key,
+                    format!("failed to spawn command: {e}"),
+                )]
             })?;
 
         let stdin = child.stdin.take();
@@ -192,17 +195,15 @@ impl ChannelParser for StreamParser {
             Some(value) => match value.as_str() {
                 Some(command) => command,
                 None => {
-                    return Err(vec![ParseError::Invalid {
-                        path: Some(vec!["command".into()]),
-                        message: "must be a string".into(),
-                    }]);
+                    return Err(vec![
+                        ParseError::invalid("must be a string").at(["command"]),
+                    ]);
                 }
             },
             None => {
-                return Err(vec![ParseError::Invalid {
-                    path: Some(vec!["command".into()]),
-                    message: "is required for a stream channel".into(),
-                }]);
+                return Err(vec![
+                    ParseError::invalid("is required for a stream channel").at(["command"]),
+                ]);
             }
         };
 

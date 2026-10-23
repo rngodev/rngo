@@ -2,8 +2,8 @@ mod pool;
 mod simple;
 mod sqlite;
 
-use crate::Output;
 use crate::effect::Input;
+use crate::{Output, RunLogError};
 use chrono::{DateTime, FixedOffset};
 use rand_pcg::Pcg32;
 use serde_json::Value;
@@ -13,19 +13,24 @@ pub use simple::SimpleEventRunLog;
 pub use sqlite::SqliteRunLog;
 
 pub trait RunLogWriter: std::fmt::Debug {
-    fn push_input(&self, input: Input);
-    fn push_output(&self, output: Output);
-    fn push_metadata(&self, metadata: Metadata);
+    fn push_input(&self, input: Input) -> Result<(), RunLogError>;
+    fn push_output(&self, output: Output) -> Result<(), RunLogError>;
+    fn push_metadata(&self, metadata: Metadata) -> Result<(), RunLogError>;
     /// Persists any buffered writes; a no-op for writers that don't buffer.
-    fn flush(&self) {}
+    fn flush(&self) -> Result<(), RunLogError> {
+        Ok(())
+    }
 }
 
+/// Lookups return `None` when nothing matches. A log that fails to read also returns `None`, and
+/// reports the failure from its next write or flush instead.
 pub trait RunLogReader: std::fmt::Debug {
     fn last(&self) -> Option<Rc<Input>>;
     fn last_for_effect(&self, key: &str) -> Option<Rc<Input>>;
     fn random_for_effect(&self, key: &str, rng: &mut Pcg32) -> Option<Rc<Input>>;
     fn unique_for_effect(&self, key: &str, cursor: &str, rng: &mut Pcg32) -> Option<Rc<Input>>;
-    fn query(&self, query: &str) -> Option<Value>;
+    /// Runs `query` against the log, returning its scalar result.
+    fn query(&self, query: &str) -> Result<Value, RunLogError>;
 }
 
 #[derive(Clone, Debug)]

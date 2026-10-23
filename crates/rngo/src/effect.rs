@@ -280,11 +280,11 @@ impl EffectBuilder {
 
     pub fn build(self) -> Result<Effect, Vec<BuildError>> {
         let Some(now) = self.now else {
-            return Err(vec![BuildError::Effect {
-                effect: self.key,
-                key: EffectKey::Config,
-                message: "now must be set via set_now()".into(),
-            }]);
+            return Err(vec![BuildError::effect(
+                self.key,
+                EffectKey::Config,
+                "now must be set via set_now()",
+            )]);
         };
         let seed = self.seed.unwrap_or(1);
         let run_log_reader: Rc<dyn RunLogReader> = self
@@ -300,18 +300,18 @@ impl EffectBuilder {
         let mut errors: Vec<BuildError> = vec![];
 
         if effect_start < sim_start {
-            errors.push(BuildError::Effect {
-                effect: self.key.clone(),
-                key: EffectKey::Start,
-                message: "start cannot be before simulation start".into(),
-            });
+            errors.push(BuildError::effect(
+                self.key.clone(),
+                EffectKey::Start,
+                "start cannot be before simulation start",
+            ));
         }
         if effect_end > sim_end {
-            errors.push(BuildError::Effect {
-                effect: self.key.clone(),
-                key: EffectKey::End,
-                message: "end cannot be after simulation end".into(),
-            });
+            errors.push(BuildError::effect(
+                self.key.clone(),
+                EffectKey::End,
+                "end cannot be after simulation end",
+            ));
         }
 
         let generator_result = if let Some(generator_builder) = self.generator_builder {
@@ -324,11 +324,11 @@ impl EffectBuilder {
 
             generator_builder.build(visitor)
         } else {
-            Err(vec![BuildError::Effect {
-                effect: self.key.clone(),
-                key: EffectKey::Generator,
-                message: "generator was not set".into(),
-            }])
+            Err(vec![BuildError::effect(
+                self.key.clone(),
+                EffectKey::Generator,
+                "generator was not set",
+            )])
         };
 
         let trigger_result = match self.trigger {

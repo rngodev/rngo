@@ -24,11 +24,12 @@ fn input(id: u64, effect: &str) -> Input {
 
 fn filled(count: u64) -> (TempDir, Rc<SqliteRunLog>) {
     let tmp = TempDir::new().unwrap();
-    let log = SqliteRunLog::new(tmp.path().to_path_buf());
+    let log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
     for id in 1..=count {
-        log.push_input(input(id, if id % 2 == 0 { "a" } else { "b" }));
+        log.push_input(input(id, if id % 2 == 0 { "a" } else { "b" }))
+            .unwrap();
     }
-    log.commit();
+    log.commit().unwrap();
     (tmp, log)
 }
 
@@ -44,15 +45,15 @@ fn push_input(c: &mut Criterion) {
             b.iter_batched(
                 || {
                     let tmp = TempDir::new().unwrap();
-                    let log = SqliteRunLog::new(tmp.path().to_path_buf());
+                    let log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
                     let inputs: Vec<_> = (1..=size).map(|id| input(id, "a")).collect();
                     (tmp, log, inputs)
                 },
                 |(tmp, log, inputs)| {
                     for input in inputs {
-                        log.push_input(input);
+                        log.push_input(input).unwrap();
                     }
-                    log.commit();
+                    log.commit().unwrap();
                     (tmp, log)
                 },
                 BatchSize::PerIteration,

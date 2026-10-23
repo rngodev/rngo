@@ -17,7 +17,6 @@ pub use crate::proxy::channel::stdout::StdoutBuilder;
 pub use crate::proxy::channel::stream::StreamBuilder;
 use crate::proxy::channel::{Exec, Stdout, Stream};
 pub use crate::proxy::format::{SqlFormat, TemplateFormat};
-use thiserror::Error;
 
 pub fn array() -> ArrayBuilder {
     Array::builder()
@@ -75,57 +74,5 @@ pub fn stdout() -> StdoutBuilder {
     Stdout::builder()
 }
 
-#[derive(Error, Debug)]
-#[error("failed to build: `{message}`")]
-pub enum BuildError {
-    Simulation {
-        key: SimulationKey,
-        message: String,
-    },
-    Effect {
-        effect: String,
-        key: EffectKey,
-        message: String,
-    },
-    Generator {
-        effect: String,
-        path: Vec<GeneratorEdge>,
-        message: String,
-    },
-    Proxy {
-        message: String,
-    },
-    Channel {
-        channel: String,
-        message: String,
-    },
-    Signal {
-        signal: String,
-        message: String,
-    },
-    Audit {
-        message: String,
-    },
-}
-
-#[derive(Debug, Clone)]
-pub struct GeneratorEdge {
-    pub kind: &'static str,
-    pub key: String,
-}
-
-#[derive(Debug)]
-pub enum SimulationKey {
-    Start,
-    End,
-    RunLogReader,
-}
-
-#[derive(Debug)]
-pub enum EffectKey {
-    Generator,
-    Trigger,
-    Config,
-    Start,
-    End,
-}
+pub use crate::effect::generator::GeneratorEdge;
+pub use crate::error::{BuildError, EffectKey, SimulationKey};
