@@ -6,6 +6,7 @@ use dialoguer::{Confirm, Input};
 
 use crate::{skills, ui};
 
+/// Creates `.rngo/` under `base`; with `default`, skips prompts and skill installation.
 pub fn init(base: &Path, default: bool) -> Result<(), Box<dyn Error>> {
     init_project(
         base,

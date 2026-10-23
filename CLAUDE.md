@@ -40,6 +40,8 @@ The workspace has two crates:
 - `crates/rngo` (`rngo`) — core simulation library, published as the public library crate
 - `crates/cli` (`rngo-cli`) — CLI binary that wires the library to the filesystem and subprocesses
 
+`rngo-cli` is a library (`src/lib.rs`: `eval`, `init`, `skills`) plus a thin `main.rs` that only parses arguments and handles signals, so `crates/cli/tests/` can call `eval()` directly with custom `EvalOptions`. End-to-end `eval` tests live in `tests/eval.rs`; unit tests of private code stay in their modules.
+
 ### Data flow
 
 1. **Spec** (`spec.rs`): A YAML/JSON document loaded from `.rngo/spec.yml` merged with per-file `effects/*.yml`, `channels/*.yml`, `schemas/*.yml`, and `signals/*.yml` (each merge step lives in `cli/src/eval.rs::load_spec`, keyed by file stem). Defines `seed`, `start`, `end`, named `effects`, named `channels`, named custom `schemas`, and named `signals`.

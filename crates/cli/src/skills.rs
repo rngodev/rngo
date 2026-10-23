@@ -35,6 +35,7 @@ fn try_offer_install(base: &Path) -> Result<(), Box<dyn Error>> {
     do_install(&dir)
 }
 
+/// Downloads the latest rngo agent skills into `path`, or a location chosen interactively.
 pub fn install(base: &Path, path: Option<PathBuf>) -> Result<(), Box<dyn Error>> {
     let dir = match path {
         Some(path) => path,
