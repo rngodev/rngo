@@ -1,8 +1,8 @@
 use super::{
     Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
 };
-use crate::build::{BuildError, GeneratorEdge};
-use crate::effect::generator::Metadata;
+use crate::build::BuildError;
+use crate::effect::generator::{GeneratorEdge, Metadata};
 use crate::parse::{GeneratorParseVisitor, GeneratorParser};
 use crate::spec::{self, ParseError as Error};
 use rand::RngExt;

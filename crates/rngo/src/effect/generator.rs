@@ -22,7 +22,7 @@ pub use reference::Reference;
 pub use select::Select;
 pub use string::Str;
 
-use crate::build::{BuildError, GeneratorEdge};
+use crate::build::BuildError;
 use crate::effect::TriggerEvent;
 use crate::log::RunLogReader;
 use rand_pcg::Pcg32;
@@ -33,6 +33,13 @@ use std::rc::Rc;
 
 pub trait Generator: std::fmt::Debug {
     fn next(&mut self, context: &GeneratorContext) -> GeneratorResult;
+}
+
+/// One step down the generator tree: `kind` is the kind of step (e.g. a property or an array item) and `key` names it.
+#[derive(Debug, Clone)]
+pub struct GeneratorEdge {
+    pub kind: &'static str,
+    pub key: String,
 }
 
 pub struct GeneratorContext<'a> {

@@ -74,4 +74,5 @@ pub fn stdout() -> StdoutBuilder {
     Stdout::builder()
 }
 
-pub use crate::error::{BuildError, EffectKey, GeneratorEdge, SimulationKey};
+pub use crate::effect::generator::GeneratorEdge;
+pub use crate::error::{BuildError, EffectKey, SimulationKey};

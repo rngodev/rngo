@@ -11,11 +11,12 @@ pub mod spec;
 
 pub use audit::signal::{self, Signal, SignalBuilder, SignalOutcome};
 pub use audit::{Audit, AuditBuilder, AuditReport};
+pub use effect::generator::GeneratorEdge;
 pub use effect::simulation::{Simulation, SimulationBuilder, StandaloneSimulation};
 pub use effect::{Effect, EffectBuilder, Input, SkippedInput, generator};
 pub use error::{
-    BuildError, ChannelError, EffectKey, FormatError, GeneratorEdge, ParseError, ParseErrorKind,
-    ProxyError, RunLogError, SignalError, SimulationKey,
+    BuildError, ChannelError, EffectKey, FormatError, ParseError, ParseErrorKind, ProxyError,
+    RunLogError, SignalError, SimulationKey,
 };
 pub use log::{Metadata, RunLogReader, RunLogWriter, SimpleEventRunLog, SqliteRunLog};
 pub use moment::Moment;

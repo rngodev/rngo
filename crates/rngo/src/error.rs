@@ -1,3 +1,4 @@
+use crate::effect::generator::GeneratorEdge;
 use thiserror::Error;
 
 /// A problem found while parsing a spec, located by the path of the field it concerns.
@@ -169,12 +170,6 @@ impl BuildError {
             _ => None,
         }
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct GeneratorEdge {
-    pub kind: &'static str,
-    pub key: String,
 }
 
 #[derive(Debug)]
