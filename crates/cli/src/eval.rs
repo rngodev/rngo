@@ -162,8 +162,19 @@ pub fn eval(base: &Path, options: EvalOptions) -> Result<bool, Box<dyn Error>> {
     Ok(audit_report.passed() && !stop.is_stopped())
 }
 
+/// Reads a YAML file that must hold a mapping, naming the file in any error.
+fn read_yaml(path: &Path) -> Result<serde_json::Value, Box<dyn Error>> {
+    let text = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let value: serde_json::Value =
+        serde_yaml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+    if !value.is_object() {
+        return Err(format!("{}: expected a YAML mapping", path.display()).into());
+    }
+    Ok(value)
+}
+
 fn load_spec_file(path: &Path) -> Result<spec::Spec, Box<dyn Error>> {
-    let value: serde_json::Value = serde_yaml::from_str(&fs::read_to_string(path)?)?;
+    let value: serde_json::Value = read_yaml(path)?;
     Ok(spec::from_value(value).map_err(join_errors)?)
 }
 
@@ -171,7 +182,7 @@ fn load_spec(base: &Path) -> Result<spec::Spec, Box<dyn Error>> {
     let spec_path = base.join(".rngo/spec.yml");
 
     let mut spec: serde_json::Value = if spec_path.exists() {
-        serde_yaml::from_str(&fs::read_to_string(&spec_path)?)?
+        read_yaml(&spec_path)?
     } else {
         serde_json::json!({ "seed": 1, "effects": {} })
     };
@@ -195,7 +206,7 @@ fn load_spec(base: &Path) -> Result<spec::Spec, Box<dyn Error>> {
                 .and_then(|s| s.to_str())
                 .ok_or_else(|| format!("invalid filename: {}", path.display()))?
                 .to_string();
-            let effect: serde_json::Value = serde_yaml::from_str(&fs::read_to_string(&path)?)?;
+            let effect: serde_json::Value = read_yaml(&path)?;
             spec["effects"][key] = effect;
         }
     }
@@ -219,7 +230,7 @@ fn load_spec(base: &Path) -> Result<spec::Spec, Box<dyn Error>> {
                 .and_then(|s| s.to_str())
                 .ok_or_else(|| format!("invalid filename: {}", path.display()))?
                 .to_string();
-            let channel: serde_json::Value = serde_yaml::from_str(&fs::read_to_string(&path)?)?;
+            let channel: serde_json::Value = read_yaml(&path)?;
             spec["channels"][key] = channel;
         }
     }
@@ -243,7 +254,7 @@ fn load_spec(base: &Path) -> Result<spec::Spec, Box<dyn Error>> {
                 .and_then(|s| s.to_str())
                 .ok_or_else(|| format!("invalid filename: {}", path.display()))?
                 .to_string();
-            let generator: serde_json::Value = serde_yaml::from_str(&fs::read_to_string(&path)?)?;
+            let generator: serde_json::Value = read_yaml(&path)?;
             spec["generators"][key] = generator;
         }
     }
@@ -267,7 +278,7 @@ fn load_spec(base: &Path) -> Result<spec::Spec, Box<dyn Error>> {
                 .and_then(|s| s.to_str())
                 .ok_or_else(|| format!("invalid filename: {}", path.display()))?
                 .to_string();
-            let signal: serde_json::Value = serde_yaml::from_str(&fs::read_to_string(&path)?)?;
+            let signal: serde_json::Value = read_yaml(&path)?;
             spec["signals"][key] = signal;
         }
     }

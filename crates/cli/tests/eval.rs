@@ -1231,3 +1231,17 @@ fn stopping_a_waiting_run_still_audits_it() {
         "every input logged before the stop was sent"
     );
 }
+
+#[test]
+fn non_mapping_spec_file_is_an_error_naming_the_file() {
+    let tmp = TempDir::new().unwrap();
+    let base = tmp.path();
+
+    fs::create_dir_all(base.join(".rngo")).unwrap();
+    fs::write(base.join(".rngo/spec.yml"), "this is not a spec").unwrap();
+
+    let error = eval(base, EvalOptions::default()).unwrap_err().to_string();
+
+    assert!(error.contains("spec.yml"), "{error}");
+    assert!(error.contains("expected a YAML mapping"), "{error}");
+}
