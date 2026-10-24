@@ -118,6 +118,7 @@ fn main() {
             Ok(true) => {}
             Ok(false) => std::process::exit(1),
             Err(e) => {
+                eprintln!();
                 eprintln!("error: {e}");
                 std::process::exit(1);
             }
