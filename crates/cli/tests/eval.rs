@@ -1231,3 +1231,49 @@ fn stopping_a_waiting_run_still_audits_it() {
         "every input logged before the stop was sent"
     );
 }
+
+#[test]
+fn non_mapping_spec_file_is_an_error_naming_the_file() {
+    let tmp = TempDir::new().unwrap();
+    let base = tmp.path();
+
+    fs::create_dir_all(base.join(".rngo")).unwrap();
+    fs::write(base.join(".rngo/spec.yml"), "this is not a spec").unwrap();
+
+    let error = eval(base, EvalOptions::default()).unwrap_err().to_string();
+
+    assert!(error.contains("spec.yml"), "{error}");
+    assert!(error.contains("expected a YAML mapping"), "{error}");
+}
+
+#[test]
+fn stream_channel_whose_command_dies_fails_the_run_with_status_and_stderr() {
+    let tmp = TempDir::new().unwrap();
+    let base = tmp.path();
+
+    fs::create_dir_all(base.join(".rngo/effects")).unwrap();
+    fs::create_dir_all(base.join(".rngo/channels")).unwrap();
+
+    write_yaml(
+        base.join(".rngo/spec.yml"),
+        &json!({ "seed": 1, "start": "2024-01-01", "end": "2024-01-04" }),
+    );
+    write_yaml(
+        base.join(".rngo/effects/ping.yml"),
+        &json!({
+            "channel": "db",
+            "trigger": "hz(1, day)",
+            "generator": { "type": "constant", "value": "x" }
+        }),
+    );
+    write_yaml(
+        base.join(".rngo/channels/db.yml"),
+        &json!({ "type": "stream", "command": "echo 'connection refused' >&2; exit 2" }),
+    );
+
+    let error = eval(base, EvalOptions::default()).unwrap_err().to_string();
+
+    assert!(error.contains("channel `db`"), "{error}");
+    assert!(error.contains("exit status: 2"), "{error}");
+    assert!(error.contains("connection refused"), "{error}");
+}
