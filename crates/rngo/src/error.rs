@@ -221,12 +221,29 @@ pub enum ChannelError {
         #[source]
         source: std::io::Error,
     },
+    #[error(
+        "channel `{channel}`: command exited ({status}){}",
+        format_stderr(stderr)
+    )]
+    Exited {
+        channel: String,
+        status: String,
+        stderr: String,
+    },
     #[error("channel `{channel}`: failed to run command: {source}")]
     Spawn {
         channel: String,
         #[source]
         source: std::io::Error,
     },
+}
+
+fn format_stderr(stderr: &str) -> String {
+    if stderr.is_empty() {
+        String::new()
+    } else {
+        format!(":\n{stderr}")
+    }
 }
 
 /// A failure sending an input through a proxy.
