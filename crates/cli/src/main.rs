@@ -1,10 +1,6 @@
-mod eval;
-mod init;
-mod skills;
-mod ui;
-
 use clap::{Parser, Subcommand};
 use rngo::StopHandle;
+use rngo_cli::{eval, init, skills};
 
 /// Simulate code usage, record everything and analyze the results
 #[derive(Parser)]
