@@ -61,7 +61,7 @@ The workspace has two crates:
 
 ### CLI eval loop (`cli/src/eval.rs`)
 
-- `load_spec` merges `.rngo/spec.yml` with `.rngo/effects/*.yml`, `channels/*.yml`, `schemas/*.yml`, `signals/*.yml`, or `load_spec_file` loads a single file when `--spec` is passed.
+- `resolve_source` takes the optional positional path: a file is the whole spec (`load_spec_file`, nothing else merged), a directory named `.rngo` is built from by `load_spec`, any other directory uses the `.rngo` inside it, and no path means `./.rngo`. `load_spec` merges `spec.yml` with `effects/*.yml`, `channels/*.yml`, `generators/*.yml`, `signals/*.yml`. `.env` is read from the directory containing the `.rngo` directory (the current directory for a file), and evals are written to `<rngo dir>/evals` (`./.rngo/evals` for a file).
 - `Dialect::primitive()` parses the spec three ways (simulation, proxy, audit builders).
 - `--dry-run`: only builds the `Simulation` (to validate the spec) and returns, without creating a run directory or touching channels.
 - Otherwise: creates an eval directory at `.rngo/evals/<UUIDv7>/`, symlinks `.rngo/evals/last` to it, writes a `spec.json` snapshot, and opens a `SqliteRunLog` (backed by `log.sqlite`) as both the simulation's `RunLogReader`/`RunLogWriter` and the proxy's writer — wrapped in `StatusWriter` (`cli/src/eval/status.rs`), which renders a live effect/output counter to stderr as it forwards writes through. `StatusWriter::finish()` is called right after `proxy.finish()` so the final redraw happens before the audit prints to stdout; its in-place redraw clears the last N lines, so redrawing after other output would erase that output.

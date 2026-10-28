@@ -62,7 +62,7 @@ fn stdout_prints_instead_of_running_channels_and_records_the_rewritten_spec() {
     write_stdout_fixture(base, &marker);
 
     eval(
-        base,
+        Some(base),
         EvalOptions {
             stdout: true,
             ..Default::default()
@@ -95,7 +95,7 @@ fn no_rewritten_spec_is_recorded_without_stdout() {
     let base = tmp.path();
     write_stdout_fixture(base, &base.join("ran"));
 
-    eval(base, EvalOptions::default()).unwrap();
+    eval(Some(base), EvalOptions::default()).unwrap();
 
     assert!(base.join(".rngo/evals/last/spec.json").exists());
     assert!(!base.join(".rngo/evals/last/spec.rewritten.json").exists());
@@ -142,7 +142,7 @@ fn exec_channel_runs_command_per_event() {
         }),
     );
 
-    eval(base, EvalOptions::default()).unwrap();
+    eval(Some(base), EvalOptions::default()).unwrap();
 
     let content = fs::read_to_string(&output).unwrap();
     assert!(
@@ -184,7 +184,7 @@ fn exec_channel_runs_string_data_without_a_format() {
         &json!({ "type": "exec" }),
     );
 
-    eval(base, EvalOptions::default()).unwrap();
+    eval(Some(base), EvalOptions::default()).unwrap();
 
     let content = fs::read_to_string(&output).unwrap();
     assert!(content.lines().all(|line| line == "hi"));
@@ -240,7 +240,7 @@ fn exec_channel_records_output_when_command_fails() {
         }),
     );
 
-    eval(base, EvalOptions::default()).unwrap();
+    eval(Some(base), EvalOptions::default()).unwrap();
 
     let (_, passed) = signal_outcome(base, "has-failure-output");
     assert!(passed);
@@ -298,7 +298,7 @@ fn stream_channel_does_not_drop_trailing_output() {
         }),
     );
 
-    eval(base, EvalOptions::default()).unwrap();
+    eval(Some(base), EvalOptions::default()).unwrap();
 
     let (value, passed) = signal_outcome(base, "matches-effect-count");
     assert!(
@@ -348,7 +348,7 @@ fn stream_channel_pipes_events_to_subprocess() {
         }),
     );
 
-    eval(base, EvalOptions::default()).unwrap();
+    eval(Some(base), EvalOptions::default()).unwrap();
 
     let content = fs::read_to_string(&output).unwrap();
     assert!(
@@ -396,7 +396,7 @@ fn template_format_is_written_to_a_stream_channel() {
         }),
     );
 
-    eval(base, EvalOptions::default()).unwrap();
+    eval(Some(base), EvalOptions::default()).unwrap();
 
     let content = fs::read_to_string(&output).unwrap();
     let first = content
@@ -448,7 +448,7 @@ fn sql_format_uses_table_from_effect_metadata() {
         }),
     );
 
-    eval(base, EvalOptions::default()).unwrap();
+    eval(Some(base), EvalOptions::default()).unwrap();
 
     let content = fs::read_to_string(&output).unwrap();
     assert!(
@@ -463,59 +463,115 @@ fn sql_format_uses_table_from_effect_metadata() {
     }
 }
 
-#[test]
-fn spec_flag_uses_given_file_instead_of_rngo_dir() {
-    let tmp = TempDir::new().unwrap();
-    let base = tmp.path();
-    let output = base.join("spec_flag_output.txt");
-
-    // A broken `.rngo/spec.yml` proves it is never read when `--spec` is used.
-    fs::create_dir_all(base.join(".rngo")).unwrap();
-    fs::write(base.join(".rngo/spec.yml"), "not: [valid").unwrap();
-
-    let command = "cat >> ".to_string() + output.to_str().unwrap();
-    let spec_path = base.join("external_spec.yml");
-    write_yaml(
-        &spec_path,
-        &json!({
-            "seed": 1,
-            "start": "2024-01-01",
-            "end": "2024-01-04",
-            "channels": {
-                "logger": {
-                    "format": {},
-                    "type": "stream", "command": command
-                }
-            },
-            "effects": {
-                "ping": {
-                    "channel": "logger",
-                    "trigger": "hz(1, day)",
-                    "generator": {
-                        "type": "object",
-                        "properties": {
-                            "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
-                        }
+fn ping_spec(command: &str) -> serde_json::Value {
+    json!({
+        "seed": 1,
+        "start": "2024-01-01",
+        "end": "2024-01-04",
+        "channels": {
+            "logger": { "format": {}, "type": "stream", "command": command }
+        },
+        "effects": {
+            "ping": {
+                "channel": "logger",
+                "trigger": "hz(1, day)",
+                "generator": {
+                    "type": "object",
+                    "properties": {
+                        "id": { "type": "number", "minimum": 1, "scale": 0, "step": 1 }
                     }
                 }
             }
-        }),
+        }
+    })
+}
+
+fn lines(path: &Path) -> usize {
+    fs::read_to_string(path).unwrap().lines().count()
+}
+
+#[test]
+fn path_to_file_uses_only_that_file() {
+    let tmp = TempDir::new().unwrap();
+    let base = tmp.path();
+    let output = base.join("file_output.txt");
+
+    fs::create_dir_all(base.join(".rngo/effects")).unwrap();
+    fs::write(base.join(".rngo/spec.yml"), "not: [valid").unwrap();
+    fs::write(base.join(".rngo/effects/other.yml"), "not: [valid").unwrap();
+
+    let command = format!("cat >> {}", output.display());
+    let spec_path = base.join("external_spec.yml");
+    write_yaml(&spec_path, &ping_spec(&command));
+
+    std::env::set_current_dir(base).unwrap();
+    eval(Some(&spec_path), EvalOptions::default()).unwrap();
+
+    assert!(lines(&output) > 0);
+    assert!(base.join(".rngo/evals/last/log.sqlite").exists());
+}
+
+#[test]
+fn path_to_rngo_dir_merges_its_files() {
+    let tmp = TempDir::new().unwrap();
+    let base = tmp.path();
+    let output = base.join("rngo_dir_output.txt");
+
+    let rngo_dir = base.join("project/.rngo");
+    fs::create_dir_all(rngo_dir.join("effects")).unwrap();
+    fs::create_dir_all(rngo_dir.join("channels")).unwrap();
+    let mut spec = ping_spec("unused");
+    let effect = spec["effects"]["ping"].take();
+    write_yaml(rngo_dir.join("effects/ping.yml"), &effect);
+    let mut channel = spec["channels"]["logger"].take();
+    channel["command"] = json!(format!("cat >> {}", output.display()));
+    write_yaml(rngo_dir.join("channels/logger.yml"), &channel);
+    write_yaml(
+        rngo_dir.join("spec.yml"),
+        &json!({ "seed": 1, "start": "2024-01-01", "end": "2024-01-04" }),
     );
 
-    eval(
-        base,
-        EvalOptions {
-            spec_path: Some(&spec_path),
-            ..Default::default()
-        },
-    )
-    .unwrap();
+    eval(Some(&rngo_dir), EvalOptions::default()).unwrap();
 
-    let content = fs::read_to_string(&output).unwrap();
-    assert!(
-        content.lines().count() > 0,
-        "eval should use the spec file passed via --spec"
-    );
+    assert!(lines(&output) > 0);
+    assert!(rngo_dir.join("evals/last/log.sqlite").exists());
+}
+
+#[test]
+fn path_to_project_dir_uses_the_rngo_dir_inside() {
+    let tmp = TempDir::new().unwrap();
+    let base = tmp.path();
+    let output = base.join("project_output.txt");
+
+    fs::create_dir_all(base.join(".rngo")).unwrap();
+    let command = format!("cat >> {}", output.display());
+    write_yaml(base.join(".rngo/spec.yml"), &ping_spec(&command));
+
+    eval(Some(base), EvalOptions::default()).unwrap();
+
+    assert!(lines(&output) > 0);
+    assert!(base.join(".rngo/evals/last/log.sqlite").exists());
+}
+
+#[test]
+fn path_to_dir_without_rngo_dir_is_an_error() {
+    let tmp = TempDir::new().unwrap();
+
+    let error = eval(Some(tmp.path()), EvalOptions::default()).unwrap_err();
+
+    let message = error.to_string();
+    assert!(message.contains(&tmp.path().display().to_string()));
+    assert!(message.contains("no .rngo directory"));
+}
+
+#[test]
+fn path_that_does_not_exist_is_an_error() {
+    let tmp = TempDir::new().unwrap();
+    let missing = tmp.path().join("missing.yml");
+
+    let error = eval(Some(&missing), EvalOptions::default()).unwrap_err();
+
+    assert!(error.to_string().contains(&missing.display().to_string()));
 }
 
 #[test]
@@ -574,7 +630,7 @@ fn generators_dir_yml_files_are_referenceable_by_type_name() {
         }),
     );
 
-    eval(base, EvalOptions::default()).unwrap();
+    eval(Some(base), EvalOptions::default()).unwrap();
 
     let content = fs::read_to_string(&output).unwrap();
     let lines: Vec<_> = content.lines().collect();
@@ -630,7 +686,7 @@ fn signals_are_evaluated_and_written_to_eval_dir() {
         }),
     );
 
-    eval(base, EvalOptions::default()).unwrap();
+    eval(Some(base), EvalOptions::default()).unwrap();
 
     let (has_events_value, has_events_passed) = signal_outcome(base, "hasEvents");
     assert!(has_events_passed);
@@ -679,7 +735,7 @@ fn signals_dir_yml_files_are_merged_into_spec() {
         }),
     );
 
-    eval(base, EvalOptions::default()).unwrap();
+    eval(Some(base), EvalOptions::default()).unwrap();
 
     let (_, passed) = signal_outcome(base, "has-events");
     assert!(passed);
@@ -721,7 +777,7 @@ fn run_returns_false_when_a_signal_fails() {
         }),
     );
 
-    let passed = eval(base, EvalOptions::default()).unwrap();
+    let passed = eval(Some(base), EvalOptions::default()).unwrap();
     assert!(!passed, "eval should fail when a signal's expect fails");
 }
 
@@ -763,7 +819,7 @@ fn run_returns_false_when_a_signal_errors() {
         }),
     );
 
-    let passed = eval(base, EvalOptions::default()).unwrap();
+    let passed = eval(Some(base), EvalOptions::default()).unwrap();
     assert!(!passed, "eval should fail when a signal errors");
 }
 
@@ -816,7 +872,7 @@ fn channel_with_no_effects_is_an_output_source() {
         }),
     );
 
-    eval(base, EvalOptions::default()).unwrap();
+    eval(Some(base), EvalOptions::default()).unwrap();
 
     let (value, passed) = signal_outcome(base, "tail-outputs");
     assert!(
@@ -867,7 +923,7 @@ fn dry_run_does_not_persist_or_run_channels() {
     );
 
     let passed = eval(
-        base,
+        Some(base),
         EvalOptions {
             dry_run: true,
             ..Default::default()
@@ -916,7 +972,7 @@ fn dry_run_returns_error_when_simulation_cannot_be_built() {
     );
 
     let result = eval(
-        base,
+        Some(base),
         EvalOptions {
             dry_run: true,
             ..Default::default()
@@ -959,7 +1015,7 @@ fn dry_run_rejects_invalid_effect_limit() {
     );
 
     let error = eval(
-        base,
+        Some(base),
         EvalOptions {
             dry_run: true,
             ..Default::default()
@@ -1015,7 +1071,7 @@ fn limit_caps_total_effects_produced() {
     );
 
     eval(
-        base,
+        Some(base),
         EvalOptions {
             limit: std::num::NonZeroU64::new(3),
             ..Default::default()
@@ -1065,7 +1121,7 @@ fn signals_can_read_simulation_timing() {
         }),
     );
 
-    assert!(eval(base, EvalOptions::default()).unwrap());
+    assert!(eval(Some(base), EvalOptions::default()).unwrap());
 
     let (_, passed) = signal_outcome(base, "simulation-times");
     assert!(
@@ -1144,7 +1200,7 @@ fn future_inputs_are_sent_once_their_time_arrives() {
     write_timed_spec(base, "now + seconds(3)", &sent_log);
 
     eval(
-        base,
+        Some(base),
         EvalOptions {
             realtime: true,
             ..Default::default()
@@ -1172,7 +1228,7 @@ fn future_inputs_are_sent_right_away_by_default() {
 
     let started = std::time::Instant::now();
     eval(
-        base,
+        Some(base),
         EvalOptions {
             limit: std::num::NonZeroU64::new(10),
             ..Default::default()
@@ -1208,7 +1264,7 @@ fn stopping_a_waiting_run_still_audits_it() {
 
     let started = std::time::Instant::now();
     let succeeded = eval(
-        base,
+        Some(base),
         EvalOptions {
             realtime: true,
             stop,
@@ -1240,7 +1296,9 @@ fn non_mapping_spec_file_is_an_error_naming_the_file() {
     fs::create_dir_all(base.join(".rngo")).unwrap();
     fs::write(base.join(".rngo/spec.yml"), "this is not a spec").unwrap();
 
-    let error = eval(base, EvalOptions::default()).unwrap_err().to_string();
+    let error = eval(Some(base), EvalOptions::default())
+        .unwrap_err()
+        .to_string();
 
     assert!(error.contains("spec.yml"), "{error}");
     assert!(error.contains("expected a YAML mapping"), "{error}");
@@ -1271,7 +1329,9 @@ fn stream_channel_whose_command_dies_fails_the_run_with_status_and_stderr() {
         &json!({ "type": "stream", "command": "echo 'connection refused' >&2; exit 2" }),
     );
 
-    let error = eval(base, EvalOptions::default()).unwrap_err().to_string();
+    let error = eval(Some(base), EvalOptions::default())
+        .unwrap_err()
+        .to_string();
 
     assert!(error.contains("channel `db`"), "{error}");
     assert!(error.contains("exit status: 2"), "{error}");

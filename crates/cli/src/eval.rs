@@ -12,11 +12,9 @@ use uuid::Uuid;
 
 /// Options for a single `rngo eval`.
 #[derive(Default)]
-pub struct EvalOptions<'a> {
+pub struct EvalOptions {
     /// Print events to stdout instead of sending them to channels.
     pub stdout: bool,
-    /// Load this spec file instead of the `.rngo` directory.
-    pub spec_path: Option<&'a Path>,
     /// Only check that the simulation builds.
     pub dry_run: bool,
     /// Cap on the number of inputs produced.
@@ -27,23 +25,23 @@ pub struct EvalOptions<'a> {
     pub stop: StopHandle,
 }
 
-/// Runs a simulation from the `.rngo` directory under `base`; returns whether it completed with every signal passing.
-pub fn eval(base: &Path, options: EvalOptions) -> Result<bool, Box<dyn Error>> {
+/// Runs a simulation from a spec file, a `.rngo` directory, or a directory containing one (default `./.rngo`); returns whether it completed with every signal passing.
+pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn Error>> {
     let EvalOptions {
         stdout,
-        spec_path,
         dry_run,
         limit,
         realtime,
         stop,
     } = options;
 
-    let _ = dotenvy::from_path(base.join(".env"));
+    let Source {
+        spec,
+        rngo_dir,
+        base,
+    } = resolve_source(path)?;
 
-    let spec = match spec_path {
-        Some(path) => load_spec_file(path)?,
-        None => load_spec(base)?,
-    };
+    let _ = dotenvy::from_path(base.join(".env"));
 
     let dialect = Dialect::primitive();
 
@@ -72,7 +70,7 @@ pub fn eval(base: &Path, options: EvalOptions) -> Result<bool, Box<dyn Error>> {
         return Ok(true);
     }
 
-    let eval_dir = prepare_eval_dir(base, &spec, rewritten.as_ref())?;
+    let eval_dir = prepare_eval_dir(&rngo_dir, &spec, rewritten.as_ref())?;
 
     let sqlite_run_log = SqliteRunLog::new(eval_dir.clone())?;
     let reader = sqlite_run_log.clone();
@@ -178,8 +176,57 @@ fn load_spec_file(path: &Path) -> Result<spec::Spec, Box<dyn Error>> {
     Ok(spec::from_value(value).map_err(join_errors)?)
 }
 
-fn load_spec(base: &Path) -> Result<spec::Spec, Box<dyn Error>> {
-    let spec_path = base.join(".rngo/spec.yml");
+/// Where an eval's spec comes from, and the directory its `.env` and `evals/` belong to.
+struct Source {
+    spec: spec::Spec,
+    rngo_dir: PathBuf,
+    base: PathBuf,
+}
+
+/// Resolves the path argument: a file is the whole spec, a directory named `.rngo` is built from,
+/// any other directory is searched for a `.rngo` inside, and no path means `./.rngo`.
+fn resolve_source(path: Option<&Path>) -> Result<Source, Box<dyn Error>> {
+    let Some(path) = path else {
+        let rngo_dir = PathBuf::from(".rngo");
+        return Ok(Source {
+            spec: load_spec(&rngo_dir)?,
+            rngo_dir,
+            base: PathBuf::from("."),
+        });
+    };
+    if path.is_file() {
+        return Ok(Source {
+            spec: load_spec_file(path)?,
+            rngo_dir: PathBuf::from(".rngo"),
+            base: PathBuf::from("."),
+        });
+    }
+    if !path.is_dir() {
+        return Err(format!("{}: no such file or directory", path.display()).into());
+    }
+    let rngo_dir = if path.file_name().is_some_and(|name| name == ".rngo") {
+        path.to_path_buf()
+    } else {
+        let inner = path.join(".rngo");
+        if !inner.is_dir() {
+            return Err(format!("{}: no .rngo directory found", path.display()).into());
+        }
+        inner
+    };
+    let base = match rngo_dir.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
+        _ => PathBuf::from("."),
+    };
+    Ok(Source {
+        spec: load_spec(&rngo_dir)?,
+        rngo_dir,
+        base,
+    })
+}
+
+/// Builds a spec from `spec.yml` in `rngo_dir`, merged with each section's per-file `*.yml`, keyed by file stem.
+fn load_spec(rngo_dir: &Path) -> Result<spec::Spec, Box<dyn Error>> {
+    let spec_path = rngo_dir.join("spec.yml");
 
     let mut spec: serde_json::Value = if spec_path.exists() {
         read_yaml(&spec_path)?
@@ -187,103 +234,43 @@ fn load_spec(base: &Path) -> Result<spec::Spec, Box<dyn Error>> {
         serde_json::json!({ "seed": 1, "effects": {} })
     };
 
-    if !spec["effects"].is_object() {
-        spec["effects"] = serde_json::json!({});
-    }
-
-    let effects_dir = base.join(".rngo/effects");
-    if effects_dir.is_dir() {
-        let mut paths: Vec<_> = fs::read_dir(&effects_dir)?
-            .filter_map(|e| e.ok())
-            .map(|e| e.path())
-            .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("yml"))
-            .collect();
-        paths.sort();
-
-        for path in paths {
-            let key = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .ok_or_else(|| format!("invalid filename: {}", path.display()))?
-                .to_string();
-            let effect: serde_json::Value = read_yaml(&path)?;
-            spec["effects"][key] = effect;
-        }
-    }
-
-    if !spec["channels"].is_object() {
-        spec["channels"] = serde_json::json!({});
-    }
-
-    let channels_dir = base.join(".rngo/channels");
-    if channels_dir.is_dir() {
-        let mut paths: Vec<_> = fs::read_dir(&channels_dir)?
-            .filter_map(|e| e.ok())
-            .map(|e| e.path())
-            .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("yml"))
-            .collect();
-        paths.sort();
-
-        for path in paths {
-            let key = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .ok_or_else(|| format!("invalid filename: {}", path.display()))?
-                .to_string();
-            let channel: serde_json::Value = read_yaml(&path)?;
-            spec["channels"][key] = channel;
-        }
-    }
-
-    if !spec["generators"].is_object() {
-        spec["generators"] = serde_json::json!({});
-    }
-
-    let generators_dir = base.join(".rngo/generators");
-    if generators_dir.is_dir() {
-        let mut paths: Vec<_> = fs::read_dir(&generators_dir)?
-            .filter_map(|e| e.ok())
-            .map(|e| e.path())
-            .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("yml"))
-            .collect();
-        paths.sort();
-
-        for path in paths {
-            let key = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .ok_or_else(|| format!("invalid filename: {}", path.display()))?
-                .to_string();
-            let generator: serde_json::Value = read_yaml(&path)?;
-            spec["generators"][key] = generator;
-        }
-    }
-
-    if !spec["signals"].is_object() {
-        spec["signals"] = serde_json::json!({});
-    }
-
-    let signals_dir = base.join(".rngo/signals");
-    if signals_dir.is_dir() {
-        let mut paths: Vec<_> = fs::read_dir(&signals_dir)?
-            .filter_map(|e| e.ok())
-            .map(|e| e.path())
-            .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("yml"))
-            .collect();
-        paths.sort();
-
-        for path in paths {
-            let key = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .ok_or_else(|| format!("invalid filename: {}", path.display()))?
-                .to_string();
-            let signal: serde_json::Value = read_yaml(&path)?;
-            spec["signals"][key] = signal;
-        }
+    for section in ["effects", "channels", "generators", "signals"] {
+        merge_section(&mut spec, rngo_dir, section)?;
     }
 
     Ok(spec::from_value(spec).map_err(join_errors)?)
+}
+
+fn merge_section(
+    spec: &mut serde_json::Value,
+    rngo_dir: &Path,
+    section: &str,
+) -> Result<(), Box<dyn Error>> {
+    if !spec[section].is_object() {
+        spec[section] = serde_json::json!({});
+    }
+
+    let section_dir = rngo_dir.join(section);
+    if !section_dir.is_dir() {
+        return Ok(());
+    }
+
+    let mut paths: Vec<_> = fs::read_dir(&section_dir)?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("yml"))
+        .collect();
+    paths.sort();
+
+    for path in paths {
+        let key = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .ok_or_else(|| format!("invalid filename: {}", path.display()))?
+            .to_string();
+        spec[section][key] = read_yaml(&path)?;
+    }
+    Ok(())
 }
 
 /// Replaces every channel with a `stdout` one that keeps only its `format`.
@@ -303,11 +290,11 @@ fn to_stdout_channels(spec: &spec::Spec) -> spec::Spec {
 /// Creates the eval directory with `spec.json`, plus `spec.rewritten.json` when the spec that ran
 /// differs from the one written.
 fn prepare_eval_dir(
-    base: &Path,
+    rngo_dir: &Path,
     spec: &spec::Spec,
     rewritten: Option<&spec::Spec>,
 ) -> Result<PathBuf, Box<dyn Error>> {
-    let eval_dir = new_eval_dir(base)?;
+    let eval_dir = new_eval_dir(rngo_dir)?;
     fs::create_dir_all(&eval_dir)?;
     fs::write(
         eval_dir.join("spec.json"),
@@ -319,23 +306,23 @@ fn prepare_eval_dir(
             serde_json::to_string_pretty(rewritten)?,
         )?;
     }
-    update_last_symlink(base, &eval_dir)?;
+    update_last_symlink(rngo_dir, &eval_dir)?;
     Ok(eval_dir)
 }
 
-fn new_eval_dir(base: &Path) -> Result<PathBuf, Box<dyn Error>> {
-    let evals_dir = base.join(".rngo/evals");
+fn new_eval_dir(rngo_dir: &Path) -> Result<PathBuf, Box<dyn Error>> {
+    let evals_dir = rngo_dir.join("evals");
     fs::create_dir_all(&evals_dir)?;
     let id = Uuid::now_v7();
     Ok(evals_dir.join(id.to_string()))
 }
 
-fn update_last_symlink(base: &Path, eval_dir: &Path) -> Result<(), Box<dyn Error>> {
-    let link = base.join(".rngo/evals/last");
+fn update_last_symlink(rngo_dir: &Path, eval_dir: &Path) -> Result<(), Box<dyn Error>> {
+    let link = rngo_dir.join("evals/last");
     if link.exists() || link.is_symlink() {
         fs::remove_file(&link)?;
     }
-    let target = eval_dir.strip_prefix(base.join(".rngo/evals"))?;
+    let target = eval_dir.strip_prefix(rngo_dir.join("evals"))?;
     #[cfg(unix)]
     std::os::unix::fs::symlink(target, &link)?;
     #[cfg(windows)]
