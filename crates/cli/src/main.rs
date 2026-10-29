@@ -44,12 +44,8 @@ enum Commands {
         /// Wait for each event's timestamp before sending it instead of sending right away
         #[arg(long)]
         realtime: bool,
-        /// Path to a spec file (instead of building from the `.rngo` directory)
-        #[arg(long)]
-        spec: Option<std::path::PathBuf>,
-        /// Path to the `.rngo` directory
-        #[arg(long, default_value = ".")]
-        dir: std::path::PathBuf,
+        /// A spec file, a `.rngo` directory, or a directory containing `.rngo` (default: `./.rngo`)
+        path: Option<std::path::PathBuf>,
     },
     /// Manage rngo agent skills
     Skills {
@@ -102,13 +98,11 @@ fn main() {
             dry_run,
             limit,
             realtime,
-            dir,
-            spec,
+            path,
         } => match eval::eval(
-            &dir,
+            path.as_deref(),
             eval::EvalOptions {
                 stdout,
-                spec_path: spec.as_deref(),
                 dry_run,
                 limit,
                 realtime,
