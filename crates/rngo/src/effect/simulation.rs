@@ -1,9 +1,10 @@
 use crate::RunLogReader;
 use crate::build::{BuildError, EffectKey, SimulationKey};
+use crate::effect::phase::{Phase, PhaseBuilder};
 use crate::effect::{Effect, EffectBuilder, Input, SkippedInput};
 use crate::log::SimpleEventRunLog;
 use crate::moment::Moment;
-use chrono::{TimeDelta, Utc};
+use chrono::Utc;
 use indexmap::IndexMap;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -69,9 +70,8 @@ impl Iterator for StandaloneSimulation {
 #[derive(Debug)]
 pub struct SimulationBuilder {
     pub seed: u64,
-    pub start: Moment,
-    pub end: Moment,
-    phases: IndexMap<String, (Moment, Moment)>,
+    default_phase: PhaseBuilder,
+    phases: IndexMap<String, PhaseBuilder>,
     run_log_reader: Option<Rc<dyn RunLogReader>>,
     effect_builders: Vec<EffectBuilder>,
     limit: Option<u64>,
@@ -81,8 +81,7 @@ impl SimulationBuilder {
     fn new() -> Self {
         SimulationBuilder {
             seed: 1,
-            start: Moment::Relative(TimeDelta::days(-30)),
-            end: Moment::Relative(TimeDelta::zero()),
+            default_phase: PhaseBuilder::default(),
             phases: IndexMap::new(),
             run_log_reader: None,
             effect_builders: vec![],
@@ -116,7 +115,7 @@ impl SimulationBuilder {
     }
 
     pub fn set_start(&mut self, start: Moment) -> &mut Self {
-        self.start = start;
+        self.default_phase.set_start(start);
         self
     }
 
@@ -126,18 +125,30 @@ impl SimulationBuilder {
     }
 
     pub fn set_end(&mut self, end: Moment) -> &mut Self {
-        self.end = end;
+        self.default_phase.set_end(end);
         self
     }
 
-    /// Defines a named phase with its resolved `start` and `end`; an effect joins it via `EffectBuilder::set_phase`.
-    pub fn set_phase(&mut self, name: String, start: Moment, end: Moment) -> &mut Self {
-        self.phases.insert(name, (start, end));
+    /// Defines a named phase; `f` configures its builder, and whatever it leaves unset comes from the default phase.
+    pub fn with_phase(
+        &mut self,
+        name: &str,
+        f: impl FnOnce(PhaseBuilder) -> PhaseBuilder,
+    ) -> &mut Self {
+        self.phases.insert(name.into(), f(PhaseBuilder::default()));
         self
     }
 
-    pub fn set_effect(&mut self, effect: EffectBuilder) {
-        self.effect_builders.push(effect)
+    /// The resolved phase `name`, or the default phase for `None`; `None` if no such phase exists.
+    pub fn phase(&self, name: Option<&str>) -> Option<Phase> {
+        let default = self.default_phase.build();
+        match name {
+            None => Some(default),
+            Some(name) => self
+                .phases
+                .get(name)
+                .map(|phase| phase.clone().parent(&default).build()),
+        }
     }
 
     pub fn with_effect(
@@ -161,8 +172,9 @@ impl SimulationBuilder {
     pub fn build(self) -> Result<Simulation, Vec<BuildError>> {
         let mut errors = vec![];
         let now = Utc::now().fixed_offset();
-        let start = self.start.resolve(now);
-        let end = self.end.resolve(now);
+        let default = self.default_phase.build();
+        let start = default.start.clone().resolve(now);
+        let end = default.end.clone().resolve(now);
 
         if start >= end {
             errors.push(BuildError::simulation(
@@ -173,11 +185,9 @@ impl SimulationBuilder {
 
         let mut origin = start;
         let mut phase_bounds = HashMap::new();
-        for (name, (phase_start, phase_end)) in &self.phases {
-            let (phase_start, phase_end) = (
-                phase_start.clone().resolve(now),
-                phase_end.clone().resolve(now),
-            );
+        for (name, phase) in &self.phases {
+            let phase = phase.clone().parent(&default).build();
+            let (phase_start, phase_end) = (phase.start.resolve(now), phase.end.resolve(now));
             if phase_start >= phase_end {
                 errors.push(BuildError::simulation(
                     SimulationKey::Start,

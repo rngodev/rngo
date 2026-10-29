@@ -1,5 +1,6 @@
 mod clock;
 pub mod generator;
+pub mod phase;
 pub mod simulation;
 mod trigger;
 

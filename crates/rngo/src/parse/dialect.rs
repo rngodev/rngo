@@ -4,9 +4,9 @@ use super::signal::SignalParser;
 use crate::ParseErrorKind;
 use crate::audit::signal::Signal;
 use crate::audit::{Audit, AuditBuilder, signal};
+use crate::effect::generator;
 use crate::effect::generator::custom::CustomParser;
 use crate::effect::simulation::{Simulation, SimulationBuilder};
-use crate::effect::{Effect, generator};
 use crate::moment::Moment;
 use crate::parse::ChannelParser;
 use crate::proxy::channel::{self, ChannelBuilder};
@@ -103,32 +103,35 @@ impl Dialect {
                 .push(ParseError::invalid("the default phase has no scenarios").at(["scenarios"]));
         }
 
-        let mut phase_moments: HashMap<&str, (Moment, Moment)> = HashMap::new();
         let mut channel_phases: HashMap<&str, &str> = HashMap::new();
         let mut effect_phases: HashMap<&str, &str> = HashMap::new();
         let now = chrono::Utc::now().fixed_offset();
 
         for (name, phase) in &spec.phases {
-            let mut moment = |field: &str, expr: &Option<String>, default: &Moment| match expr {
-                Some(expr) => match simulation_moment_parser.parse(field, expr) {
-                    Ok(moment) => moment,
-                    Err(e) => {
-                        errors.extend(e.into_iter().map(|e| e.prefixed(&["phases", name])));
-                        default.clone()
+            simulation_builder.with_phase(name, |mut builder| {
+                for (field, expr) in [("start", &phase.start), ("end", &phase.end)] {
+                    let Some(expr) = expr else { continue };
+                    match simulation_moment_parser.parse(field, expr) {
+                        Ok(moment) if field == "start" => {
+                            builder.set_start(moment);
+                        }
+                        Ok(moment) => {
+                            builder.set_end(moment);
+                        }
+                        Err(e) => {
+                            errors.extend(e.into_iter().map(|e| e.prefixed(&["phases", name])))
+                        }
                     }
-                },
-                None => default.clone(),
-            };
-            let start = moment("start", &phase.start, &simulation_builder.start);
-            let end = moment("end", &phase.end, &simulation_builder.end);
+                }
+                builder
+            });
+            let resolved = simulation_builder.phase(Some(name)).unwrap();
 
-            if start.clone().resolve(now) >= end.clone().resolve(now) {
+            if resolved.start.resolve(now) >= resolved.end.resolve(now) {
                 errors.push(
                     ParseError::invalid("start must be before end").at(["phases", name, "end"]),
                 );
             }
-            simulation_builder.set_phase(name.clone(), start.clone(), end.clone());
-            phase_moments.insert(name, (start, end));
 
             for channel in &phase.channels {
                 if !spec.channels.contains_key(channel) {
@@ -181,58 +184,12 @@ impl Dialect {
         );
 
         for (key, effect) in &spec.effects {
-            let mut effect_builder = Effect::builder(key.clone());
             let phase = effect_phases.get(key.as_str()).copied().or_else(|| {
                 let channel = effect.channel.as_deref()?;
                 channel_phases.get(channel).copied()
             });
-            let (phase_start, phase_end) = match phase {
-                Some(phase) => phase_moments[phase].clone(),
-                None => (
-                    simulation_builder.start.clone(),
-                    simulation_builder.end.clone(),
-                ),
-            };
-            if let Some(phase) = phase {
-                effect_builder.set_phase(phase.to_string());
-            }
-            let effect_moment_parser = Moment::parser().simulation(&phase_start, &phase_end);
-
-            if let Some(start) = &effect.start {
-                match effect_moment_parser.parse("start", start) {
-                    Ok(timestamp) => {
-                        effect_builder.set_start(timestamp);
-                    }
-                    Err(mut e) => errors.append(&mut e),
-                };
-            };
-
-            if let Some(end) = &effect.end {
-                match effect_moment_parser.parse("end", end) {
-                    Ok(timestamp) => {
-                        effect_builder.set_end(timestamp);
-                    }
-                    Err(mut e) => errors.append(&mut e),
-                };
-            };
-
-            if let Some(limit) = effect.limit {
-                effect_builder.set_limit(limit);
-            }
-
-            if let Some(trigger_union) = &effect.trigger {
-                let trigger = match trigger_union {
-                    spec::TriggerUnion::Shorthand(rate) => {
-                        spec::Trigger::Clock { rate: rate.clone() }
-                    }
-                    spec::TriggerUnion::Full(trigger) => trigger.clone(),
-                };
-
-                match trigger {
-                    spec::Trigger::Clock { rate } => effect_builder.set_trigger_expression(rate),
-                    spec::Trigger::Effect { key } => effect_builder.set_trigger_effect(key),
-                };
-            }
+            let resolved = simulation_builder.phase(phase).unwrap();
+            let effect_moment_parser = Moment::parser().simulation(&resolved.start, &resolved.end);
 
             let visitor = GeneratorParseVisitor::new(
                 self.generator_parsers.clone(),
@@ -242,13 +199,61 @@ impl Dialect {
                 vec!["effects".into(), key.clone(), "generator".into()],
             );
 
-            match visitor.parse() {
-                Ok(generator_builder) => {
-                    effect_builder.set_generator(generator_builder);
-                    simulation_builder.set_effect(effect_builder);
+            let generator_builder = match visitor.parse() {
+                Ok(generator_builder) => generator_builder,
+                Err(mut e) => {
+                    errors.append(&mut e);
+                    continue;
                 }
-                Err(mut e) => errors.append(&mut e),
-            }
+            };
+
+            simulation_builder.with_effect(key, |mut effect_builder| {
+                effect_builder.set_generator(generator_builder);
+
+                if let Some(phase) = phase {
+                    effect_builder.set_phase(phase.to_string());
+                }
+
+                if let Some(start) = &effect.start {
+                    match effect_moment_parser.parse("start", start) {
+                        Ok(timestamp) => {
+                            effect_builder.set_start(timestamp);
+                        }
+                        Err(mut e) => errors.append(&mut e),
+                    };
+                };
+
+                if let Some(end) = &effect.end {
+                    match effect_moment_parser.parse("end", end) {
+                        Ok(timestamp) => {
+                            effect_builder.set_end(timestamp);
+                        }
+                        Err(mut e) => errors.append(&mut e),
+                    };
+                };
+
+                if let Some(limit) = effect.limit {
+                    effect_builder.set_limit(limit);
+                }
+
+                if let Some(trigger_union) = &effect.trigger {
+                    let trigger = match trigger_union {
+                        spec::TriggerUnion::Shorthand(rate) => {
+                            spec::Trigger::Clock { rate: rate.clone() }
+                        }
+                        spec::TriggerUnion::Full(trigger) => trigger.clone(),
+                    };
+
+                    match trigger {
+                        spec::Trigger::Clock { rate } => {
+                            effect_builder.set_trigger_expression(rate)
+                        }
+                        spec::Trigger::Effect { key } => effect_builder.set_trigger_effect(key),
+                    };
+                }
+
+                effect_builder
+            });
         }
 
         if !errors.is_empty() {

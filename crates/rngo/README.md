@@ -22,7 +22,7 @@ Next a `Simulation`:
 ```rust
 let mut simulation = rngo::Simulation.builder()
     .seed(41)
-    .start(TimeDelta.months(-3))
+\    .start(TimeDelta.months(-3))
     .end(TimeDelta.zero())
     .with_effect("user", |effect| {
         effect
