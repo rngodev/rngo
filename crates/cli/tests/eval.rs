@@ -1346,3 +1346,85 @@ fn stream_channel_whose_command_dies_fails_the_run_with_status_and_stderr() {
     assert!(error.contains("exit status: 2"), "{error}");
     assert!(error.contains("connection refused"), "{error}");
 }
+
+fn write_phase_fixture(base: &Path) {
+    fs::create_dir_all(base.join(".rngo/effects")).unwrap();
+    write_yaml(
+        base.join(".rngo/spec.yml"),
+        &json!({
+            "seed": 1,
+            "start": "2024-01-01",
+            "end": "2024-01-11",
+            "phases": {
+                "late": {
+                    "effects": ["ping"],
+                    "start": "2024-01-06",
+                    "scenarios": { "later": { "start": "2024-01-09" } }
+                }
+            }
+        }),
+    );
+    write_yaml(
+        base.join(".rngo/effects/ping.yml"),
+        &json!({
+            "trigger": "hz(1, day)",
+            "generator": { "type": "constant", "value": "x" }
+        }),
+    );
+}
+
+fn first_input_timestamp(base: &Path) -> i64 {
+    let connection = rusqlite::Connection::open(base.join(".rngo/evals/last/log.sqlite")).unwrap();
+    connection
+        .query_row("SELECT MIN(timestamp) FROM inputs", [], |row| row.get(0))
+        .unwrap()
+}
+
+#[test]
+fn scenario_patches_phases_and_records_the_rewritten_spec() {
+    let tmp = TempDir::new().unwrap();
+    let base = tmp.path();
+    write_phase_fixture(base);
+
+    eval(Some(base), EvalOptions::default()).unwrap();
+    let first = first_input_timestamp(base);
+    assert!((1_704_499_200_000..1_704_758_400_000).contains(&first));
+
+    eval(
+        Some(base),
+        EvalOptions {
+            scenario: Some("later".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert!(first_input_timestamp(base) >= 1_704_758_400_000);
+
+    let read = |name: &str| -> serde_json::Value {
+        serde_json::from_str(&fs::read_to_string(base.join(".rngo/evals/last").join(name)).unwrap())
+            .unwrap()
+    };
+    assert_eq!(read("spec.json")["phases"]["late"]["start"], "2024-01-06");
+    assert_eq!(
+        read("spec.rewritten.json")["phases"]["late"]["start"],
+        "2024-01-09"
+    );
+}
+
+#[test]
+fn unknown_scenario_is_an_error() {
+    let tmp = TempDir::new().unwrap();
+    let base = tmp.path();
+    write_phase_fixture(base);
+
+    let error = eval(
+        Some(base),
+        EvalOptions {
+            scenario: Some("nope".into()),
+            dry_run: true,
+            ..Default::default()
+        },
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("no phase defines scenario"));
+}

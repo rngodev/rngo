@@ -1,9 +1,11 @@
 use crate::RunLogReader;
-use crate::build::{BuildError, SimulationKey};
+use crate::build::{BuildError, EffectKey, SimulationKey};
 use crate::effect::{Effect, EffectBuilder, Input, SkippedInput};
 use crate::log::SimpleEventRunLog;
 use crate::moment::Moment;
 use chrono::{TimeDelta, Utc};
+use indexmap::IndexMap;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -69,6 +71,7 @@ pub struct SimulationBuilder {
     pub seed: u64,
     pub start: Moment,
     pub end: Moment,
+    phases: IndexMap<String, (Moment, Moment)>,
     run_log_reader: Option<Rc<dyn RunLogReader>>,
     effect_builders: Vec<EffectBuilder>,
     limit: Option<u64>,
@@ -80,6 +83,7 @@ impl SimulationBuilder {
             seed: 1,
             start: Moment::Relative(TimeDelta::days(-30)),
             end: Moment::Relative(TimeDelta::zero()),
+            phases: IndexMap::new(),
             run_log_reader: None,
             effect_builders: vec![],
             limit: None,
@@ -126,6 +130,12 @@ impl SimulationBuilder {
         self
     }
 
+    /// Defines a named phase with its resolved `start` and `end`; an effect joins it via `EffectBuilder::set_phase`.
+    pub fn set_phase(&mut self, name: String, start: Moment, end: Moment) -> &mut Self {
+        self.phases.insert(name, (start, end));
+        self
+    }
+
     pub fn set_effect(&mut self, effect: EffectBuilder) {
         self.effect_builders.push(effect)
     }
@@ -161,6 +171,23 @@ impl SimulationBuilder {
             ));
         }
 
+        let mut origin = start;
+        let mut phase_bounds = HashMap::new();
+        for (name, (phase_start, phase_end)) in &self.phases {
+            let (phase_start, phase_end) = (
+                phase_start.clone().resolve(now),
+                phase_end.clone().resolve(now),
+            );
+            if phase_start >= phase_end {
+                errors.push(BuildError::simulation(
+                    SimulationKey::Start,
+                    format!("phase \"{name}\": start must be before end"),
+                ));
+            }
+            origin = origin.min(phase_start);
+            phase_bounds.insert(name.as_str(), (phase_start, phase_end));
+        }
+
         let Some(run_log_reader) = self.run_log_reader else {
             errors.push(BuildError::simulation(
                 SimulationKey::RunLogReader,
@@ -172,10 +199,25 @@ impl SimulationBuilder {
         let mut effects = vec![];
 
         for mut effect_builder in self.effect_builders {
+            let (sim_start, sim_end) = match effect_builder.phase.clone() {
+                Some(phase) => match phase_bounds.get(phase.as_str()) {
+                    Some(bounds) => *bounds,
+                    None => {
+                        errors.push(BuildError::effect(
+                            effect_builder.key.clone(),
+                            EffectKey::Config,
+                            format!("unknown phase \"{phase}\""),
+                        ));
+                        continue;
+                    }
+                },
+                None => (start, end),
+            };
             effect_builder
                 .set_now(now)
-                .set_sim_start(start)
-                .set_sim_end(end)
+                .set_sim_start(sim_start)
+                .set_sim_end(sim_end)
+                .set_origin(origin)
                 .set_event_run_log(run_log_reader.clone())
                 .set_seed(self.seed);
 

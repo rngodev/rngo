@@ -98,6 +98,71 @@ impl Dialect {
             };
         };
 
+        if spec.scenarios.is_some() {
+            errors
+                .push(ParseError::invalid("the default phase has no scenarios").at(["scenarios"]));
+        }
+
+        let mut phase_moments: HashMap<&str, (Moment, Moment)> = HashMap::new();
+        let mut channel_phases: HashMap<&str, &str> = HashMap::new();
+        let mut effect_phases: HashMap<&str, &str> = HashMap::new();
+        let now = chrono::Utc::now().fixed_offset();
+
+        for (name, phase) in &spec.phases {
+            let mut moment = |field: &str, expr: &Option<String>, default: &Moment| match expr {
+                Some(expr) => match simulation_moment_parser.parse(field, expr) {
+                    Ok(moment) => moment,
+                    Err(e) => {
+                        errors.extend(e.into_iter().map(|e| e.prefixed(&["phases", name])));
+                        default.clone()
+                    }
+                },
+                None => default.clone(),
+            };
+            let start = moment("start", &phase.start, &simulation_builder.start);
+            let end = moment("end", &phase.end, &simulation_builder.end);
+
+            if start.clone().resolve(now) >= end.clone().resolve(now) {
+                errors.push(
+                    ParseError::invalid("start must be before end").at(["phases", name, "end"]),
+                );
+            }
+            simulation_builder.set_phase(name.clone(), start.clone(), end.clone());
+            phase_moments.insert(name, (start, end));
+
+            for channel in &phase.channels {
+                if !spec.channels.contains_key(channel) {
+                    errors.push(
+                        ParseError::new(ParseErrorKind::UnknownChannel(channel.clone()))
+                            .at(["phases", name, "channels"]),
+                    );
+                } else if let Some(other) = channel_phases.insert(channel, name) {
+                    errors.push(
+                        ParseError::invalid(format!(
+                            "channel \"{channel}\" is already claimed by phase \"{other}\""
+                        ))
+                        .at(["phases", name, "channels"]),
+                    );
+                }
+            }
+
+            for effect in &phase.effects {
+                if !spec.effects.contains_key(effect) {
+                    errors.push(
+                        ParseError::invalid(format!("unknown effect \"{effect}\""))
+                            .at(["phases", name, "effects"]),
+                    );
+                } else if let Some(other) = effect_phases.insert(effect, name) {
+                    errors.push(
+                        ParseError::invalid(format!(
+                            "effect \"{effect}\" is already in phase \"{other}\""
+                        ))
+                        .at(["phases", name, "effects"]),
+                    );
+                }
+            }
+        }
+
         for name in spec.generators.keys() {
             if self.generator_parsers.iter().any(|p| p.key() == name) {
                 errors.push(ParseError::invalid(format!(
@@ -117,8 +182,21 @@ impl Dialect {
 
         for (key, effect) in &spec.effects {
             let mut effect_builder = Effect::builder(key.clone());
-            let effect_moment_parser =
-                Moment::parser().simulation(&simulation_builder.start, &simulation_builder.end);
+            let phase = effect_phases.get(key.as_str()).copied().or_else(|| {
+                let channel = effect.channel.as_deref()?;
+                channel_phases.get(channel).copied()
+            });
+            let (phase_start, phase_end) = match phase {
+                Some(phase) => phase_moments[phase].clone(),
+                None => (
+                    simulation_builder.start.clone(),
+                    simulation_builder.end.clone(),
+                ),
+            };
+            if let Some(phase) = phase {
+                effect_builder.set_phase(phase.to_string());
+            }
+            let effect_moment_parser = Moment::parser().simulation(&phase_start, &phase_end);
 
             if let Some(start) = &effect.start {
                 match effect_moment_parser.parse("start", start) {

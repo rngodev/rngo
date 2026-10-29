@@ -30,6 +30,7 @@ pub struct Effect {
     end_offset: i64,
     limit: Option<u64>,
     produced: u64,
+    origin: DateTime<FixedOffset>,
     sim_start: DateTime<FixedOffset>,
     sim_end: DateTime<FixedOffset>,
 }
@@ -66,7 +67,7 @@ impl Iterator for Effect {
             simulation_start: self.sim_start,
             simulation_end: self.sim_end,
         };
-        let timestamp = self.sim_start + TimeDelta::milliseconds(trigger_event.sim_offset);
+        let timestamp = self.origin + TimeDelta::milliseconds(trigger_event.sim_offset);
 
         let result = self.generator.next(&context);
 
@@ -135,6 +136,8 @@ pub struct EffectBuilder {
     now: Option<DateTime<FixedOffset>>,
     sim_start: Option<DateTime<FixedOffset>>,
     sim_end: Option<DateTime<FixedOffset>>,
+    origin: Option<DateTime<FixedOffset>>,
+    pub(crate) phase: Option<String>,
     event_run_log: Option<Rc<dyn RunLogReader>>,
     seed: Option<u64>,
     trigger: TriggerConfig,
@@ -151,6 +154,8 @@ impl EffectBuilder {
             now: None,
             sim_start: None,
             sim_end: None,
+            origin: None,
+            phase: None,
             event_run_log: None,
             seed: None,
             trigger: TriggerConfig::ClockExpression("hz(1, day)".into()),
@@ -215,6 +220,18 @@ impl EffectBuilder {
 
     pub fn set_sim_end(&mut self, end: DateTime<FixedOffset>) -> &mut Self {
         self.sim_end = Some(end);
+        self
+    }
+
+    /// Sets the instant that offsets are measured from; defaults to `sim_start`.
+    pub fn set_origin(&mut self, origin: DateTime<FixedOffset>) -> &mut Self {
+        self.origin = Some(origin);
+        self
+    }
+
+    /// Names the phase whose bounds are `sim_start`/`sim_end`, for error messages.
+    pub fn set_phase(&mut self, phase: String) -> &mut Self {
+        self.phase = Some(phase);
         self
     }
 
@@ -294,23 +311,28 @@ impl EffectBuilder {
         let sim_end = self.sim_end.unwrap_or(now);
         let effect_end = self.end.map(|m| m.resolve(now)).unwrap_or(sim_end);
         let effect_start = self.start.map(|m| m.resolve(now)).unwrap_or(sim_start);
-        let end_offset = (effect_end - sim_start).num_milliseconds().max(0);
-        let start_offset = (effect_start - sim_start).num_milliseconds().max(0);
+        let origin = self.origin.unwrap_or(sim_start);
+        let end_offset = (effect_end - origin).num_milliseconds().max(0);
+        let start_offset = (effect_start - origin).num_milliseconds().max(0);
 
         let mut errors: Vec<BuildError> = vec![];
 
+        let bounds = match &self.phase {
+            Some(phase) => format!("phase \"{phase}\""),
+            None => "simulation".into(),
+        };
         if effect_start < sim_start {
             errors.push(BuildError::effect(
                 self.key.clone(),
                 EffectKey::Start,
-                "start cannot be before simulation start",
+                format!("start cannot be before {bounds} start"),
             ));
         }
         if effect_end > sim_end {
             errors.push(BuildError::effect(
                 self.key.clone(),
                 EffectKey::End,
-                "end cannot be after simulation end",
+                format!("end cannot be after {bounds} end"),
             ));
         }
 
@@ -335,7 +357,7 @@ impl EffectBuilder {
             TriggerConfig::Effect { key } => Ok(Trigger::Effect {
                 run_log_reader: run_log_reader.clone(),
                 key,
-                sim_start,
+                sim_start: origin,
                 last_offset: 0,
             }),
             TriggerConfig::ClockHertz(hertz) => Clock::builder()
@@ -372,6 +394,7 @@ impl EffectBuilder {
                 end_offset,
                 limit: self.limit.map(NonZeroU64::get),
                 produced: 0,
+                origin,
                 sim_start,
                 sim_end,
             }),

@@ -19,6 +19,8 @@ pub struct EvalOptions {
     pub dry_run: bool,
     /// Cap on the number of inputs produced.
     pub limit: Option<std::num::NonZeroU64>,
+    /// Name of a phase scenario to apply to the spec.
+    pub scenario: Option<String>,
     /// Wait for each input's timestamp before sending it instead of sending right away.
     pub realtime: bool,
     /// Stops the eval early; it then finishes and audits what was logged.
@@ -31,6 +33,7 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
         stdout,
         dry_run,
         limit,
+        scenario,
         realtime,
         stop,
     } = options;
@@ -45,11 +48,21 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
 
     let dialect = Dialect::primitive();
 
-    let rewritten = stdout.then(|| to_stdout_channels(&spec));
+    let scenario_spec = scenario
+        .map(|name| spec.with_scenario(&name))
+        .transpose()
+        .map_err(join_errors)?;
+    let patched = scenario_spec.as_ref().unwrap_or(&spec);
+
+    let rewritten = if stdout {
+        Some(to_stdout_channels(patched))
+    } else {
+        scenario_spec.clone()
+    };
     let effective = rewritten.as_ref().unwrap_or(&spec);
 
     let mut simulation_builder = dialect
-        .parse_simulation(spec.clone())
+        .parse_simulation(patched.clone())
         .map_err(join_errors)?;
 
     let mut proxy_builder = dialect
