@@ -486,6 +486,14 @@ fn ping_spec(command: &str) -> serde_json::Value {
     })
 }
 
+struct RestoreCwd(std::path::PathBuf);
+
+impl Drop for RestoreCwd {
+    fn drop(&mut self) {
+        std::env::set_current_dir(&self.0).unwrap();
+    }
+}
+
 fn lines(path: &Path) -> usize {
     fs::read_to_string(path).unwrap().lines().count()
 }
@@ -504,6 +512,7 @@ fn path_to_file_uses_only_that_file() {
     let spec_path = base.join("external_spec.yml");
     write_yaml(&spec_path, &ping_spec(&command));
 
+    let _restore = RestoreCwd(std::env::current_dir().unwrap());
     std::env::set_current_dir(base).unwrap();
     eval(Some(&spec_path), EvalOptions::default()).unwrap();
 
