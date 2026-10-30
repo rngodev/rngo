@@ -4,7 +4,7 @@ use crate::effect::phase::{Phase, PhaseBuilder};
 use crate::effect::{Effect, EffectBuilder, Input, SkippedInput};
 use crate::log::SimpleEventRunLog;
 use crate::moment::Moment;
-use chrono::Utc;
+use chrono::{DateTime, FixedOffset, Utc};
 use indexmap::IndexMap;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -135,19 +135,27 @@ impl SimulationBuilder {
         name: &str,
         f: impl FnOnce(PhaseBuilder) -> PhaseBuilder,
     ) -> &mut Self {
-        self.phases.insert(name.into(), f(PhaseBuilder::default()));
+        self.phases
+            .insert(name.into(), f(PhaseBuilder::default().name(name)));
         self
     }
 
-    /// The resolved phase `name`, or the default phase for `None`; `None` if no such phase exists.
-    pub fn phase(&self, name: Option<&str>) -> Option<Phase> {
-        let default = self.default_phase.build();
+    /// The phase `name` resolved at `now`, or the default phase for `None`; `None` if no such phase exists.
+    pub fn phase(
+        &self,
+        name: Option<&str>,
+        now: DateTime<FixedOffset>,
+    ) -> Option<Result<Phase, Vec<BuildError>>> {
+        let default = match self.default_phase.build(now) {
+            Ok(default) => default,
+            Err(errors) => return Some(Err(errors)),
+        };
         match name {
-            None => Some(default),
+            None => Some(Ok(default)),
             Some(name) => self
                 .phases
                 .get(name)
-                .map(|phase| phase.clone().parent(&default).build()),
+                .map(|phase| phase.clone().parent(&default).build(now)),
         }
     }
 
@@ -172,30 +180,26 @@ impl SimulationBuilder {
     pub fn build(self) -> Result<Simulation, Vec<BuildError>> {
         let mut errors = vec![];
         let now = Utc::now().fixed_offset();
-        let default = self.default_phase.build();
-        let start = default.start.clone().resolve(now);
-        let end = default.end.clone().resolve(now);
-
-        if start >= end {
-            errors.push(BuildError::simulation(
-                SimulationKey::Start,
-                "start must be before end",
-            ));
-        }
-
-        let mut origin = start;
-        let mut phase_bounds = HashMap::new();
-        for (name, phase) in &self.phases {
-            let phase = phase.clone().parent(&default).build();
-            let (phase_start, phase_end) = (phase.start.resolve(now), phase.end.resolve(now));
-            if phase_start >= phase_end {
-                errors.push(BuildError::simulation(
-                    SimulationKey::Start,
-                    format!("phase \"{name}\": start must be before end"),
-                ));
+        let default = match self.default_phase.build(now) {
+            Ok(default) => Some(default),
+            Err(mut e) => {
+                errors.append(&mut e);
+                None
             }
-            origin = origin.min(phase_start);
-            phase_bounds.insert(name.as_str(), (phase_start, phase_end));
+        };
+
+        let mut origin = default.as_ref().map(|default| default.start);
+        let mut phases = HashMap::new();
+        if let Some(default) = &default {
+            for (name, phase) in &self.phases {
+                match phase.clone().parent(default).build(now) {
+                    Ok(phase) => {
+                        origin = origin.map(|origin| origin.min(phase.start));
+                        phases.insert(name.as_str(), phase);
+                    }
+                    Err(mut e) => errors.append(&mut e),
+                }
+            }
         }
 
         let Some(run_log_reader) = self.run_log_reader else {
@@ -206,27 +210,31 @@ impl SimulationBuilder {
             return Err(errors);
         };
 
+        let (Some(default), Some(origin)) = (default, origin) else {
+            return Err(errors);
+        };
+
         let mut effects = vec![];
 
         for mut effect_builder in self.effect_builders {
-            let (sim_start, sim_end) = match effect_builder.phase.clone() {
-                Some(phase) => match phase_bounds.get(phase.as_str()) {
-                    Some(bounds) => *bounds,
+            let phase = match effect_builder.phase_name.clone() {
+                Some(name) => match phases.get(name.as_str()) {
+                    Some(phase) => phase.clone(),
+                    None if self.phases.contains_key(&name) => continue,
                     None => {
                         errors.push(BuildError::effect(
                             effect_builder.key.clone(),
                             EffectKey::Config,
-                            format!("unknown phase \"{phase}\""),
+                            format!("unknown phase \"{name}\""),
                         ));
                         continue;
                     }
                 },
-                None => (start, end),
+                None => default.clone(),
             };
             effect_builder
                 .set_now(now)
-                .set_sim_start(sim_start)
-                .set_sim_end(sim_end)
+                .set_phase(phase)
                 .set_origin(origin)
                 .set_event_run_log(run_log_reader.clone())
                 .set_seed(self.seed);

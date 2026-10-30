@@ -103,6 +103,11 @@ impl Dialect {
                 .push(ParseError::invalid("the default phase has no scenarios").at(["scenarios"]));
         }
 
+        let now = chrono::Utc::now().fixed_offset();
+        let default_valid = simulation_builder.phase(None, now).unwrap().is_ok();
+        if !default_valid {
+            errors.push(ParseError::invalid("start must be before end").at(["end"]));
+        }
         let mut channel_phases: HashMap<&str, &str> = HashMap::new();
         let mut effect_phases: HashMap<&str, &str> = HashMap::new();
         let now = chrono::Utc::now().fixed_offset();
@@ -125,9 +130,7 @@ impl Dialect {
                 }
                 builder
             });
-            let resolved = simulation_builder.phase(Some(name)).unwrap();
-
-            if resolved.start.resolve(now) >= resolved.end.resolve(now) {
+            if default_valid && simulation_builder.phase(Some(name), now).unwrap().is_err() {
                 errors.push(
                     ParseError::invalid("start must be before end").at(["phases", name, "end"]),
                 );
@@ -188,8 +191,11 @@ impl Dialect {
                 let channel = effect.channel.as_deref()?;
                 channel_phases.get(channel).copied()
             });
-            let resolved = simulation_builder.phase(phase).unwrap();
-            let effect_moment_parser = Moment::parser().simulation(&resolved.start, &resolved.end);
+            let Ok(resolved) = simulation_builder.phase(phase, now).unwrap() else {
+                continue;
+            };
+            let (start, end) = (Moment::from(resolved.start), Moment::from(resolved.end));
+            let effect_moment_parser = Moment::parser().simulation(&start, &end);
 
             let visitor = GeneratorParseVisitor::new(
                 self.generator_parsers.clone(),
@@ -211,7 +217,7 @@ impl Dialect {
                 effect_builder.set_generator(generator_builder);
 
                 if let Some(phase) = phase {
-                    effect_builder.set_phase(phase.to_string());
+                    effect_builder.set_phase_name(phase.to_string());
                 }
 
                 if let Some(start) = &effect.start {
