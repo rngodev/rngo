@@ -1,7 +1,7 @@
 use super::phase::{Phase, PhaseBuilder};
 use crate::build::BuildError;
 use crate::moment::Moment;
-use chrono::{DateTime, FixedOffset, Utc};
+use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 
 /// Everything a run is parameterized by: the `seed`, the `now` that relative moments resolve against, the default phase (the scenario's own `start` and `end`) and the named phases.
@@ -35,11 +35,10 @@ impl Scenario {
     }
 }
 
-/// Builds a [`Scenario`]; `seed` defaults to 1, `now` to the current time and `start`/`end` to the built-in window.
+/// Builds a [`Scenario`]; `seed` defaults to 1 and `start`/`end` to the built-in window.
 #[derive(Clone, Debug, Default)]
 pub struct ScenarioBuilder {
     seed: Option<u64>,
-    now: Option<DateTime<FixedOffset>>,
     default_phase: PhaseBuilder,
     phases: IndexMap<String, PhaseBuilder>,
 }
@@ -52,16 +51,6 @@ impl ScenarioBuilder {
 
     pub fn set_seed(&mut self, seed: u64) -> &mut Self {
         self.seed = Some(seed);
-        self
-    }
-
-    pub fn now(mut self, now: DateTime<FixedOffset>) -> Self {
-        self.set_now(now);
-        self
-    }
-
-    pub fn set_now(&mut self, now: DateTime<FixedOffset>) -> &mut Self {
-        self.now = Some(now);
         self
     }
 
@@ -96,9 +85,8 @@ impl ScenarioBuilder {
         self
     }
 
-    /// Resolves the default phase, then each named phase against it; errors if any phase's `start` isn't before its `end`.
-    pub fn build(&self) -> Result<Scenario, Vec<BuildError>> {
-        let now = self.now.unwrap_or_else(|| Utc::now().fixed_offset());
+    /// Resolves the default phase at `now`, then each named phase against it; errors if any phase's `start` isn't before its `end`.
+    pub fn build(&self, now: DateTime<FixedOffset>) -> Result<Scenario, Vec<BuildError>> {
         let default_phase = self.default_phase.build(now)?;
 
         let mut errors = vec![];
@@ -137,7 +125,7 @@ mod tests {
 
     #[test]
     fn defaults_to_seed_one_and_the_built_in_window() {
-        let scenario = Scenario::builder().now(now()).build().unwrap();
+        let scenario = Scenario::builder().build(now()).unwrap();
         assert_eq!(scenario.seed, 1);
         assert_eq!(scenario.default_phase.end, now());
         assert_eq!(scenario.default_phase.start, now() - TimeDelta::days(30));
@@ -145,11 +133,11 @@ mod tests {
 
     #[test]
     fn named_phases_inherit_what_they_leave_unset() {
-        let mut builder = Scenario::builder().now(now()).seed(7);
+        let mut builder = Scenario::builder().seed(7);
         builder
             .set_start(Moment::Relative(TimeDelta::days(-10)))
             .with_phase("late", |p| p.start(Moment::Relative(TimeDelta::days(-2))));
-        let scenario = builder.build().unwrap();
+        let scenario = builder.build(now()).unwrap();
 
         let late = scenario.phase(Some("late")).unwrap();
         assert_eq!(scenario.seed, 7);
@@ -160,11 +148,11 @@ mod tests {
 
     #[test]
     fn a_phase_ending_before_it_starts_is_an_error() {
-        let mut builder = Scenario::builder().now(now());
+        let mut builder = Scenario::builder();
         builder.with_phase("backwards", |p| {
             p.end(Moment::Relative(TimeDelta::days(-60)))
         });
-        let errors = builder.build().unwrap_err();
+        let errors = builder.build(now()).unwrap_err();
         assert!(errors[0].message().contains("backwards"));
     }
 }

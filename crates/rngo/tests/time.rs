@@ -1,7 +1,8 @@
 use chrono::{DateTime, FixedOffset, TimeDelta};
 use rngo::build::*;
-use rngo::{BuildError, Dialect, EffectKey, Moment, Scenario, Simulation};
+use rngo::{BuildError, Dialect, EffectKey, Moment, Scenario, ScenarioBuilder, Simulation};
 use serde_json::Value;
+use std::rc::Rc;
 
 fn start() -> DateTime<FixedOffset> {
     DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap()
@@ -14,12 +15,12 @@ fn offsets_in_seconds(sim: Simulation, take: usize) -> Vec<i64> {
         .collect()
 }
 
-fn fixed_window() -> Scenario {
-    Scenario::builder()
-        .start(Moment::Absolute(start()))
-        .end(Moment::Absolute(start() + TimeDelta::days(30)))
-        .build()
-        .unwrap()
+fn fixed_window() -> Rc<ScenarioBuilder> {
+    Rc::new(
+        Scenario::builder()
+            .start(Moment::Absolute(start()))
+            .end(Moment::Absolute(start() + TimeDelta::days(30))),
+    )
 }
 
 /// The simulation window is 30 days.
@@ -33,7 +34,8 @@ fn simulation_respects_end_time() {
     let window = fixed_window();
     let mut builder = Simulation::builder();
     builder.with_effect("events", |e| {
-        e.scenario(&window).generator(constant().value(Value::Null))
+        e.scenario(window.clone())
+            .generator(constant().value(Value::Null))
     });
 
     let offsets = offsets_in_seconds(
@@ -65,7 +67,7 @@ fn effect_respects_start_time() {
     let window = fixed_window();
     let mut builder = Simulation::builder();
     builder.with_effect("events", |e| {
-        e.scenario(&window)
+        e.scenario(window.clone())
             .start(Moment::Absolute(start() + TimeDelta::days(15)))
             .generator(constant().value(Value::Null))
     });

@@ -1,8 +1,8 @@
 use crate::RunLogReader;
 use crate::build::{BuildError, SimulationKey};
-use crate::effect::scenario::Scenario;
 use crate::effect::{Effect, EffectBuilder, Input, SkippedInput};
 use crate::log::SimpleEventRunLog;
+use chrono::Utc;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -89,7 +89,7 @@ impl SimulationBuilder {
         self
     }
 
-    /// Adds an effect; `f` configures its builder. An effect that wasn't given a scenario gets the default one.
+    /// Adds an effect; `f` configures its builder.
     pub fn with_effect(
         &mut self,
         key: &str,
@@ -119,13 +119,11 @@ impl SimulationBuilder {
             return Err(errors);
         };
 
-        let default_scenario = Scenario::builder().build()?;
+        let now = Utc::now().fixed_offset();
         let mut effects = vec![];
 
         for mut effect_builder in self.effect_builders {
-            if effect_builder.now.is_none() {
-                effect_builder.set_scenario(&default_scenario);
-            }
+            effect_builder.set_now(now);
             effect_builder.set_event_run_log(run_log_reader.clone());
 
             match effect_builder.build() {

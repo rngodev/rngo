@@ -6,8 +6,7 @@ pub mod simulation;
 mod trigger;
 
 use crate::build::{BuildError, EffectKey};
-use crate::effect::phase::Phase;
-use crate::effect::scenario::Scenario;
+use crate::effect::scenario::ScenarioBuilder;
 use crate::log::{Metadata, RunLogReader, SimpleEventRunLog};
 use crate::moment::Moment;
 use chrono::{DateTime, FixedOffset, TimeDelta};
@@ -136,12 +135,13 @@ pub struct EffectBuilder {
     pub key: String,
     pub start: Option<Moment>,
     pub end: Option<Moment>,
+    start_expression: Option<String>,
+    end_expression: Option<String>,
     pub limit: Option<NonZeroU64>,
     now: Option<DateTime<FixedOffset>>,
-    origin: Option<DateTime<FixedOffset>>,
-    phase: Option<Phase>,
+    scenario: Option<Rc<ScenarioBuilder>>,
+    phase: Option<String>,
     event_run_log: Option<Rc<dyn RunLogReader>>,
-    seed: Option<u64>,
     trigger: TriggerConfig,
     generator_builder: Option<Box<dyn GeneratorBuilder>>,
 }
@@ -152,12 +152,13 @@ impl EffectBuilder {
             key,
             start: None,
             end: None,
+            start_expression: None,
+            end_expression: None,
             limit: None,
             now: None,
-            origin: None,
+            scenario: None,
             phase: None,
             event_run_log: None,
-            seed: None,
             trigger: TriggerConfig::ClockExpression("hz(1, day)".into()),
             generator_builder: None,
         }
@@ -183,6 +184,18 @@ impl EffectBuilder {
         self
     }
 
+    /// Sets `start` from an expression, parsed when the effect builds so it can refer to the effect's phase via `simulation`; overrides `start`.
+    pub fn set_start_expression(&mut self, expression: String) -> &mut Self {
+        self.start_expression = Some(expression);
+        self
+    }
+
+    /// Sets `end` from an expression, parsed when the effect builds so it can refer to the effect's phase via `simulation`; overrides `end`.
+    pub fn set_end_expression(&mut self, expression: String) -> &mut Self {
+        self.end_expression = Some(expression);
+        self
+    }
+
     pub fn limit(mut self, limit: NonZeroU64) -> Self {
         self.set_limit(limit);
         self
@@ -203,29 +216,20 @@ impl EffectBuilder {
         self
     }
 
-    /// Sets the instant that offsets are measured from; defaults to the phase's start.
-    pub fn set_origin(&mut self, origin: DateTime<FixedOffset>) -> &mut Self {
-        self.origin = Some(origin);
-        self
-    }
-
-    /// Sets the phase whose window bounds this effect and its generators; defaults to the built-in one.
-    pub fn set_phase(&mut self, phase: Phase) -> &mut Self {
-        self.phase = Some(phase);
-        self
-    }
-
-    pub fn scenario(mut self, scenario: &Scenario) -> Self {
+    pub fn scenario(mut self, scenario: Rc<ScenarioBuilder>) -> Self {
         self.set_scenario(scenario);
         self
     }
 
-    /// Takes the seed, `now`, offset origin and default phase from `scenario`; call `set_phase` after to join a named phase.
-    pub fn set_scenario(&mut self, scenario: &Scenario) -> &mut Self {
-        self.seed = Some(scenario.seed);
-        self.now = Some(scenario.now);
-        self.origin = Some(scenario.origin());
-        self.phase = Some(scenario.default_phase.clone());
+    /// Sets the scenario supplying the seed and phases, built with `now` when the effect builds; defaults to an empty one.
+    pub fn set_scenario(&mut self, scenario: Rc<ScenarioBuilder>) -> &mut Self {
+        self.scenario = Some(scenario);
+        self
+    }
+
+    /// Names the scenario phase whose window bounds this effect and its generators; defaults to the scenario's default phase.
+    pub fn set_phase(&mut self, name: impl Into<String>) -> &mut Self {
+        self.phase = Some(name.into());
         self
     }
 
@@ -236,16 +240,6 @@ impl EffectBuilder {
 
     pub fn set_event_run_log(&mut self, event_run_log: Rc<dyn RunLogReader>) -> &mut Self {
         self.event_run_log = Some(event_run_log);
-        self
-    }
-
-    pub fn seed(mut self, seed: u64) -> Self {
-        self.set_seed(seed);
-        self
-    }
-
-    pub fn set_seed(&mut self, seed: u64) -> &mut Self {
-        self.seed = Some(seed);
         self
     }
 
@@ -297,19 +291,63 @@ impl EffectBuilder {
                 "now must be set via set_now()",
             )]);
         };
-        let seed = self.seed.unwrap_or(1);
+        let scenario = self
+            .scenario
+            .as_deref()
+            .cloned()
+            .unwrap_or_default()
+            .build(now)?;
+        let seed = scenario.seed;
         let run_log_reader: Rc<dyn RunLogReader> = self
             .event_run_log
             .unwrap_or_else(|| SimpleEventRunLog::new());
-        let phase = self.phase.unwrap_or_else(|| Phase::default_at(now));
+        let phase = match &self.phase {
+            Some(name) => match scenario.phase(Some(name)) {
+                Some(phase) => phase.clone(),
+                None => {
+                    return Err(vec![BuildError::effect(
+                        self.key,
+                        EffectKey::Config,
+                        format!("unknown phase \"{name}\""),
+                    )]);
+                }
+            },
+            None => scenario.default_phase.clone(),
+        };
         let (sim_start, sim_end) = (phase.start, phase.end);
-        let effect_end = self.end.map(|m| m.resolve(now)).unwrap_or(sim_end);
-        let effect_start = self.start.map(|m| m.resolve(now)).unwrap_or(sim_start);
-        let origin = self.origin.unwrap_or(sim_start);
+        let mut errors: Vec<BuildError> = vec![];
+        let phase_start = Moment::from(phase.start);
+        let phase_end = Moment::from(phase.end);
+        let moment_parser = Moment::parser().simulation(&phase_start, &phase_end);
+        let start = match &self.start_expression {
+            Some(expression) => moment_parser
+                .parse("start", expression)
+                .map(Some)
+                .unwrap_or_else(|e| {
+                    errors.extend(e.iter().map(|e| {
+                        BuildError::effect(self.key.clone(), EffectKey::Start, e.message())
+                    }));
+                    None
+                }),
+            None => self.start,
+        };
+        let end = match &self.end_expression {
+            Some(expression) => moment_parser
+                .parse("end", expression)
+                .map(Some)
+                .unwrap_or_else(|e| {
+                    errors.extend(e.iter().map(|e| {
+                        BuildError::effect(self.key.clone(), EffectKey::End, e.message())
+                    }));
+                    None
+                }),
+            None => self.end,
+        };
+        let effect_end = end.map(|m| m.resolve(now)).unwrap_or(sim_end);
+        let effect_start = start.map(|m| m.resolve(now)).unwrap_or(sim_start);
+        let origin = scenario.origin();
         let end_offset = (effect_end - origin).num_milliseconds().max(0);
         let start_offset = (effect_start - origin).num_milliseconds().max(0);
-
-        let mut errors: Vec<BuildError> = vec![];
 
         let bounds = match &phase.name {
             Some(name) => format!("phase \"{name}\""),

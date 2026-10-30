@@ -150,27 +150,10 @@ impl Dialect {
                 .collect(),
         );
 
-        let scenario = match scenario_builder.build() {
-            Ok(scenario) => Some(scenario),
-            Err(e) => {
-                errors.extend(e.iter().map(|e| {
-                    let message = e.message();
-                    if message.starts_with("phase ") {
-                        ParseError::invalid(message).at(["phases"])
-                    } else {
-                        ParseError::invalid(message).at(["end"])
-                    }
-                }));
-                None
-            }
-        };
+        let scenario_builder = Rc::new(scenario_builder);
 
         for (key, effect) in &spec.effects {
-            let Some(scenario) = &scenario else { break };
             let phase_key = effect_phases.get(key.as_str()).map(String::as_str);
-            let phase = scenario.phase(phase_key).unwrap();
-            let (start, end) = (Moment::from(phase.start), Moment::from(phase.end));
-            let effect_moment_parser = Moment::parser().simulation(&start, &end);
 
             let visitor = GeneratorParseVisitor::new(
                 self.generator_parsers.clone(),
@@ -190,27 +173,18 @@ impl Dialect {
 
             simulation_builder.with_effect(key, |mut effect_builder| {
                 effect_builder.set_generator(generator_builder);
-                effect_builder
-                    .set_scenario(scenario)
-                    .set_phase(phase.clone());
+                effect_builder.set_scenario(Rc::clone(&scenario_builder));
+                if let Some(phase_key) = phase_key {
+                    effect_builder.set_phase(phase_key);
+                }
 
                 if let Some(start) = &effect.start {
-                    match effect_moment_parser.parse("start", start) {
-                        Ok(timestamp) => {
-                            effect_builder.set_start(timestamp);
-                        }
-                        Err(mut e) => errors.append(&mut e),
-                    };
-                };
+                    effect_builder.set_start_expression(start.clone());
+                }
 
                 if let Some(end) = &effect.end {
-                    match effect_moment_parser.parse("end", end) {
-                        Ok(timestamp) => {
-                            effect_builder.set_end(timestamp);
-                        }
-                        Err(mut e) => errors.append(&mut e),
-                    };
-                };
+                    effect_builder.set_end_expression(end.clone());
+                }
 
                 if let Some(limit) = effect.limit {
                     effect_builder.set_limit(limit);
