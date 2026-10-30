@@ -316,57 +316,29 @@ impl EffectBuilder {
         };
         let (sim_start, sim_end) = (phase.start, phase.end);
         let mut errors: Vec<BuildError> = vec![];
-        let phase_start = Moment::from(phase.start);
-        let phase_end = Moment::from(phase.end);
-        let moment_parser = Moment::parser().simulation(&phase_start, &phase_end);
-        let start = match &self.start_expression {
-            Some(expression) => moment_parser
-                .parse("start", expression)
-                .map(Some)
-                .unwrap_or_else(|e| {
-                    errors.extend(e.iter().map(|e| {
-                        BuildError::effect(self.key.clone(), EffectKey::Start, e.message())
-                    }));
-                    None
-                }),
-            None => self.start,
+        let mut bounds = phase.child_builder().for_effect(self.key.clone());
+        if let Some(start) = self.start {
+            bounds.set_start(start);
+        }
+        if let Some(end) = self.end {
+            bounds.set_end(end);
+        }
+        if let Some(expression) = self.start_expression {
+            bounds.set_start_expression(expression);
+        }
+        if let Some(expression) = self.end_expression {
+            bounds.set_end_expression(expression);
+        }
+        let (effect_start, effect_end) = match bounds.build(now) {
+            Ok(bounds) => (bounds.start, bounds.end),
+            Err(mut e) => {
+                errors.append(&mut e);
+                (sim_start, sim_end)
+            }
         };
-        let end = match &self.end_expression {
-            Some(expression) => moment_parser
-                .parse("end", expression)
-                .map(Some)
-                .unwrap_or_else(|e| {
-                    errors.extend(e.iter().map(|e| {
-                        BuildError::effect(self.key.clone(), EffectKey::End, e.message())
-                    }));
-                    None
-                }),
-            None => self.end,
-        };
-        let effect_end = end.map(|m| m.resolve(now)).unwrap_or(sim_end);
-        let effect_start = start.map(|m| m.resolve(now)).unwrap_or(sim_start);
         let origin = scenario.origin();
         let end_offset = (effect_end - origin).num_milliseconds().max(0);
         let start_offset = (effect_start - origin).num_milliseconds().max(0);
-
-        let bounds = match &phase.name {
-            Some(name) => format!("phase \"{name}\""),
-            None => "simulation".into(),
-        };
-        if effect_start < sim_start {
-            errors.push(BuildError::effect(
-                self.key.clone(),
-                EffectKey::Start,
-                format!("start cannot be before {bounds} start"),
-            ));
-        }
-        if effect_end > sim_end {
-            errors.push(BuildError::effect(
-                self.key.clone(),
-                EffectKey::End,
-                format!("end cannot be after {bounds} end"),
-            ));
-        }
 
         let generator_result = if let Some(generator_builder) = self.generator_builder {
             let visitor = GeneratorBuildVisitor {
