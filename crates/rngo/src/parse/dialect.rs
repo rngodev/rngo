@@ -114,22 +114,16 @@ impl Dialect {
         };
 
         for (name, phase) in &spec.phases {
-            scenario_builder.with_phase(name, |mut builder| {
-                for (field, expr) in [("start", &phase.start), ("end", &phase.end)] {
-                    let Some(expr) = expr else { continue };
-                    match simulation_moment_parser.parse(field, expr) {
-                        Ok(moment) if field == "start" => {
-                            builder.set_start(moment);
-                        }
-                        Ok(moment) => {
-                            builder.set_end(moment);
-                        }
-                        Err(e) => {
-                            errors.extend(e.into_iter().map(|e| e.prefixed(&["phases", name])))
-                        }
-                    }
+            scenario_builder.with_phase(name, |mut phase_builder| {
+                if let Some(start) = &phase.start {
+                    phase_builder.set_start_expression(start.clone());
                 }
-                builder
+
+                if let Some(end) = &phase.end {
+                    phase_builder.set_end_expression(end.clone());
+                }
+
+                phase_builder
             });
         }
 
