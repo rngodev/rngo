@@ -7,6 +7,7 @@ mod trigger;
 
 use crate::build::{BuildError, EffectKey};
 use crate::effect::phase::Phase;
+use crate::effect::scenario::Scenario;
 use crate::log::{Metadata, RunLogReader, SimpleEventRunLog};
 use crate::moment::Moment;
 use chrono::{DateTime, FixedOffset, TimeDelta};
@@ -139,7 +140,6 @@ pub struct EffectBuilder {
     now: Option<DateTime<FixedOffset>>,
     origin: Option<DateTime<FixedOffset>>,
     phase: Option<Phase>,
-    pub(crate) phase_name: Option<String>,
     event_run_log: Option<Rc<dyn RunLogReader>>,
     seed: Option<u64>,
     trigger: TriggerConfig,
@@ -156,7 +156,6 @@ impl EffectBuilder {
             now: None,
             origin: None,
             phase: None,
-            phase_name: None,
             event_run_log: None,
             seed: None,
             trigger: TriggerConfig::ClockExpression("hz(1, day)".into()),
@@ -216,9 +215,17 @@ impl EffectBuilder {
         self
     }
 
-    /// Names the `SimulationBuilder` phase to join; the simulation resolves it into `set_phase` when it builds.
-    pub fn set_phase_name(&mut self, name: String) -> &mut Self {
-        self.phase_name = Some(name);
+    pub fn scenario(mut self, scenario: &Scenario) -> Self {
+        self.set_scenario(scenario);
+        self
+    }
+
+    /// Takes the seed, `now`, offset origin and default phase from `scenario`; call `set_phase` after to join a named phase.
+    pub fn set_scenario(&mut self, scenario: &Scenario) -> &mut Self {
+        self.seed = Some(scenario.seed);
+        self.now = Some(scenario.now);
+        self.origin = Some(scenario.origin());
+        self.phase = Some(scenario.default_phase.clone());
         self
     }
 

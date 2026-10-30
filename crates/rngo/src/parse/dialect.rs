@@ -6,6 +6,7 @@ use crate::audit::signal::Signal;
 use crate::audit::{Audit, AuditBuilder, signal};
 use crate::effect::generator;
 use crate::effect::generator::custom::CustomParser;
+use crate::effect::scenario::Scenario;
 use crate::effect::simulation::{Simulation, SimulationBuilder};
 use crate::moment::Moment;
 use crate::parse::ChannelParser;
@@ -74,16 +75,17 @@ impl Dialect {
     pub fn parse_simulation(&self, spec: Spec) -> Result<SimulationBuilder, Vec<ParseError>> {
         let mut errors = vec![];
         let mut simulation_builder = Simulation::builder();
+        let mut scenario_builder = Scenario::builder();
         let simulation_moment_parser = Moment::parser();
 
         if let Some(seed) = spec.seed {
-            simulation_builder.set_seed(seed);
+            scenario_builder.set_seed(seed);
         }
 
         if let Some(start) = &spec.start {
             match simulation_moment_parser.parse("start", start) {
                 Ok(timestamp) => {
-                    simulation_builder.set_start(timestamp);
+                    scenario_builder.set_start(timestamp);
                 }
                 Err(mut e) => errors.append(&mut e),
             };
@@ -92,7 +94,7 @@ impl Dialect {
         if let Some(end) = &spec.end {
             match simulation_moment_parser.parse("end", end) {
                 Ok(timestamp) => {
-                    simulation_builder.set_end(timestamp);
+                    scenario_builder.set_end(timestamp);
                 }
                 Err(mut e) => errors.append(&mut e),
             };
@@ -103,17 +105,11 @@ impl Dialect {
                 .push(ParseError::invalid("the default phase has no scenarios").at(["scenarios"]));
         }
 
-        let now = chrono::Utc::now().fixed_offset();
-        let default_valid = simulation_builder.phase(None, now).unwrap().is_ok();
-        if !default_valid {
-            errors.push(ParseError::invalid("start must be before end").at(["end"]));
-        }
         let mut channel_phases: HashMap<&str, &str> = HashMap::new();
         let mut effect_phases: HashMap<&str, &str> = HashMap::new();
-        let now = chrono::Utc::now().fixed_offset();
 
         for (name, phase) in &spec.phases {
-            simulation_builder.with_phase(name, |mut builder| {
+            scenario_builder.with_phase(name, |mut builder| {
                 for (field, expr) in [("start", &phase.start), ("end", &phase.end)] {
                     let Some(expr) = expr else { continue };
                     match simulation_moment_parser.parse(field, expr) {
@@ -130,11 +126,6 @@ impl Dialect {
                 }
                 builder
             });
-            if default_valid && simulation_builder.phase(Some(name), now).unwrap().is_err() {
-                errors.push(
-                    ParseError::invalid("start must be before end").at(["phases", name, "end"]),
-                );
-            }
 
             for channel in &phase.channels {
                 if !spec.channels.contains_key(channel) {
@@ -186,14 +177,28 @@ impl Dialect {
                 .collect(),
         );
 
+        let scenario = match scenario_builder.build() {
+            Ok(scenario) => Some(scenario),
+            Err(e) => {
+                errors.extend(e.iter().map(|e| {
+                    let message = e.message();
+                    if message.starts_with("phase ") {
+                        ParseError::invalid(message).at(["phases"])
+                    } else {
+                        ParseError::invalid(message).at(["end"])
+                    }
+                }));
+                None
+            }
+        };
+
         for (key, effect) in &spec.effects {
+            let Some(scenario) = &scenario else { break };
             let phase = effect_phases.get(key.as_str()).copied().or_else(|| {
                 let channel = effect.channel.as_deref()?;
                 channel_phases.get(channel).copied()
             });
-            let Ok(resolved) = simulation_builder.phase(phase, now).unwrap() else {
-                continue;
-            };
+            let resolved = scenario.phase(phase).unwrap();
             let (start, end) = (Moment::from(resolved.start), Moment::from(resolved.end));
             let effect_moment_parser = Moment::parser().simulation(&start, &end);
 
@@ -215,10 +220,9 @@ impl Dialect {
 
             simulation_builder.with_effect(key, |mut effect_builder| {
                 effect_builder.set_generator(generator_builder);
-
-                if let Some(phase) = phase {
-                    effect_builder.set_phase_name(phase.to_string());
-                }
+                effect_builder
+                    .set_scenario(scenario)
+                    .set_phase(resolved.clone());
 
                 if let Some(start) = &effect.start {
                     match effect_moment_parser.parse("start", start) {
@@ -456,17 +460,39 @@ mod tests {
         assert_eq!(paths(&errors), vec!["channels.logger.type"]);
     }
 
+    fn first_values(seed: Option<u64>) -> Vec<serde_json::Value> {
+        let mut value = serde_json::json!({
+            "start": "2024-01-01",
+            "end": "2024-02-01",
+            "effects": {
+                "n": {
+                    "trigger": "hz(1, day)",
+                    "generator": { "type": "number", "minimum": 0, "maximum": 1000000 }
+                }
+            }
+        });
+        if let Some(seed) = seed {
+            value["seed"] = serde_json::json!(seed);
+        }
+        Dialect::primitive()
+            .parse_simulation_json(value)
+            .unwrap()
+            .standalone()
+            .unwrap()
+            .flatten()
+            .map(|input| input.data)
+            .take(5)
+            .collect()
+    }
+
     #[test]
-    fn spec_seed_is_applied_to_the_simulation_builder() {
-        let value = serde_json::json!({ "seed": 42, "effects": {} });
-        let builder = Dialect::primitive().parse_simulation_json(value).unwrap();
-        assert_eq!(builder.seed, 42);
+    fn spec_seed_is_applied_to_the_simulation() {
+        assert_eq!(first_values(Some(42)), first_values(Some(42)));
+        assert_ne!(first_values(Some(42)), first_values(Some(1)));
     }
 
     #[test]
     fn missing_spec_seed_defaults_to_one() {
-        let value = serde_json::json!({ "effects": {} });
-        let builder = Dialect::primitive().parse_simulation_json(value).unwrap();
-        assert_eq!(builder.seed, 1);
+        assert_eq!(first_values(None), first_values(Some(1)));
     }
 }

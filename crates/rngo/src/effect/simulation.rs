@@ -1,12 +1,8 @@
 use crate::RunLogReader;
-use crate::build::{BuildError, EffectKey, SimulationKey};
-use crate::effect::phase::{Phase, PhaseBuilder};
+use crate::build::{BuildError, SimulationKey};
+use crate::effect::scenario::Scenario;
 use crate::effect::{Effect, EffectBuilder, Input, SkippedInput};
 use crate::log::SimpleEventRunLog;
-use crate::moment::Moment;
-use chrono::{DateTime, FixedOffset, Utc};
-use indexmap::IndexMap;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -69,9 +65,6 @@ impl Iterator for StandaloneSimulation {
 
 #[derive(Debug)]
 pub struct SimulationBuilder {
-    pub seed: u64,
-    default_phase: PhaseBuilder,
-    phases: IndexMap<String, PhaseBuilder>,
     run_log_reader: Option<Rc<dyn RunLogReader>>,
     effect_builders: Vec<EffectBuilder>,
     limit: Option<u64>,
@@ -80,9 +73,6 @@ pub struct SimulationBuilder {
 impl SimulationBuilder {
     fn new() -> Self {
         SimulationBuilder {
-            seed: 1,
-            default_phase: PhaseBuilder::default(),
-            phases: IndexMap::new(),
             run_log_reader: None,
             effect_builders: vec![],
             limit: None,
@@ -99,66 +89,7 @@ impl SimulationBuilder {
         self
     }
 
-    pub fn seed(mut self, seed: u64) -> Self {
-        self.set_seed(seed);
-        self
-    }
-
-    pub fn set_seed(&mut self, seed: u64) -> &mut Self {
-        self.seed = seed;
-        self
-    }
-
-    pub fn start(mut self, start: Moment) -> Self {
-        self.set_start(start);
-        self
-    }
-
-    pub fn set_start(&mut self, start: Moment) -> &mut Self {
-        self.default_phase.set_start(start);
-        self
-    }
-
-    pub fn end(mut self, end: Moment) -> Self {
-        self.set_end(end);
-        self
-    }
-
-    pub fn set_end(&mut self, end: Moment) -> &mut Self {
-        self.default_phase.set_end(end);
-        self
-    }
-
-    /// Defines a named phase; `f` configures its builder, and whatever it leaves unset comes from the default phase.
-    pub fn with_phase(
-        &mut self,
-        name: &str,
-        f: impl FnOnce(PhaseBuilder) -> PhaseBuilder,
-    ) -> &mut Self {
-        self.phases
-            .insert(name.into(), f(PhaseBuilder::default().name(name)));
-        self
-    }
-
-    /// The phase `name` resolved at `now`, or the default phase for `None`; `None` if no such phase exists.
-    pub fn phase(
-        &self,
-        name: Option<&str>,
-        now: DateTime<FixedOffset>,
-    ) -> Option<Result<Phase, Vec<BuildError>>> {
-        let default = match self.default_phase.build(now) {
-            Ok(default) => default,
-            Err(errors) => return Some(Err(errors)),
-        };
-        match name {
-            None => Some(Ok(default)),
-            Some(name) => self
-                .phases
-                .get(name)
-                .map(|phase| phase.clone().parent(&default).build(now)),
-        }
-    }
-
+    /// Adds an effect; `f` configures its builder. An effect that wasn't given a scenario gets the default one.
     pub fn with_effect(
         &mut self,
         key: &str,
@@ -179,28 +110,6 @@ impl SimulationBuilder {
 
     pub fn build(self) -> Result<Simulation, Vec<BuildError>> {
         let mut errors = vec![];
-        let now = Utc::now().fixed_offset();
-        let default = match self.default_phase.build(now) {
-            Ok(default) => Some(default),
-            Err(mut e) => {
-                errors.append(&mut e);
-                None
-            }
-        };
-
-        let mut origin = default.as_ref().map(|default| default.start);
-        let mut phases = HashMap::new();
-        if let Some(default) = &default {
-            for (name, phase) in &self.phases {
-                match phase.clone().parent(default).build(now) {
-                    Ok(phase) => {
-                        origin = origin.map(|origin| origin.min(phase.start));
-                        phases.insert(name.as_str(), phase);
-                    }
-                    Err(mut e) => errors.append(&mut e),
-                }
-            }
-        }
 
         let Some(run_log_reader) = self.run_log_reader else {
             errors.push(BuildError::simulation(
@@ -210,34 +119,14 @@ impl SimulationBuilder {
             return Err(errors);
         };
 
-        let (Some(default), Some(origin)) = (default, origin) else {
-            return Err(errors);
-        };
-
+        let default_scenario = Scenario::builder().build()?;
         let mut effects = vec![];
 
         for mut effect_builder in self.effect_builders {
-            let phase = match effect_builder.phase_name.clone() {
-                Some(name) => match phases.get(name.as_str()) {
-                    Some(phase) => phase.clone(),
-                    None if self.phases.contains_key(&name) => continue,
-                    None => {
-                        errors.push(BuildError::effect(
-                            effect_builder.key.clone(),
-                            EffectKey::Config,
-                            format!("unknown phase \"{name}\""),
-                        ));
-                        continue;
-                    }
-                },
-                None => default.clone(),
-            };
-            effect_builder
-                .set_now(now)
-                .set_phase(phase)
-                .set_origin(origin)
-                .set_event_run_log(run_log_reader.clone())
-                .set_seed(self.seed);
+            if effect_builder.now.is_none() {
+                effect_builder.set_scenario(&default_scenario);
+            }
+            effect_builder.set_event_run_log(run_log_reader.clone());
 
             match effect_builder.build() {
                 Ok(effect) => effects.push(effect),

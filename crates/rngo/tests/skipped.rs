@@ -1,11 +1,14 @@
 use chrono::TimeDelta;
 use rngo::build::*;
-use rngo::{Input, Metadata, Moment, RunLogWriter, Simulation, SqliteRunLog};
+use rngo::{Input, Metadata, Moment, RunLogWriter, Scenario, Simulation, SqliteRunLog};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
-fn short_window() -> Moment {
-    Moment::Relative(TimeDelta::seconds(-5))
+fn short_window() -> Scenario {
+    Scenario::builder()
+        .start(Moment::Relative(TimeDelta::seconds(-5)))
+        .build()
+        .unwrap()
 }
 
 fn log_all(simulation: Simulation, log: &impl RunLogWriter) -> Vec<Input> {
@@ -29,13 +32,13 @@ fn reference_with_no_prior_events_is_skipped_not_logged() {
 
     let mut simulation_builder = Simulation::builder();
     simulation_builder.with_effect("derived", |e| {
-        e.trigger_hertz(1.0)
+        e.scenario(&short_window())
+            .trigger_hertz(1.0)
             .generator(reference().effect("nonexistent"))
     });
 
     let simulation = simulation_builder
         .run_log_reader(run_log.clone())
-        .start(short_window())
         .build()
         .unwrap();
 
@@ -72,7 +75,7 @@ fn reference_with_no_prior_events_is_skipped_not_logged() {
 fn object_with_a_skipped_property_is_itself_skipped() {
     let mut simulation_builder = Simulation::builder();
     simulation_builder.with_effect("derived", |e| {
-        e.trigger_hertz(1.0).generator(
+        e.scenario(&short_window()).trigger_hertz(1.0).generator(
             object()
                 .property("id", constant().value(1))
                 .property("missing", reference().effect("nonexistent")),
@@ -81,10 +84,7 @@ fn object_with_a_skipped_property_is_itself_skipped() {
 
     // `.limit` only counts real inputs, so an effect that always skips runs until the simulation's
     // time window ends; keep the window short.
-    let simulation = simulation_builder
-        .start(short_window())
-        .standalone()
-        .unwrap();
+    let simulation = simulation_builder.standalone().unwrap();
 
     let events: Vec<_> = simulation.flatten().collect();
 
@@ -98,7 +98,7 @@ fn object_with_a_skipped_property_is_itself_skipped() {
 fn array_with_a_skipped_item_is_itself_skipped() {
     let mut simulation_builder = Simulation::builder();
     simulation_builder.with_effect("derived", |e| {
-        e.trigger_hertz(1.0).generator(
+        e.scenario(&short_window()).trigger_hertz(1.0).generator(
             array()
                 .min_items(1)
                 .max_items(1)
@@ -106,10 +106,7 @@ fn array_with_a_skipped_item_is_itself_skipped() {
         )
     });
 
-    let simulation = simulation_builder
-        .start(short_window())
-        .standalone()
-        .unwrap();
+    let simulation = simulation_builder.standalone().unwrap();
 
     let events: Vec<_> = simulation.flatten().collect();
 

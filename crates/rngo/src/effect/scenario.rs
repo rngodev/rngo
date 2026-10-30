@@ -18,6 +18,14 @@ impl Scenario {
         ScenarioBuilder::default()
     }
 
+    /// The earliest start among the default and named phases; effects measure their offsets from it so inputs from different phases stay comparable.
+    pub fn origin(&self) -> DateTime<FixedOffset> {
+        self.phases
+            .values()
+            .map(|phase| phase.start)
+            .fold(self.default_phase.start, |a, b| a.min(b))
+    }
+
     /// The phase `name`, or the default phase for `None`; `None` if no such phase exists.
     pub fn phase(&self, name: Option<&str>) -> Option<&Phase> {
         match name {
