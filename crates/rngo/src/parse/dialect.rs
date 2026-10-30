@@ -105,8 +105,13 @@ impl Dialect {
                 .push(ParseError::invalid("the default phase has no scenarios").at(["scenarios"]));
         }
 
-        let mut channel_phases: HashMap<&str, &str> = HashMap::new();
-        let mut effect_phases: HashMap<&str, &str> = HashMap::new();
+        let effect_phases = match parse_effect_phases(&spec) {
+            Ok(effect_phases) => effect_phases,
+            Err(mut e) => {
+                errors.append(&mut e);
+                HashMap::new()
+            }
+        };
 
         for (name, phase) in &spec.phases {
             scenario_builder.with_phase(name, |mut builder| {
@@ -126,38 +131,6 @@ impl Dialect {
                 }
                 builder
             });
-
-            for channel in &phase.channels {
-                if !spec.channels.contains_key(channel) {
-                    errors.push(
-                        ParseError::new(ParseErrorKind::UnknownChannel(channel.clone()))
-                            .at(["phases", name, "channels"]),
-                    );
-                } else if let Some(other) = channel_phases.insert(channel, name) {
-                    errors.push(
-                        ParseError::invalid(format!(
-                            "channel \"{channel}\" is already claimed by phase \"{other}\""
-                        ))
-                        .at(["phases", name, "channels"]),
-                    );
-                }
-            }
-
-            for effect in &phase.effects {
-                if !spec.effects.contains_key(effect) {
-                    errors.push(
-                        ParseError::invalid(format!("unknown effect \"{effect}\""))
-                            .at(["phases", name, "effects"]),
-                    );
-                } else if let Some(other) = effect_phases.insert(effect, name) {
-                    errors.push(
-                        ParseError::invalid(format!(
-                            "effect \"{effect}\" is already in phase \"{other}\""
-                        ))
-                        .at(["phases", name, "effects"]),
-                    );
-                }
-            }
         }
 
         for name in spec.generators.keys() {
@@ -194,12 +167,9 @@ impl Dialect {
 
         for (key, effect) in &spec.effects {
             let Some(scenario) = &scenario else { break };
-            let phase = effect_phases.get(key.as_str()).copied().or_else(|| {
-                let channel = effect.channel.as_deref()?;
-                channel_phases.get(channel).copied()
-            });
-            let resolved = scenario.phase(phase).unwrap();
-            let (start, end) = (Moment::from(resolved.start), Moment::from(resolved.end));
+            let phase_key = effect_phases.get(key.as_str()).map(String::as_str);
+            let phase = scenario.phase(phase_key).unwrap();
+            let (start, end) = (Moment::from(phase.start), Moment::from(phase.end));
             let effect_moment_parser = Moment::parser().simulation(&start, &end);
 
             let visitor = GeneratorParseVisitor::new(
@@ -222,7 +192,7 @@ impl Dialect {
                 effect_builder.set_generator(generator_builder);
                 effect_builder
                     .set_scenario(scenario)
-                    .set_phase(resolved.clone());
+                    .set_phase(phase.clone());
 
                 if let Some(start) = &effect.start {
                     match effect_moment_parser.parse("start", start) {
@@ -396,6 +366,63 @@ impl Dialect {
             })]),
         }
     }
+}
+
+/// Maps each effect that belongs to a named phase to that phase's name: a phase's `effects` list beats its `channels`. Effects missing from the map use the default phase.
+fn parse_effect_phases(spec: &Spec) -> Result<HashMap<String, String>, Vec<ParseError>> {
+    let mut errors = vec![];
+    let mut channel_phases: HashMap<&str, &str> = HashMap::new();
+    let mut effect_phases: HashMap<&str, &str> = HashMap::new();
+
+    for (name, phase) in &spec.phases {
+        for channel in &phase.channels {
+            if !spec.channels.contains_key(channel) {
+                errors.push(
+                    ParseError::new(ParseErrorKind::UnknownChannel(channel.clone()))
+                        .at(["phases", name, "channels"]),
+                );
+            } else if let Some(other) = channel_phases.insert(channel, name) {
+                errors.push(
+                    ParseError::invalid(format!(
+                        "channel \"{channel}\" is already claimed by phase \"{other}\""
+                    ))
+                    .at(["phases", name, "channels"]),
+                );
+            }
+        }
+
+        for effect in &phase.effects {
+            if !spec.effects.contains_key(effect) {
+                errors.push(
+                    ParseError::invalid(format!("unknown effect \"{effect}\""))
+                        .at(["phases", name, "effects"]),
+                );
+            } else if let Some(other) = effect_phases.insert(effect, name) {
+                errors.push(
+                    ParseError::invalid(format!(
+                        "effect \"{effect}\" is already in phase \"{other}\""
+                    ))
+                    .at(["phases", name, "effects"]),
+                );
+            }
+        }
+    }
+
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+
+    Ok(spec
+        .effects
+        .iter()
+        .filter_map(|(key, effect)| {
+            let phase = effect_phases.get(key.as_str()).copied().or_else(|| {
+                let channel = effect.channel.as_deref()?;
+                channel_phases.get(channel).copied()
+            })?;
+            Some((key.clone(), phase.to_string()))
+        })
+        .collect())
 }
 
 #[cfg(test)]
