@@ -6,6 +6,7 @@ pub mod simulation;
 mod trigger;
 
 use crate::build::{BuildError, EffectKey};
+use crate::effect::phase::PhaseBuilder;
 use crate::effect::scenario::ScenarioBuilder;
 use crate::log::{Metadata, RunLogReader, SimpleEventRunLog};
 use crate::moment::Moment;
@@ -132,12 +133,9 @@ impl From<SkippedInput> for Metadata {
 
 #[derive(Debug)]
 pub struct EffectBuilder {
-    pub key: String,
-    pub start: Option<Moment>,
-    pub end: Option<Moment>,
-    start_expression: Option<String>,
-    end_expression: Option<String>,
-    pub limit: Option<NonZeroU64>,
+    key: String,
+    window: PhaseBuilder,
+    limit: Option<NonZeroU64>,
     now: Option<DateTime<FixedOffset>>,
     scenario: Option<Rc<ScenarioBuilder>>,
     phase: Option<String>,
@@ -150,10 +148,7 @@ impl EffectBuilder {
     fn new(key: String) -> Self {
         EffectBuilder {
             key,
-            start: None,
-            end: None,
-            start_expression: None,
-            end_expression: None,
+            window: PhaseBuilder::default(),
             limit: None,
             now: None,
             scenario: None,
@@ -170,7 +165,7 @@ impl EffectBuilder {
     }
 
     pub fn set_start(&mut self, start: Moment) -> &mut Self {
-        self.start = Some(start);
+        self.window.set_start(start);
         self
     }
 
@@ -180,19 +175,19 @@ impl EffectBuilder {
     }
 
     pub fn set_end(&mut self, end: Moment) -> &mut Self {
-        self.end = Some(end);
+        self.window.set_end(end);
         self
     }
 
     /// Sets `start` from an expression, parsed when the effect builds so it can refer to the effect's phase via `simulation`; overrides `start`.
     pub fn set_start_expression(&mut self, expression: String) -> &mut Self {
-        self.start_expression = Some(expression);
+        self.window.set_start_expression(expression);
         self
     }
 
     /// Sets `end` from an expression, parsed when the effect builds so it can refer to the effect's phase via `simulation`; overrides `end`.
     pub fn set_end_expression(&mut self, expression: String) -> &mut Self {
-        self.end_expression = Some(expression);
+        self.window.set_end_expression(expression);
         self
     }
 
@@ -316,19 +311,7 @@ impl EffectBuilder {
         };
         let (sim_start, sim_end) = (phase.start, phase.end);
         let mut errors: Vec<BuildError> = vec![];
-        let mut bounds = phase.child_builder().for_effect(self.key.clone());
-        if let Some(start) = self.start {
-            bounds.set_start(start);
-        }
-        if let Some(end) = self.end {
-            bounds.set_end(end);
-        }
-        if let Some(expression) = self.start_expression {
-            bounds.set_start_expression(expression);
-        }
-        if let Some(expression) = self.end_expression {
-            bounds.set_end_expression(expression);
-        }
+        let bounds = self.window.parent(&phase).for_effect(self.key.clone());
         let (effect_start, effect_end) = match bounds.build(now) {
             Ok(bounds) => (bounds.start, bounds.end),
             Err(mut e) => {

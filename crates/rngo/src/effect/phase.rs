@@ -16,11 +16,6 @@ impl Phase {
         PhaseBuilder::default()
     }
 
-    /// A builder for a window inside this phase: unset bounds come from here, and expressions can refer to this phase via `simulation`.
-    pub fn child_builder(&self) -> PhaseBuilder {
-        PhaseBuilder::default().parent(self)
-    }
-
     /// The built-in window, from 30 days before `now` to `now`.
     pub fn default_at(now: DateTime<FixedOffset>) -> Phase {
         Phase {
