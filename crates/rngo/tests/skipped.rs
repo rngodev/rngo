@@ -1,14 +1,11 @@
 use chrono::TimeDelta;
 use rngo::build::*;
-use rngo::{
-    Input, Metadata, Moment, RunLogWriter, Scenario, ScenarioBuilder, Simulation, SqliteRunLog,
-};
+use rngo::{Input, Metadata, Moment, RunLogWriter, Simulation, SimulationBuilder, SqliteRunLog};
 use rusqlite::Connection;
-use std::rc::Rc;
 use tempfile::TempDir;
 
-fn short_window() -> Rc<ScenarioBuilder> {
-    Rc::new(Scenario::builder().start(Moment::Relative(TimeDelta::seconds(-5))))
+fn short_window() -> SimulationBuilder {
+    Simulation::builder().start(Moment::Relative(TimeDelta::seconds(-5)))
 }
 
 fn log_all(simulation: Simulation, log: &impl RunLogWriter) -> Vec<Input> {
@@ -30,10 +27,9 @@ fn reference_with_no_prior_events_is_skipped_not_logged() {
     let tmp = TempDir::new().unwrap();
     let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
 
-    let mut simulation_builder = Simulation::builder();
+    let mut simulation_builder = short_window();
     simulation_builder.with_effect("derived", |e| {
-        e.scenario(short_window())
-            .trigger_hertz(1.0)
+        e.trigger_hertz(1.0)
             .generator(reference().effect("nonexistent"))
     });
 
@@ -73,9 +69,9 @@ fn reference_with_no_prior_events_is_skipped_not_logged() {
 
 #[test]
 fn object_with_a_skipped_property_is_itself_skipped() {
-    let mut simulation_builder = Simulation::builder();
+    let mut simulation_builder = short_window();
     simulation_builder.with_effect("derived", |e| {
-        e.scenario(short_window()).trigger_hertz(1.0).generator(
+        e.trigger_hertz(1.0).generator(
             object()
                 .property("id", constant().value(1))
                 .property("missing", reference().effect("nonexistent")),
@@ -96,9 +92,9 @@ fn object_with_a_skipped_property_is_itself_skipped() {
 
 #[test]
 fn array_with_a_skipped_item_is_itself_skipped() {
-    let mut simulation_builder = Simulation::builder();
+    let mut simulation_builder = short_window();
     simulation_builder.with_effect("derived", |e| {
-        e.scenario(short_window()).trigger_hertz(1.0).generator(
+        e.trigger_hertz(1.0).generator(
             array()
                 .min_items(1)
                 .max_items(1)

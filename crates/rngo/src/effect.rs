@@ -6,8 +6,8 @@ pub mod simulation;
 mod trigger;
 
 use crate::build::{BuildError, EffectKey};
-use crate::effect::phase::PhaseBuilder;
-use crate::effect::scenario::ScenarioBuilder;
+use crate::effect::phase::{Phase, PhaseBuilder};
+use crate::effect::scenario::Scenario;
 use crate::log::{Metadata, RunLogReader, SimpleEventRunLog};
 use crate::moment::Moment;
 use chrono::{DateTime, FixedOffset, TimeDelta};
@@ -137,7 +137,6 @@ pub struct EffectBuilder {
     window: PhaseBuilder,
     limit: Option<NonZeroU64>,
     now: Option<DateTime<FixedOffset>>,
-    scenario: Option<Rc<ScenarioBuilder>>,
     phase: Option<String>,
     event_run_log: Option<Rc<dyn RunLogReader>>,
     trigger: TriggerConfig,
@@ -151,7 +150,6 @@ impl EffectBuilder {
             window: PhaseBuilder::default(),
             limit: None,
             now: None,
-            scenario: None,
             phase: None,
             event_run_log: None,
             trigger: TriggerConfig::ClockExpression("hz(1, day)".into()),
@@ -211,27 +209,12 @@ impl EffectBuilder {
         self
     }
 
-    pub fn scenario(mut self, scenario: Rc<ScenarioBuilder>) -> Self {
-        self.set_scenario(scenario);
-        self
-    }
-
-    /// Sets the scenario supplying the seed and phases, built with `now` when the effect builds; defaults to an empty one.
-    pub fn set_scenario(&mut self, scenario: Rc<ScenarioBuilder>) -> &mut Self {
-        self.scenario = Some(scenario);
-        self
-    }
-
-    pub(crate) fn set_default_scenario(&mut self, scenario: Rc<ScenarioBuilder>) {
-        self.scenario.get_or_insert(scenario);
-    }
-
     pub fn phase(mut self, name: impl Into<String>) -> Self {
         self.set_phase(name);
         self
     }
 
-    /// Names the scenario phase whose window bounds this effect and its generators; defaults to the scenario's default phase.
+    /// Names the phase whose window bounds this effect and its generators; defaults to the default phase.
     pub fn set_phase(&mut self, name: impl Into<String>) -> &mut Self {
         self.phase = Some(name.into());
         self
@@ -287,6 +270,7 @@ impl EffectBuilder {
         self
     }
 
+    /// Builds the effect on its own, in the built-in phase and a scenario with seed 1; `now` must be set.
     pub fn build(self) -> Result<Effect, Vec<BuildError>> {
         let Some(now) = self.now else {
             return Err(vec![BuildError::effect(
@@ -295,40 +279,32 @@ impl EffectBuilder {
                 "now must be set via set_now()",
             )]);
         };
-        let scenario = self
-            .scenario
-            .as_deref()
-            .cloned()
-            .unwrap_or_default()
-            .build(now)?;
-        let seed = scenario.seed;
+        let scenario = Rc::new(Scenario { seed: 1, now });
+        let phase = Rc::new(Phase::builder().build(&scenario, None)?);
+        let origin = phase.start;
+        self.build_in(&phase, origin)
+    }
+
+    /// Builds the effect inside `phase`, measuring offsets from `origin`.
+    pub(crate) fn build_in(
+        self,
+        phase: &Rc<Phase>,
+        origin: DateTime<FixedOffset>,
+    ) -> Result<Effect, Vec<BuildError>> {
+        let seed = phase.scenario.seed;
         let run_log_reader: Rc<dyn RunLogReader> = self
             .event_run_log
             .unwrap_or_else(|| SimpleEventRunLog::new());
-        let phase = match &self.phase {
-            Some(name) => match scenario.phase(Some(name)) {
-                Some(phase) => phase.clone(),
-                None => {
-                    return Err(vec![BuildError::effect(
-                        self.key,
-                        EffectKey::Config,
-                        format!("unknown phase \"{name}\""),
-                    )]);
-                }
-            },
-            None => scenario.default_phase.clone(),
-        };
         let (sim_start, sim_end) = (phase.start, phase.end);
         let mut errors: Vec<BuildError> = vec![];
-        let bounds = self.window.parent(&phase).for_effect(self.key.clone());
-        let (effect_start, effect_end) = match bounds.build(now) {
+        let bounds = self.window.for_effect(self.key.clone());
+        let (effect_start, effect_end) = match bounds.build(&phase.scenario, Some(phase)) {
             Ok(bounds) => (bounds.start, bounds.end),
             Err(mut e) => {
                 errors.append(&mut e);
                 (sim_start, sim_end)
             }
         };
-        let origin = scenario.origin();
         let end_offset = (effect_end - origin).num_milliseconds().max(0);
         let start_offset = (effect_start - origin).num_milliseconds().max(0);
 

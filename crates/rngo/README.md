@@ -17,19 +17,16 @@ You can define a cell using a builder DSL. First we'll define a `SqliteRunLog`:
 let run_log = rngo::SqliteRunLog::new(".".into())?;
 ```
 
-Next a `Simulation`. A `Scenario` supplies the seed and the time windows (phases) that effects run in. Its own `start` and `end` define the default phase, and `with_phase` adds a named one, which takes whatever it leaves unset from the default:
+Next a `Simulation`. Its `seed`, `start` and `end` define the default phase, and `phase` adds a named time window, which takes whatever it leaves unset from the default:
 
 ```rust
 let mut simulation = rngo::Simulation::builder()
-    .scenario(
-        rngo::Scenario::builder()
-            .seed(41)
-            .start(Moment::Relative(TimeDelta::days(-90)))
-            .end(Moment::Relative(TimeDelta::zero()))
-            .phase("recent", |phase| {
-                phase.start(Moment::Relative(TimeDelta::days(-7)))
-            }),
-    )
+    .seed(41)
+    .start(Moment::Relative(TimeDelta::days(-90)))
+    .end(Moment::Relative(TimeDelta::zero()))
+    .phase("recent", |phase| {
+        phase.start(Moment::Relative(TimeDelta::days(-7)))
+    })
     .effect("user", |effect| {
         effect
             .trigger_expression("hz(10, hour) * (offset * 0.0001)")

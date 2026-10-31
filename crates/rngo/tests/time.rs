@@ -1,8 +1,7 @@
 use chrono::{DateTime, FixedOffset, TimeDelta};
 use rngo::build::*;
-use rngo::{BuildError, Dialect, EffectKey, Moment, Scenario, ScenarioBuilder, Simulation};
+use rngo::{BuildError, Dialect, EffectKey, Moment, Simulation, SimulationBuilder};
 use serde_json::Value;
-use std::rc::Rc;
 
 fn start() -> DateTime<FixedOffset> {
     DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap()
@@ -15,12 +14,10 @@ fn offsets_in_seconds(sim: Simulation, take: usize) -> Vec<i64> {
         .collect()
 }
 
-fn fixed_window() -> Rc<ScenarioBuilder> {
-    Rc::new(
-        Scenario::builder()
-            .start(Moment::Absolute(start()))
-            .end(Moment::Absolute(start() + TimeDelta::days(30))),
-    )
+fn fixed_window() -> SimulationBuilder {
+    Simulation::builder()
+        .start(Moment::Absolute(start()))
+        .end(Moment::Absolute(start() + TimeDelta::days(30)))
 }
 
 /// The simulation window is 30 days.
@@ -31,12 +28,8 @@ fn fixed_window() -> Rc<ScenarioBuilder> {
 /// the simulation ~60 days into the future — well past the end.
 #[test]
 fn simulation_respects_end_time() {
-    let window = fixed_window();
-    let mut builder = Simulation::builder();
-    builder.with_effect("events", |e| {
-        e.scenario(window.clone())
-            .generator(constant().value(Value::Null))
-    });
+    let mut builder = fixed_window();
+    builder.with_effect("events", |e| e.generator(constant().value(Value::Null)));
 
     let offsets = offsets_in_seconds(
         builder
@@ -64,11 +57,9 @@ fn simulation_respects_end_time() {
 /// even though the simulation window begins earlier.
 #[test]
 fn effect_respects_start_time() {
-    let window = fixed_window();
-    let mut builder = Simulation::builder();
+    let mut builder = fixed_window();
     builder.with_effect("events", |e| {
-        e.scenario(window.clone())
-            .start(Moment::Absolute(start() + TimeDelta::days(15)))
+        e.start(Moment::Absolute(start() + TimeDelta::days(15)))
             .generator(constant().value(Value::Null))
     });
 
