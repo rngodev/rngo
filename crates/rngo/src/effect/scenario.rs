@@ -74,6 +74,11 @@ impl ScenarioBuilder {
         self
     }
 
+    pub fn phase(mut self, name: &str, f: impl FnOnce(PhaseBuilder) -> PhaseBuilder) -> Self {
+        self.with_phase(name, f);
+        self
+    }
+
     /// Defines a named phase; `f` configures its builder, and whatever it leaves unset comes from the default phase.
     pub fn with_phase(
         &mut self,

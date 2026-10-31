@@ -1,5 +1,6 @@
 use crate::RunLogReader;
 use crate::build::{BuildError, SimulationKey};
+use crate::effect::scenario::ScenarioBuilder;
 use crate::effect::{Effect, EffectBuilder, Input, SkippedInput};
 use crate::log::SimpleEventRunLog;
 use chrono::Utc;
@@ -67,6 +68,7 @@ impl Iterator for StandaloneSimulation {
 pub struct SimulationBuilder {
     run_log_reader: Option<Rc<dyn RunLogReader>>,
     effect_builders: Vec<EffectBuilder>,
+    scenario: Option<Rc<ScenarioBuilder>>,
     limit: Option<u64>,
 }
 
@@ -75,12 +77,24 @@ impl SimulationBuilder {
         SimulationBuilder {
             run_log_reader: None,
             effect_builders: vec![],
+            scenario: None,
             limit: None,
         }
     }
 
     pub fn run_log_reader<T: RunLogReader + 'static>(mut self, reader: Rc<T>) -> Self {
         self.run_log_reader = Some(reader as Rc<dyn RunLogReader>);
+        self
+    }
+
+    pub fn scenario(mut self, scenario: ScenarioBuilder) -> Self {
+        self.set_scenario(scenario);
+        self
+    }
+
+    /// Sets the scenario every effect uses unless it sets its own.
+    pub fn set_scenario(&mut self, scenario: ScenarioBuilder) -> &mut Self {
+        self.scenario = Some(Rc::new(scenario));
         self
     }
 
@@ -98,6 +112,11 @@ impl SimulationBuilder {
         let builder = Effect::builder(key.into());
         let builder = f(builder);
         self.effect_builders.push(builder);
+        self
+    }
+
+    pub fn effect(mut self, key: &str, f: impl FnOnce(EffectBuilder) -> EffectBuilder) -> Self {
+        self.with_effect(key, f);
         self
     }
 
@@ -124,6 +143,9 @@ impl SimulationBuilder {
 
         for mut effect_builder in self.effect_builders {
             effect_builder.set_now(now);
+            if let Some(scenario) = &self.scenario {
+                effect_builder.set_default_scenario(Rc::clone(scenario));
+            }
             effect_builder.set_event_run_log(run_log_reader.clone());
 
             match effect_builder.build() {

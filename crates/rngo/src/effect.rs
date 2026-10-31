@@ -222,6 +222,15 @@ impl EffectBuilder {
         self
     }
 
+    pub(crate) fn set_default_scenario(&mut self, scenario: Rc<ScenarioBuilder>) {
+        self.scenario.get_or_insert(scenario);
+    }
+
+    pub fn phase(mut self, name: impl Into<String>) -> Self {
+        self.set_phase(name);
+        self
+    }
+
     /// Names the scenario phase whose window bounds this effect and its generators; defaults to the scenario's default phase.
     pub fn set_phase(&mut self, name: impl Into<String>) -> &mut Self {
         self.phase = Some(name.into());

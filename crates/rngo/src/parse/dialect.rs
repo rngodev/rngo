@@ -144,7 +144,7 @@ impl Dialect {
                 .collect(),
         );
 
-        let scenario_builder = Rc::new(scenario_builder);
+        simulation_builder.set_scenario(scenario_builder);
 
         for (key, effect) in &spec.effects {
             let phase_key = effect_phases.get(key.as_str()).map(String::as_str);
@@ -167,7 +167,6 @@ impl Dialect {
 
             simulation_builder.with_effect(key, |mut effect_builder| {
                 effect_builder.set_generator(generator_builder);
-                effect_builder.set_scenario(Rc::clone(&scenario_builder));
                 if let Some(phase_key) = phase_key {
                     effect_builder.set_phase(phase_key);
                 }

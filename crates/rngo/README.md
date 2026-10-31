@@ -17,14 +17,20 @@ You can define a cell using a builder DSL. First we'll define a `SqliteRunLog`:
 let run_log = rngo::SqliteRunLog::new(".".into())?;
 ```
 
-Next a `Simulation`:
+Next a `Simulation`. A `Scenario` supplies the seed and the time windows (phases) that effects run in. Its own `start` and `end` define the default phase, and `with_phase` adds a named one, which takes whatever it leaves unset from the default:
 
 ```rust
-let mut simulation = rngo::Simulation.builder()
-    .seed(41)
-\    .start(TimeDelta.months(-3))
-    .end(TimeDelta.zero())
-    .with_effect("user", |effect| {
+let mut simulation = rngo::Simulation::builder()
+    .scenario(
+        rngo::Scenario::builder()
+            .seed(41)
+            .start(Moment::Relative(TimeDelta::days(-90)))
+            .end(Moment::Relative(TimeDelta::zero()))
+            .phase("recent", |phase| {
+                phase.start(Moment::Relative(TimeDelta::days(-7)))
+            }),
+    )
+    .effect("user", |effect| {
         effect
             .trigger_expression("hz(10, hour) * (offset * 0.0001)")
             .limit(NonZeroU64::new(1000).unwrap())
@@ -42,8 +48,9 @@ let mut simulation = rngo::Simulation.builder()
             )
           
     })
-    .with_effect("post", |effect| {
+    .effect("post", |effect| {
         effect
+            .phase("recent")
             .trigger_expression("hz(100, hour) * (offset * 0.0001)")
             .schema(
                 object()
@@ -66,7 +73,7 @@ let mut simulation = rngo::Simulation.builder()
                     .property("created_at", context().path(["clock", "now"])),
             )
     })
-    .run_log(run_log.clone())
+    .run_log_reader(run_log.clone())
     .build()?;
 ```
 
@@ -135,6 +142,13 @@ You can also define the above in JSON (or YAML) spec - it would look like this:
     "seed": 41,
     "start": "now - months(3)",
     "end": "now",
+    "phases": {
+        "recent": {
+            "start": "now - days(7)",
+            "effects": ["post"],
+            "scenarios": { "backfill": { "start": "now - months(6)" } }
+        }
+    },
     "effects": {
         "user": {
             "channel": "db",
