@@ -4,9 +4,9 @@ use super::signal::SignalParser;
 use crate::ParseErrorKind;
 use crate::audit::signal::Signal;
 use crate::audit::{Audit, AuditBuilder, signal};
+use crate::effect::generator;
 use crate::effect::generator::custom::CustomParser;
 use crate::effect::simulation::{Simulation, SimulationBuilder};
-use crate::effect::{Effect, generator};
 use crate::moment::Moment;
 use crate::parse::ChannelParser;
 use crate::proxy::channel::{self, ChannelBuilder};
@@ -98,6 +98,33 @@ impl Dialect {
             };
         };
 
+        if spec.scenarios.is_some() {
+            errors
+                .push(ParseError::invalid("the default phase has no scenarios").at(["scenarios"]));
+        }
+
+        let effect_phases = match parse_effect_phases(&spec) {
+            Ok(effect_phases) => effect_phases,
+            Err(mut e) => {
+                errors.append(&mut e);
+                HashMap::new()
+            }
+        };
+
+        for (name, phase) in &spec.phases {
+            simulation_builder.with_phase(name, |mut phase_builder| {
+                if let Some(start) = &phase.start {
+                    phase_builder.set_start_expression(start.clone());
+                }
+
+                if let Some(end) = &phase.end {
+                    phase_builder.set_end_expression(end.clone());
+                }
+
+                phase_builder
+            });
+        }
+
         for name in spec.generators.keys() {
             if self.generator_parsers.iter().any(|p| p.key() == name) {
                 errors.push(ParseError::invalid(format!(
@@ -116,45 +143,7 @@ impl Dialect {
         );
 
         for (key, effect) in &spec.effects {
-            let mut effect_builder = Effect::builder(key.clone());
-            let effect_moment_parser =
-                Moment::parser().simulation(&simulation_builder.start, &simulation_builder.end);
-
-            if let Some(start) = &effect.start {
-                match effect_moment_parser.parse("start", start) {
-                    Ok(timestamp) => {
-                        effect_builder.set_start(timestamp);
-                    }
-                    Err(mut e) => errors.append(&mut e),
-                };
-            };
-
-            if let Some(end) = &effect.end {
-                match effect_moment_parser.parse("end", end) {
-                    Ok(timestamp) => {
-                        effect_builder.set_end(timestamp);
-                    }
-                    Err(mut e) => errors.append(&mut e),
-                };
-            };
-
-            if let Some(limit) = effect.limit {
-                effect_builder.set_limit(limit);
-            }
-
-            if let Some(trigger_union) = &effect.trigger {
-                let trigger = match trigger_union {
-                    spec::TriggerUnion::Shorthand(rate) => {
-                        spec::Trigger::Clock { rate: rate.clone() }
-                    }
-                    spec::TriggerUnion::Full(trigger) => trigger.clone(),
-                };
-
-                match trigger {
-                    spec::Trigger::Clock { rate } => effect_builder.set_trigger_expression(rate),
-                    spec::Trigger::Effect { key } => effect_builder.set_trigger_effect(key),
-                };
-            }
+            let phase_key = effect_phases.get(key.as_str()).map(String::as_str);
 
             let visitor = GeneratorParseVisitor::new(
                 self.generator_parsers.clone(),
@@ -164,13 +153,50 @@ impl Dialect {
                 vec!["effects".into(), key.clone(), "generator".into()],
             );
 
-            match visitor.parse() {
-                Ok(generator_builder) => {
-                    effect_builder.set_generator(generator_builder);
-                    simulation_builder.set_effect(effect_builder);
+            let generator_builder = match visitor.parse() {
+                Ok(generator_builder) => generator_builder,
+                Err(mut e) => {
+                    errors.append(&mut e);
+                    continue;
                 }
-                Err(mut e) => errors.append(&mut e),
-            }
+            };
+
+            simulation_builder.with_effect(key, |mut effect_builder| {
+                effect_builder.set_generator(generator_builder);
+                if let Some(phase_key) = phase_key {
+                    effect_builder.set_phase(phase_key);
+                }
+
+                if let Some(start) = &effect.start {
+                    effect_builder.set_start_expression(start.clone());
+                }
+
+                if let Some(end) = &effect.end {
+                    effect_builder.set_end_expression(end.clone());
+                }
+
+                if let Some(limit) = effect.limit {
+                    effect_builder.set_limit(limit);
+                }
+
+                if let Some(trigger_union) = &effect.trigger {
+                    let trigger = match trigger_union {
+                        spec::TriggerUnion::Shorthand(rate) => {
+                            spec::Trigger::Clock { rate: rate.clone() }
+                        }
+                        spec::TriggerUnion::Full(trigger) => trigger.clone(),
+                    };
+
+                    match trigger {
+                        spec::Trigger::Clock { rate } => {
+                            effect_builder.set_trigger_expression(rate)
+                        }
+                        spec::Trigger::Effect { key } => effect_builder.set_trigger_effect(key),
+                    };
+                }
+
+                effect_builder
+            });
         }
 
         if !errors.is_empty() {
@@ -305,6 +331,63 @@ impl Dialect {
     }
 }
 
+/// Maps each effect that belongs to a named phase to that phase's name: a phase's `effects` list beats its `channels`. Effects missing from the map use the default phase.
+fn parse_effect_phases(spec: &Spec) -> Result<HashMap<String, String>, Vec<ParseError>> {
+    let mut errors = vec![];
+    let mut channel_phases: HashMap<&str, &str> = HashMap::new();
+    let mut effect_phases: HashMap<&str, &str> = HashMap::new();
+
+    for (name, phase) in &spec.phases {
+        for channel in &phase.channels {
+            if !spec.channels.contains_key(channel) {
+                errors.push(
+                    ParseError::new(ParseErrorKind::UnknownChannel(channel.clone()))
+                        .at(["phases", name, "channels"]),
+                );
+            } else if let Some(other) = channel_phases.insert(channel, name) {
+                errors.push(
+                    ParseError::invalid(format!(
+                        "channel \"{channel}\" is already claimed by phase \"{other}\""
+                    ))
+                    .at(["phases", name, "channels"]),
+                );
+            }
+        }
+
+        for effect in &phase.effects {
+            if !spec.effects.contains_key(effect) {
+                errors.push(
+                    ParseError::invalid(format!("unknown effect \"{effect}\""))
+                        .at(["phases", name, "effects"]),
+                );
+            } else if let Some(other) = effect_phases.insert(effect, name) {
+                errors.push(
+                    ParseError::invalid(format!(
+                        "effect \"{effect}\" is already in phase \"{other}\""
+                    ))
+                    .at(["phases", name, "effects"]),
+                );
+            }
+        }
+    }
+
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+
+    Ok(spec
+        .effects
+        .iter()
+        .filter_map(|(key, effect)| {
+            let phase = effect_phases.get(key.as_str()).copied().or_else(|| {
+                let channel = effect.channel.as_deref()?;
+                channel_phases.get(channel).copied()
+            })?;
+            Some((key.clone(), phase.to_string()))
+        })
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -367,17 +450,39 @@ mod tests {
         assert_eq!(paths(&errors), vec!["channels.logger.type"]);
     }
 
+    fn first_values(seed: Option<u64>) -> Vec<serde_json::Value> {
+        let mut value = serde_json::json!({
+            "start": "2024-01-01",
+            "end": "2024-02-01",
+            "effects": {
+                "n": {
+                    "trigger": "hz(1, day)",
+                    "generator": { "type": "number", "minimum": 0, "maximum": 1000000 }
+                }
+            }
+        });
+        if let Some(seed) = seed {
+            value["seed"] = serde_json::json!(seed);
+        }
+        Dialect::primitive()
+            .parse_simulation_json(value)
+            .unwrap()
+            .standalone()
+            .unwrap()
+            .flatten()
+            .map(|input| input.data)
+            .take(5)
+            .collect()
+    }
+
     #[test]
-    fn spec_seed_is_applied_to_the_simulation_builder() {
-        let value = serde_json::json!({ "seed": 42, "effects": {} });
-        let builder = Dialect::primitive().parse_simulation_json(value).unwrap();
-        assert_eq!(builder.seed, 42);
+    fn spec_seed_is_applied_to_the_simulation() {
+        assert_eq!(first_values(Some(42)), first_values(Some(42)));
+        assert_ne!(first_values(Some(42)), first_values(Some(1)));
     }
 
     #[test]
     fn missing_spec_seed_defaults_to_one() {
-        let value = serde_json::json!({ "effects": {} });
-        let builder = Dialect::primitive().parse_simulation_json(value).unwrap();
-        assert_eq!(builder.seed, 1);
+        assert_eq!(first_values(None), first_values(Some(1)));
     }
 }

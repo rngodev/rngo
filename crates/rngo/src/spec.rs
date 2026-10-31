@@ -18,6 +18,10 @@ pub struct Spec {
     pub seed: Option<u64>,
     pub start: Option<String>,
     pub end: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scenarios: Option<Value>,
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub phases: IndexMap<String, Phase>,
     pub effects: IndexMap<String, Effect>,
     #[serde(default)]
     pub channels: IndexMap<String, Channel>,
@@ -25,6 +29,54 @@ pub struct Spec {
     pub generators: IndexMap<String, GeneratorType>,
     #[serde(default)]
     pub signals: IndexMap<String, Signal>,
+}
+
+impl Spec {
+    /// Returns the spec with scenario `name` patched into every phase that defines it; errors if no phase does.
+    pub fn with_scenario(&self, name: &str) -> Result<Spec, Vec<ParseError>> {
+        let mut spec = self.clone();
+        let mut found = false;
+        for phase in spec.phases.values_mut() {
+            if let Some(scenario) = phase.scenarios.get(name).cloned() {
+                found = true;
+                if scenario.start.is_some() {
+                    phase.start = scenario.start;
+                }
+                if scenario.end.is_some() {
+                    phase.end = scenario.end;
+                }
+            }
+        }
+        if found {
+            Ok(spec)
+        } else {
+            Err(vec![
+                ParseError::invalid(format!("no phase defines scenario \"{name}\"")).at(["phases"]),
+            ])
+        }
+    }
+}
+
+/// A named time window for its member effects; a missing `start` or `end` falls back to the default phase.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct Phase {
+    pub start: Option<String>,
+    pub end: Option<String>,
+    /// Effects writing to these channels belong to the phase, unless listed in some phase's `effects`.
+    #[serde(default)]
+    pub channels: Vec<String>,
+    #[serde(default)]
+    pub effects: Vec<String>,
+    /// Named overrides of `start` and `end`, applied by `rngo eval --scenario`.
+    #[serde(default)]
+    pub scenarios: IndexMap<String, Scenario>,
+}
+
+/// Overrides of a phase's `start` and `end`.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct Scenario {
+    pub start: Option<String>,
+    pub end: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

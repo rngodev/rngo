@@ -1,9 +1,13 @@
 mod clock;
 pub mod generator;
+pub mod phase;
+pub mod scenario;
 pub mod simulation;
 mod trigger;
 
 use crate::build::{BuildError, EffectKey};
+use crate::effect::phase::{Phase, PhaseBuilder};
+use crate::effect::scenario::Scenario;
 use crate::log::{Metadata, RunLogReader, SimpleEventRunLog};
 use crate::moment::Moment;
 use chrono::{DateTime, FixedOffset, TimeDelta};
@@ -30,6 +34,7 @@ pub struct Effect {
     end_offset: i64,
     limit: Option<u64>,
     produced: u64,
+    origin: DateTime<FixedOffset>,
     sim_start: DateTime<FixedOffset>,
     sim_end: DateTime<FixedOffset>,
 }
@@ -66,7 +71,7 @@ impl Iterator for Effect {
             simulation_start: self.sim_start,
             simulation_end: self.sim_end,
         };
-        let timestamp = self.sim_start + TimeDelta::milliseconds(trigger_event.sim_offset);
+        let timestamp = self.origin + TimeDelta::milliseconds(trigger_event.sim_offset);
 
         let result = self.generator.next(&context);
 
@@ -128,15 +133,12 @@ impl From<SkippedInput> for Metadata {
 
 #[derive(Debug)]
 pub struct EffectBuilder {
-    pub key: String,
-    pub start: Option<Moment>,
-    pub end: Option<Moment>,
-    pub limit: Option<NonZeroU64>,
+    key: String,
+    window: PhaseBuilder,
+    limit: Option<NonZeroU64>,
     now: Option<DateTime<FixedOffset>>,
-    sim_start: Option<DateTime<FixedOffset>>,
-    sim_end: Option<DateTime<FixedOffset>>,
+    phase: Option<String>,
     event_run_log: Option<Rc<dyn RunLogReader>>,
-    seed: Option<u64>,
     trigger: TriggerConfig,
     generator_builder: Option<Box<dyn GeneratorBuilder>>,
 }
@@ -145,14 +147,11 @@ impl EffectBuilder {
     fn new(key: String) -> Self {
         EffectBuilder {
             key,
-            start: None,
-            end: None,
+            window: PhaseBuilder::default(),
             limit: None,
             now: None,
-            sim_start: None,
-            sim_end: None,
+            phase: None,
             event_run_log: None,
-            seed: None,
             trigger: TriggerConfig::ClockExpression("hz(1, day)".into()),
             generator_builder: None,
         }
@@ -164,7 +163,7 @@ impl EffectBuilder {
     }
 
     pub fn set_start(&mut self, start: Moment) -> &mut Self {
-        self.start = Some(start);
+        self.window.set_start(start);
         self
     }
 
@@ -174,7 +173,19 @@ impl EffectBuilder {
     }
 
     pub fn set_end(&mut self, end: Moment) -> &mut Self {
-        self.end = Some(end);
+        self.window.set_end(end);
+        self
+    }
+
+    /// Sets `start` from an expression, parsed when the effect builds so it can refer to the effect's phase via `simulation`; overrides `start`.
+    pub fn set_start_expression(&mut self, expression: String) -> &mut Self {
+        self.window.set_start_expression(expression);
+        self
+    }
+
+    /// Sets `end` from an expression, parsed when the effect builds so it can refer to the effect's phase via `simulation`; overrides `end`.
+    pub fn set_end_expression(&mut self, expression: String) -> &mut Self {
+        self.window.set_end_expression(expression);
         self
     }
 
@@ -198,23 +209,14 @@ impl EffectBuilder {
         self
     }
 
-    pub fn sim_start(mut self, start: DateTime<FixedOffset>) -> Self {
-        self.set_sim_start(start);
+    pub fn phase(mut self, name: impl Into<String>) -> Self {
+        self.set_phase(name);
         self
     }
 
-    pub fn set_sim_start(&mut self, start: DateTime<FixedOffset>) -> &mut Self {
-        self.sim_start = Some(start);
-        self
-    }
-
-    pub fn sim_end(mut self, end: DateTime<FixedOffset>) -> Self {
-        self.set_sim_end(end);
-        self
-    }
-
-    pub fn set_sim_end(&mut self, end: DateTime<FixedOffset>) -> &mut Self {
-        self.sim_end = Some(end);
+    /// Names the phase whose window bounds this effect and its generators; defaults to the default phase.
+    pub fn set_phase(&mut self, name: impl Into<String>) -> &mut Self {
+        self.phase = Some(name.into());
         self
     }
 
@@ -225,16 +227,6 @@ impl EffectBuilder {
 
     pub fn set_event_run_log(&mut self, event_run_log: Rc<dyn RunLogReader>) -> &mut Self {
         self.event_run_log = Some(event_run_log);
-        self
-    }
-
-    pub fn seed(mut self, seed: u64) -> Self {
-        self.set_seed(seed);
-        self
-    }
-
-    pub fn set_seed(&mut self, seed: u64) -> &mut Self {
-        self.seed = Some(seed);
         self
     }
 
@@ -278,6 +270,7 @@ impl EffectBuilder {
         self
     }
 
+    /// Builds the effect on its own, in the built-in phase and a scenario with seed 1; `now` must be set.
     pub fn build(self) -> Result<Effect, Vec<BuildError>> {
         let Some(now) = self.now else {
             return Err(vec![BuildError::effect(
@@ -286,33 +279,34 @@ impl EffectBuilder {
                 "now must be set via set_now()",
             )]);
         };
-        let seed = self.seed.unwrap_or(1);
+        let scenario = Rc::new(Scenario { seed: 1, now });
+        let phase = Rc::new(Phase::builder().build(&scenario, None)?);
+        let origin = phase.start;
+        self.build_in(&phase, origin)
+    }
+
+    /// Builds the effect inside `phase`, measuring offsets from `origin`.
+    pub(crate) fn build_in(
+        self,
+        phase: &Rc<Phase>,
+        origin: DateTime<FixedOffset>,
+    ) -> Result<Effect, Vec<BuildError>> {
+        let seed = phase.scenario.seed;
         let run_log_reader: Rc<dyn RunLogReader> = self
             .event_run_log
             .unwrap_or_else(|| SimpleEventRunLog::new());
-        let sim_start = self.sim_start.unwrap_or_else(|| now + TimeDelta::days(-30));
-        let sim_end = self.sim_end.unwrap_or(now);
-        let effect_end = self.end.map(|m| m.resolve(now)).unwrap_or(sim_end);
-        let effect_start = self.start.map(|m| m.resolve(now)).unwrap_or(sim_start);
-        let end_offset = (effect_end - sim_start).num_milliseconds().max(0);
-        let start_offset = (effect_start - sim_start).num_milliseconds().max(0);
-
+        let (sim_start, sim_end) = (phase.start, phase.end);
         let mut errors: Vec<BuildError> = vec![];
-
-        if effect_start < sim_start {
-            errors.push(BuildError::effect(
-                self.key.clone(),
-                EffectKey::Start,
-                "start cannot be before simulation start",
-            ));
-        }
-        if effect_end > sim_end {
-            errors.push(BuildError::effect(
-                self.key.clone(),
-                EffectKey::End,
-                "end cannot be after simulation end",
-            ));
-        }
+        let bounds = self.window.for_effect(self.key.clone());
+        let (effect_start, effect_end) = match bounds.build(&phase.scenario, Some(phase)) {
+            Ok(bounds) => (bounds.start, bounds.end),
+            Err(mut e) => {
+                errors.append(&mut e);
+                (sim_start, sim_end)
+            }
+        };
+        let end_offset = (effect_end - origin).num_milliseconds().max(0);
+        let start_offset = (effect_start - origin).num_milliseconds().max(0);
 
         let generator_result = if let Some(generator_builder) = self.generator_builder {
             let visitor = GeneratorBuildVisitor {
@@ -335,7 +329,7 @@ impl EffectBuilder {
             TriggerConfig::Effect { key } => Ok(Trigger::Effect {
                 run_log_reader: run_log_reader.clone(),
                 key,
-                sim_start,
+                sim_start: origin,
                 last_offset: 0,
             }),
             TriggerConfig::ClockHertz(hertz) => Clock::builder()
@@ -372,6 +366,7 @@ impl EffectBuilder {
                 end_offset,
                 limit: self.limit.map(NonZeroU64::get),
                 produced: 0,
+                origin,
                 sim_start,
                 sim_end,
             }),

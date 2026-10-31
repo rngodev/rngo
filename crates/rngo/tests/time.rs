@@ -1,6 +1,6 @@
 use chrono::{DateTime, FixedOffset, TimeDelta};
 use rngo::build::*;
-use rngo::{BuildError, Dialect, EffectKey, Moment, Simulation};
+use rngo::{BuildError, Dialect, EffectKey, Moment, Simulation, SimulationBuilder};
 use serde_json::Value;
 
 fn start() -> DateTime<FixedOffset> {
@@ -14,12 +14,10 @@ fn offsets_in_seconds(sim: Simulation, take: usize) -> Vec<i64> {
         .collect()
 }
 
-fn fixed_window() -> rngo::SimulationBuilder {
-    let mut builder = Simulation::builder();
-    builder
-        .set_start(Moment::Absolute(start()))
-        .set_end(Moment::Absolute(start() + TimeDelta::days(30)));
-    builder
+fn fixed_window() -> SimulationBuilder {
+    Simulation::builder()
+        .start(Moment::Absolute(start()))
+        .end(Moment::Absolute(start() + TimeDelta::days(30)))
 }
 
 /// The simulation window is 30 days.
