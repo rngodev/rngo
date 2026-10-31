@@ -13,7 +13,7 @@ pub use audit::signal::{self, Signal, SignalBuilder, SignalOutcome};
 pub use audit::{Audit, AuditBuilder, AuditReport};
 pub use effect::generator::GeneratorEdge;
 pub use effect::phase::{Phase, PhaseBuilder};
-pub use effect::scenario::Scenario;
+pub use effect::scenario::{Scenario, ScenarioBuilder, ScenarioData};
 pub use effect::simulation::{Simulation, SimulationBuilder, StandaloneSimulation};
 pub use effect::{Effect, EffectBuilder, Input, SkippedInput, generator};
 pub use error::{

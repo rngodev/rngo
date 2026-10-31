@@ -1,12 +1,11 @@
 use crate::RunLogReader;
 use crate::build::{BuildError, EffectKey, SimulationKey};
 use crate::effect::phase::PhaseBuilder;
-use crate::effect::scenario::Scenario;
+use crate::effect::scenario::ScenarioBuilder;
 use crate::effect::{Effect, EffectBuilder, Input, SkippedInput};
 use crate::log::SimpleEventRunLog;
 use crate::moment::Moment;
 use chrono::Utc;
-use indexmap::IndexMap;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -71,9 +70,7 @@ impl Iterator for StandaloneSimulation {
 pub struct SimulationBuilder {
     run_log_reader: Option<Rc<dyn RunLogReader>>,
     effect_builders: Vec<EffectBuilder>,
-    seed: Option<u64>,
-    default_phase: PhaseBuilder,
-    phases: IndexMap<String, PhaseBuilder>,
+    scenario: ScenarioBuilder,
     limit: Option<u64>,
 }
 
@@ -82,9 +79,7 @@ impl SimulationBuilder {
         SimulationBuilder {
             run_log_reader: None,
             effect_builders: vec![],
-            seed: None,
-            default_phase: PhaseBuilder::default(),
-            phases: IndexMap::new(),
+            scenario: ScenarioBuilder::default(),
             limit: None,
         }
     }
@@ -101,7 +96,7 @@ impl SimulationBuilder {
     }
 
     pub fn set_seed(&mut self, seed: u64) -> &mut Self {
-        self.seed = Some(seed);
+        self.scenario.set_seed(seed);
         self
     }
 
@@ -112,7 +107,7 @@ impl SimulationBuilder {
     }
 
     pub fn set_start(&mut self, start: Moment) -> &mut Self {
-        self.default_phase.set_start(start);
+        self.scenario.set_start(start);
         self
     }
 
@@ -123,7 +118,7 @@ impl SimulationBuilder {
     }
 
     pub fn set_end(&mut self, end: Moment) -> &mut Self {
-        self.default_phase.set_end(end);
+        self.scenario.set_end(end);
         self
     }
 
@@ -138,8 +133,7 @@ impl SimulationBuilder {
         name: &str,
         f: impl FnOnce(PhaseBuilder) -> PhaseBuilder,
     ) -> &mut Self {
-        self.phases
-            .insert(name.into(), f(PhaseBuilder::default().name(name)));
+        self.scenario.with_phase(name, f);
         self
     }
 
@@ -183,31 +177,14 @@ impl SimulationBuilder {
             return Err(errors);
         };
 
-        let scenario = Rc::new(Scenario {
-            seed: self.seed.unwrap_or(1),
-            now: Utc::now().fixed_offset(),
-        });
-        let default_phase = Rc::new(self.default_phase.build(&scenario, None)?);
-        let mut phases = IndexMap::new();
-        for (name, builder) in &self.phases {
-            match builder.build(&scenario, Some(&default_phase)) {
-                Ok(phase) => {
-                    phases.insert(name.clone(), Rc::new(phase));
-                }
-                Err(mut e) => errors.append(&mut e),
-            }
-        }
-        let origin = phases
-            .values()
-            .map(|phase| phase.start)
-            .fold(default_phase.start, |a, b| a.min(b));
+        let scenario = self.scenario.build(Utc::now().fixed_offset())?;
 
         let mut effects = vec![];
         for mut effect_builder in self.effect_builders {
             effect_builder.set_event_run_log(run_log_reader.clone());
 
             let phase = match &effect_builder.phase {
-                Some(name) => match phases.get(name) {
+                Some(name) => match scenario.get_phase(name) {
                     Some(phase) => phase,
                     None => {
                         errors.push(BuildError::effect(
@@ -218,10 +195,10 @@ impl SimulationBuilder {
                         continue;
                     }
                 },
-                None => &default_phase,
+                None => scenario.default_phase(),
             };
 
-            match effect_builder.build_in(phase, origin) {
+            match effect_builder.build_in(phase) {
                 Ok(effect) => effects.push(effect),
                 Err(mut e) => errors.append(&mut e),
             }

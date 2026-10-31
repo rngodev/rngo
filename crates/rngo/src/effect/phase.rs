@@ -1,4 +1,4 @@
-use super::scenario::Scenario;
+use super::scenario::ScenarioData;
 use crate::build::{BuildError, EffectKey, SimulationKey};
 use crate::moment::Moment;
 use chrono::{DateTime, FixedOffset, TimeDelta};
@@ -9,7 +9,7 @@ use std::rc::Rc;
 pub struct Phase {
     /// The phase's name; `None` for the default phase.
     pub name: Option<String>,
-    pub scenario: Rc<Scenario>,
+    pub scenario: Rc<ScenarioData>,
     /// The phase this one falls back to and, for an effect's window, must stay within.
     pub parent: Option<Rc<Phase>>,
     pub start: DateTime<FixedOffset>,
@@ -26,7 +26,7 @@ impl Phase {
 #[derive(Clone, Debug, Default)]
 pub struct PhaseBuilder {
     name: Option<String>,
-    start: Option<Moment>,
+    pub start: Option<Moment>,
     end: Option<Moment>,
     start_expression: Option<String>,
     end_expression: Option<String>,
@@ -80,7 +80,7 @@ impl PhaseBuilder {
     /// Resolves the phase within `scenario`, taking relative moments from its `now`; errors if an expression doesn't parse, and otherwise if `start` isn't before `end` (or, for an effect, if the window leaves the parent).
     pub fn build(
         &self,
-        scenario: &Rc<Scenario>,
+        scenario: &Rc<ScenarioData>,
         parent: Option<&Rc<Phase>>,
     ) -> Result<Phase, Vec<BuildError>> {
         let now = scenario.now;
@@ -163,7 +163,7 @@ impl PhaseBuilder {
 #[cfg(test)]
 mod tests {
     use super::Phase;
-    use crate::effect::scenario::Scenario;
+    use crate::effect::scenario::ScenarioData;
     use crate::moment::Moment;
     use chrono::{DateTime, FixedOffset, TimeDelta};
     use std::rc::Rc;
@@ -172,8 +172,12 @@ mod tests {
         DateTime::parse_from_rfc3339("2024-02-01T00:00:00Z").unwrap()
     }
 
-    fn scenario(seed: u64) -> Rc<Scenario> {
-        Rc::new(Scenario { seed, now: now() })
+    fn scenario(seed: u64) -> Rc<ScenarioData> {
+        Rc::new(ScenarioData {
+            seed,
+            now: now(),
+            origin: now(),
+        })
     }
 
     #[test]

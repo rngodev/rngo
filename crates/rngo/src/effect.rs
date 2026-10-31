@@ -7,7 +7,7 @@ mod trigger;
 
 use crate::build::{BuildError, EffectKey};
 use crate::effect::phase::{Phase, PhaseBuilder};
-use crate::effect::scenario::Scenario;
+use crate::effect::scenario::ScenarioBuilder;
 use crate::log::{Metadata, RunLogReader, SimpleEventRunLog};
 use crate::moment::Moment;
 use chrono::{DateTime, FixedOffset, TimeDelta};
@@ -34,9 +34,7 @@ pub struct Effect {
     end_offset: i64,
     limit: Option<u64>,
     produced: u64,
-    origin: DateTime<FixedOffset>,
-    sim_start: DateTime<FixedOffset>,
-    sim_end: DateTime<FixedOffset>,
+    phase: Rc<Phase>,
 }
 
 impl Effect {
@@ -44,7 +42,11 @@ impl Effect {
         EffectBuilder::new(key)
     }
 
-    /// Milliseconds since simulation start at which this effect next fires.
+    fn origin(&self) -> DateTime<FixedOffset> {
+        self.phase.scenario.origin
+    }
+
+    /// Milliseconds since the simulation origin at which this effect next fires.
     pub fn next_offset(&self) -> Option<i64> {
         if self.limit.is_some_and(|limit| self.produced >= limit) {
             return None;
@@ -68,10 +70,10 @@ impl Iterator for Effect {
         let trigger_event = self.trigger.pull()?;
         let context = GeneratorContext {
             trigger: &trigger_event,
-            simulation_start: self.sim_start,
-            simulation_end: self.sim_end,
+            simulation_start: self.phase.start,
+            simulation_end: self.phase.end,
         };
-        let timestamp = self.origin + TimeDelta::milliseconds(trigger_event.sim_offset);
+        let timestamp = self.origin() + TimeDelta::milliseconds(trigger_event.sim_offset);
 
         let result = self.generator.next(&context);
 
@@ -270,7 +272,7 @@ impl EffectBuilder {
         self
     }
 
-    /// Builds the effect on its own, in the built-in phase and a scenario with seed 1; `now` must be set.
+    /// Builds the effect on its own, in a default scenario at `now`, which must be set.
     pub fn build(self) -> Result<Effect, Vec<BuildError>> {
         let Some(now) = self.now else {
             return Err(vec![BuildError::effect(
@@ -279,30 +281,24 @@ impl EffectBuilder {
                 "now must be set via set_now()",
             )]);
         };
-        let scenario = Rc::new(Scenario { seed: 1, now });
-        let phase = Rc::new(Phase::builder().build(&scenario, None)?);
-        let origin = phase.start;
-        self.build_in(&phase, origin)
+        let scenario = ScenarioBuilder::default().build(now)?;
+        self.build_in(scenario.default_phase())
     }
 
-    /// Builds the effect inside `phase`, measuring offsets from `origin`.
-    pub(crate) fn build_in(
-        self,
-        phase: &Rc<Phase>,
-        origin: DateTime<FixedOffset>,
-    ) -> Result<Effect, Vec<BuildError>> {
+    /// Builds the effect inside `phase`, measuring offsets from its scenario's origin.
+    pub(crate) fn build_in(self, phase: &Rc<Phase>) -> Result<Effect, Vec<BuildError>> {
+        let origin = phase.scenario.origin;
         let seed = phase.scenario.seed;
         let run_log_reader: Rc<dyn RunLogReader> = self
             .event_run_log
             .unwrap_or_else(|| SimpleEventRunLog::new());
-        let (sim_start, sim_end) = (phase.start, phase.end);
         let mut errors: Vec<BuildError> = vec![];
         let bounds = self.window.for_effect(self.key.clone());
         let (effect_start, effect_end) = match bounds.build(&phase.scenario, Some(phase)) {
             Ok(bounds) => (bounds.start, bounds.end),
             Err(mut e) => {
                 errors.append(&mut e);
-                (sim_start, sim_end)
+                (phase.start, phase.end)
             }
         };
         let end_offset = (effect_end - origin).num_milliseconds().max(0);
@@ -366,9 +362,7 @@ impl EffectBuilder {
                 end_offset,
                 limit: self.limit.map(NonZeroU64::get),
                 produced: 0,
-                origin,
-                sim_start,
-                sim_end,
+                phase: Rc::clone(phase),
             }),
             Ok(_) => Err(errors),
             Err(mut e) => {
