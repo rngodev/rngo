@@ -140,12 +140,22 @@ impl ScenarioBuilder {
         &self,
         data: &Rc<ScenarioData>,
     ) -> Result<(Rc<Phase>, IndexMap<String, Rc<Phase>>), Vec<BuildError>> {
-        let default_phase = Rc::new(self.default_phase.build(data, None)?);
+        let default_phase = Rc::new(
+            self.default_phase
+                .clone()
+                .scenario(Rc::clone(data))
+                .build()?,
+        );
 
         let mut errors = vec![];
         let mut phases = IndexMap::new();
         for (name, builder) in &self.phases {
-            match builder.build(data, Some(&default_phase)) {
+            match builder
+                .clone()
+                .scenario(Rc::clone(data))
+                .parent(Rc::clone(&default_phase))
+                .build()
+            {
                 Ok(phase) => {
                     phases.insert(name.clone(), Rc::new(phase));
                 }

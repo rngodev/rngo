@@ -276,8 +276,11 @@ impl EffectBuilder {
             .event_run_log
             .unwrap_or_else(|| SimpleEventRunLog::new());
         let mut errors: Vec<BuildError> = vec![];
-        let bounds = self.window.for_effect(self.key.clone());
-        let (effect_start, effect_end) = match bounds.build(&phase.scenario, Some(phase)) {
+        let bounds = self
+            .window
+            .for_effect(self.key.clone())
+            .parent(Rc::clone(phase));
+        let (effect_start, effect_end) = match bounds.build() {
             Ok(bounds) => (bounds.start, bounds.end),
             Err(mut e) => {
                 errors.append(&mut e);

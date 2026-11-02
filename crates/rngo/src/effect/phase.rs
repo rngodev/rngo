@@ -30,6 +30,8 @@ pub struct PhaseBuilder {
     end: Option<Moment>,
     start_expression: Option<String>,
     end_expression: Option<String>,
+    scenario: Option<Rc<ScenarioData>>,
+    parent: Option<Rc<Phase>>,
     effect: Option<String>,
 }
 
@@ -77,12 +79,41 @@ impl PhaseBuilder {
         self
     }
 
-    /// Resolves the phase within `scenario`, taking relative moments from its `now`; errors if an expression doesn't parse, and otherwise if `start` isn't before `end` (or, for an effect, if the window leaves the parent).
-    pub fn build(
-        &self,
-        scenario: &Rc<ScenarioData>,
-        parent: Option<&Rc<Phase>>,
-    ) -> Result<Phase, Vec<BuildError>> {
+    pub fn scenario(mut self, scenario: Rc<ScenarioData>) -> Self {
+        self.set_scenario(scenario);
+        self
+    }
+
+    /// Sets the scenario the phase belongs to, whose `now` relative moments resolve against; defaults to the parent's.
+    pub fn set_scenario(&mut self, scenario: Rc<ScenarioData>) -> &mut Self {
+        self.scenario = Some(scenario);
+        self
+    }
+
+    pub fn parent(mut self, parent: Rc<Phase>) -> Self {
+        self.set_parent(parent);
+        self
+    }
+
+    /// Sets the phase that supplies whichever of `start` and `end` this one leaves unset.
+    pub fn set_parent(&mut self, parent: Rc<Phase>) -> &mut Self {
+        self.parent = Some(parent);
+        self
+    }
+
+    /// Resolves the phase; errors if there is neither a scenario nor a parent, if an expression doesn't parse, and otherwise if `start` isn't before `end` (or, for an effect, if the window leaves the parent).
+    pub fn build(&self) -> Result<Phase, Vec<BuildError>> {
+        let parent = self.parent.as_ref();
+        let Some(scenario) = self
+            .scenario
+            .as_ref()
+            .or_else(|| parent.map(|parent| &parent.scenario))
+        else {
+            return Err(vec![self.error(
+                "start",
+                "scenario must be set via set_scenario() or a parent",
+            )]);
+        };
         let now = scenario.now;
         let (bounds_start, bounds_end) = match parent {
             Some(parent) => (parent.start, parent.end),
@@ -182,7 +213,7 @@ mod tests {
 
     #[test]
     fn defaults_to_the_built_in_window() {
-        let phase = Phase::builder().build(&scenario(1), None).unwrap();
+        let phase = Phase::builder().scenario(scenario(1)).build().unwrap();
         assert_eq!(phase.end, now());
         assert_eq!(phase.start, now() - TimeDelta::days(30));
     }
@@ -193,13 +224,15 @@ mod tests {
         let default = Rc::new(
             Phase::builder()
                 .start(Moment::Relative(TimeDelta::days(-10)))
-                .build(&scenario, None)
+                .scenario(Rc::clone(&scenario))
+                .build()
                 .unwrap(),
         );
         let late = Phase::builder()
             .name("late")
             .start(Moment::Relative(TimeDelta::days(-2)))
-            .build(&scenario, Some(&default))
+            .parent(default)
+            .build()
             .unwrap();
 
         assert_eq!(late.scenario.seed, 7);
@@ -211,11 +244,12 @@ mod tests {
     #[test]
     fn a_phase_ending_before_it_starts_is_an_error() {
         let scenario = scenario(1);
-        let default = Rc::new(Phase::builder().build(&scenario, None).unwrap());
+        let default = Rc::new(Phase::builder().scenario(scenario).build().unwrap());
         let errors = Phase::builder()
             .name("backwards")
             .end(Moment::Relative(TimeDelta::days(-60)))
-            .build(&scenario, Some(&default))
+            .parent(default)
+            .build()
             .unwrap_err();
         assert!(errors[0].message().contains("backwards"));
     }
