@@ -17,24 +17,16 @@ You can define a cell using a builder DSL. First we'll define a `SqliteRunLog`:
 let run_log = rngo::SqliteRunLog::new(".".into())?;
 ```
 
-Next a `Scenario`. Its `seed`, `start` and `end` define the default phase, and `phase` adds a named time window, which takes whatever it leaves unset from the default:
+Next a `Simulation`. Its `seed`, `start` and `end` define the default phase, and `phase` adds a named time window, which takes whatever it leaves unset from the default. Effects run in the default phase unless they name one (a name matching no phase means the default):
 
 ```rust
-let scenario = rngo::Scenario::builder()
+let mut simulation = rngo::Simulation::builder()
     .seed(41)
     .start(Moment::Relative(TimeDelta::days(-90)))
     .end(Moment::Relative(TimeDelta::zero()))
     .phase("recent", |phase| {
         phase.start(Moment::Relative(TimeDelta::days(-7)))
     })
-    .build()?;
-```
-
-Then a `Simulation` over the scenario. Its effects run in the scenario's default phase unless they are given a named one:
-
-```rust
-let mut simulation = rngo::Simulation::builder()
-    .scenario(scenario.clone())
     .effect("user", |effect| {
         effect
             .trigger_expression("hz(10, hour) * (offset * 0.0001)")
@@ -55,7 +47,7 @@ let mut simulation = rngo::Simulation::builder()
     })
     .effect("post", |effect| {
         effect
-            .phase(scenario.phase("recent").clone())
+            .phase("recent")
             .trigger_expression("hz(100, hour) * (offset * 0.0001)")
             .schema(
                 object()

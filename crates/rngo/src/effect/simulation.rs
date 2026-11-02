@@ -1,9 +1,25 @@
 use crate::RunLogReader;
 use crate::build::{BuildError, SimulationKey};
-use crate::effect::scenario::{Scenario, ScenarioBuilder};
+use crate::effect::phase::{Phase, PhaseBuilder};
 use crate::effect::{Effect, EffectBuilder, Input, SkippedInput};
 use crate::log::SimpleEventRunLog;
+use crate::moment::Moment;
+use chrono::{DateTime, FixedOffset, Utc};
+use indexmap::IndexMap;
 use std::rc::Rc;
+
+/// What a run is parameterized by besides time windows: the `seed`, the `now` that relative moments resolve against and the `origin` (the earliest phase start) that offsets are measured from, so inputs from different phases stay comparable.
+#[derive(Clone, Debug)]
+pub struct SimulationData {
+    pub seed: u64,
+    pub now: DateTime<FixedOffset>,
+    pub origin: DateTime<FixedOffset>,
+}
+
+struct Phases {
+    default: Rc<Phase>,
+    named: IndexMap<String, Rc<Phase>>,
+}
 
 #[derive(Debug)]
 pub struct Simulation {
@@ -67,7 +83,10 @@ impl Iterator for StandaloneSimulation {
 pub struct SimulationBuilder {
     run_log_reader: Option<Rc<dyn RunLogReader>>,
     effect_builders: Vec<EffectBuilder>,
-    scenario: Option<Scenario>,
+    seed: Option<u64>,
+    now: Option<DateTime<FixedOffset>>,
+    default_phase: PhaseBuilder,
+    phases: IndexMap<String, PhaseBuilder>,
     limit: Option<u64>,
 }
 
@@ -76,7 +95,10 @@ impl SimulationBuilder {
         SimulationBuilder {
             run_log_reader: None,
             effect_builders: vec![],
-            scenario: None,
+            seed: None,
+            now: None,
+            default_phase: PhaseBuilder::default(),
+            phases: IndexMap::new(),
             limit: None,
         }
     }
@@ -86,14 +108,63 @@ impl SimulationBuilder {
         self
     }
 
-    pub fn scenario(mut self, scenario: Scenario) -> Self {
-        self.set_scenario(scenario);
+    pub fn seed(mut self, seed: u64) -> Self {
+        self.set_seed(seed);
         self
     }
 
-    /// Sets the scenario whose default phase an effect runs in unless it is given a phase; defaults to a scenario with the default seed and window.
-    pub fn set_scenario(&mut self, scenario: Scenario) -> &mut Self {
-        self.scenario = Some(scenario);
+    /// Sets the seed; defaults to 1.
+    pub fn set_seed(&mut self, seed: u64) -> &mut Self {
+        self.seed = Some(seed);
+        self
+    }
+
+    pub fn now(mut self, now: DateTime<FixedOffset>) -> Self {
+        self.set_now(now);
+        self
+    }
+
+    /// Sets the instant relative moments resolve against; defaults to the current time at build.
+    pub fn set_now(&mut self, now: DateTime<FixedOffset>) -> &mut Self {
+        self.now = Some(now);
+        self
+    }
+
+    /// Sets the default phase's start; defaults to 30 days before now.
+    pub fn start(mut self, start: Moment) -> Self {
+        self.set_start(start);
+        self
+    }
+
+    pub fn set_start(&mut self, start: Moment) -> &mut Self {
+        self.default_phase.set_start(start);
+        self
+    }
+
+    /// Sets the default phase's end; defaults to now.
+    pub fn end(mut self, end: Moment) -> Self {
+        self.set_end(end);
+        self
+    }
+
+    pub fn set_end(&mut self, end: Moment) -> &mut Self {
+        self.default_phase.set_end(end);
+        self
+    }
+
+    pub fn phase(mut self, name: &str, f: impl FnOnce(PhaseBuilder) -> PhaseBuilder) -> Self {
+        self.with_phase(name, f);
+        self
+    }
+
+    /// Defines a named phase; `f` configures its builder, and whatever it leaves unset comes from the default phase.
+    pub fn with_phase(
+        &mut self,
+        name: &str,
+        f: impl FnOnce(PhaseBuilder) -> PhaseBuilder,
+    ) -> &mut Self {
+        self.phases
+            .insert(name.into(), f(PhaseBuilder::default().name(name)));
         self
     }
 
@@ -137,19 +208,32 @@ impl SimulationBuilder {
             return Err(errors);
         };
 
-        let scenario = match self.scenario {
-            Some(scenario) => scenario,
-            None => ScenarioBuilder::default().build()?,
-        };
+        let now = self.now.unwrap_or_else(|| Utc::now().fixed_offset());
+        let seed = self.seed.unwrap_or(1);
+        let provisional = Rc::new(SimulationData {
+            seed,
+            now,
+            origin: now,
+        });
+        let phases = build_phases(&self.default_phase, &self.phases, &provisional)?;
+        let origin = phases
+            .named
+            .values()
+            .map(|phase| phase.start)
+            .fold(phases.default.start, |a, b| a.min(b));
+        let data = Rc::new(SimulationData { seed, now, origin });
+        let phases = build_phases(&self.default_phase, &self.phases, &data)?;
 
         let mut effects = vec![];
         for mut effect_builder in self.effect_builders {
             effect_builder.set_event_run_log(run_log_reader.clone());
-            if effect_builder.phase.is_none() {
-                effect_builder.set_phase(Rc::clone(scenario.default_phase()));
-            }
+            let phase = effect_builder
+                .phase
+                .as_ref()
+                .and_then(|name| phases.named.get(name))
+                .unwrap_or(&phases.default);
 
-            match effect_builder.build() {
+            match effect_builder.build(phase) {
                 Ok(effect) => effects.push(effect),
                 Err(mut e) => errors.append(&mut e),
             }
@@ -167,6 +251,40 @@ impl SimulationBuilder {
     }
 }
 
+/// Builds the default phase and each named phase (with the default as its parent), so every phase is validated, used or not.
+fn build_phases(
+    default: &PhaseBuilder,
+    named: &IndexMap<String, PhaseBuilder>,
+    data: &Rc<SimulationData>,
+) -> Result<Phases, Vec<BuildError>> {
+    let default = Rc::new(default.clone().simulation(Rc::clone(data)).build()?);
+
+    let mut errors = vec![];
+    let mut phases = IndexMap::new();
+    for (name, builder) in named {
+        match builder
+            .clone()
+            .simulation(Rc::clone(data))
+            .parent(Rc::clone(&default))
+            .build()
+        {
+            Ok(phase) => {
+                phases.insert(name.clone(), Rc::new(phase));
+            }
+            Err(mut e) => errors.append(&mut e),
+        }
+    }
+
+    if errors.is_empty() {
+        Ok(Phases {
+            default,
+            named: phases,
+        })
+    } else {
+        Err(errors)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::build::BuildError;
@@ -174,9 +292,6 @@ mod tests {
         Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
         Metadata,
     };
-    use crate::effect::phase::Phase;
-    use crate::effect::scenario::ScenarioBuilder;
-    use std::rc::Rc;
 
     #[derive(Debug, Default)]
     struct AlternatingGenerator {
@@ -216,19 +331,13 @@ mod tests {
         }
     }
 
-    fn phase() -> Rc<Phase> {
-        let scenario = ScenarioBuilder::default().build().unwrap();
-        Rc::clone(scenario.default_phase())
-    }
-
     #[test]
     fn limit_counts_only_inputs() {
         let mut simulation_builder =
             super::Simulation::builder().run_log_reader(crate::SimpleEventRunLog::new());
 
         simulation_builder.with_effect("alternating", |e| {
-            e.phase(phase())
-                .trigger_hertz(1000.0)
+            e.trigger_hertz(1000.0)
                 .generator(AlternatingGeneratorBuilder)
         });
 
@@ -265,14 +374,12 @@ mod tests {
         let mut simulation_builder = super::Simulation::builder();
         simulation_builder
             .with_effect("upstream", |e| {
-                e.phase(phase())
-                    .trigger_hertz(1.0)
+                e.trigger_hertz(1.0)
                     .limit(std::num::NonZeroU64::new(3).unwrap())
                     .generator(AlternatingGeneratorBuilder)
             })
             .with_effect("downstream", |e| {
-                e.phase(phase())
-                    .trigger_effect("upstream".into())
+                e.trigger_effect("upstream".into())
                     .generator(AlternatingGeneratorBuilder)
             });
 

@@ -1,4 +1,4 @@
-use super::scenario::ScenarioData;
+use super::simulation::SimulationData;
 use crate::build::{BuildError, EffectKey, SimulationKey};
 use crate::moment::Moment;
 use chrono::{DateTime, FixedOffset, TimeDelta};
@@ -9,7 +9,7 @@ use std::rc::Rc;
 pub struct Phase {
     /// The phase's name; `None` for the default phase.
     pub name: Option<String>,
-    pub scenario: Rc<ScenarioData>,
+    pub simulation: Rc<SimulationData>,
     /// The phase this one falls back to and, for an effect's window, must stay within.
     pub parent: Option<Rc<Phase>>,
     pub start: DateTime<FixedOffset>,
@@ -20,17 +20,31 @@ impl Phase {
     pub fn builder() -> PhaseBuilder {
         PhaseBuilder::default()
     }
+
+    /// Milliseconds from the simulation's origin to `start`, at least 0.
+    pub fn start_offset(&self) -> i64 {
+        (self.start - self.simulation.origin)
+            .num_milliseconds()
+            .max(0)
+    }
+
+    /// Milliseconds from the simulation's origin to `end`, at least 0.
+    pub fn end_offset(&self) -> i64 {
+        (self.end - self.simulation.origin)
+            .num_milliseconds()
+            .max(0)
+    }
 }
 
 /// Builds a [`Phase`]; a `start` or `end` left unset comes from the parent, then from the built-in default (30 days before now to now).
 #[derive(Clone, Debug, Default)]
 pub struct PhaseBuilder {
     name: Option<String>,
-    pub start: Option<Moment>,
+    start: Option<Moment>,
     end: Option<Moment>,
     start_expression: Option<String>,
     end_expression: Option<String>,
-    scenario: Option<Rc<ScenarioData>>,
+    simulation: Option<Rc<SimulationData>>,
     parent: Option<Rc<Phase>>,
     effect: Option<String>,
 }
@@ -79,14 +93,14 @@ impl PhaseBuilder {
         self
     }
 
-    pub fn scenario(mut self, scenario: Rc<ScenarioData>) -> Self {
-        self.set_scenario(scenario);
+    pub fn simulation(mut self, simulation: Rc<SimulationData>) -> Self {
+        self.set_simulation(simulation);
         self
     }
 
-    /// Sets the scenario the phase belongs to, whose `now` relative moments resolve against; defaults to the parent's.
-    pub fn set_scenario(&mut self, scenario: Rc<ScenarioData>) -> &mut Self {
-        self.scenario = Some(scenario);
+    /// Sets the simulation data the phase belongs to, whose `now` relative moments resolve against; defaults to the parent's.
+    pub fn set_simulation(&mut self, simulation: Rc<SimulationData>) -> &mut Self {
+        self.simulation = Some(simulation);
         self
     }
 
@@ -101,20 +115,20 @@ impl PhaseBuilder {
         self
     }
 
-    /// Resolves the phase; errors if there is neither a scenario nor a parent, if an expression doesn't parse, and otherwise if `start` isn't before `end` (or, for an effect, if the window leaves the parent).
+    /// Resolves the phase; errors if there is neither simulation data nor a parent, if an expression doesn't parse, and otherwise if `start` isn't before `end` (or, for an effect, if the window leaves the parent).
     pub fn build(&self) -> Result<Phase, Vec<BuildError>> {
         let parent = self.parent.as_ref();
-        let Some(scenario) = self
-            .scenario
+        let Some(simulation) = self
+            .simulation
             .as_ref()
-            .or_else(|| parent.map(|parent| &parent.scenario))
+            .or_else(|| parent.map(|parent| &parent.simulation))
         else {
             return Err(vec![self.error(
                 "start",
-                "scenario must be set via set_scenario() or a parent",
+                "simulation data must be set via set_simulation() or a parent",
             )]);
         };
-        let now = scenario.now;
+        let now = simulation.now;
         let (bounds_start, bounds_end) = match parent {
             Some(parent) => (parent.start, parent.end),
             None => (now - TimeDelta::days(30), now),
@@ -169,7 +183,7 @@ impl PhaseBuilder {
 
         Ok(Phase {
             name: self.name.clone(),
-            scenario: Rc::clone(scenario),
+            simulation: Rc::clone(simulation),
             parent: parent.cloned(),
             start,
             end,
@@ -194,7 +208,7 @@ impl PhaseBuilder {
 #[cfg(test)]
 mod tests {
     use super::Phase;
-    use crate::effect::scenario::ScenarioData;
+    use crate::effect::simulation::SimulationData;
     use crate::moment::Moment;
     use chrono::{DateTime, FixedOffset, TimeDelta};
     use std::rc::Rc;
@@ -203,8 +217,8 @@ mod tests {
         DateTime::parse_from_rfc3339("2024-02-01T00:00:00Z").unwrap()
     }
 
-    fn scenario(seed: u64) -> Rc<ScenarioData> {
-        Rc::new(ScenarioData {
+    fn data(seed: u64) -> Rc<SimulationData> {
+        Rc::new(SimulationData {
             seed,
             now: now(),
             origin: now(),
@@ -213,18 +227,18 @@ mod tests {
 
     #[test]
     fn defaults_to_the_built_in_window() {
-        let phase = Phase::builder().scenario(scenario(1)).build().unwrap();
+        let phase = Phase::builder().simulation(data(1)).build().unwrap();
         assert_eq!(phase.end, now());
         assert_eq!(phase.start, now() - TimeDelta::days(30));
     }
 
     #[test]
     fn a_child_inherits_what_it_leaves_unset() {
-        let scenario = scenario(7);
+        let simulation = data(7);
         let default = Rc::new(
             Phase::builder()
                 .start(Moment::Relative(TimeDelta::days(-10)))
-                .scenario(Rc::clone(&scenario))
+                .simulation(Rc::clone(&simulation))
                 .build()
                 .unwrap(),
         );
@@ -235,7 +249,7 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(late.scenario.seed, 7);
+        assert_eq!(late.simulation.seed, 7);
         assert_eq!(late.start, now() - TimeDelta::days(2));
         assert_eq!(late.end, now());
         assert_eq!(late.parent.unwrap().start, now() - TimeDelta::days(10));
@@ -243,8 +257,8 @@ mod tests {
 
     #[test]
     fn a_phase_ending_before_it_starts_is_an_error() {
-        let scenario = scenario(1);
-        let default = Rc::new(Phase::builder().scenario(scenario).build().unwrap());
+        let simulation = data(1);
+        let default = Rc::new(Phase::builder().simulation(simulation).build().unwrap());
         let errors = Phase::builder()
             .name("backwards")
             .end(Moment::Relative(TimeDelta::days(-60)))

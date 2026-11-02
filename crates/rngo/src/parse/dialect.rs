@@ -6,7 +6,6 @@ use crate::audit::signal::Signal;
 use crate::audit::{Audit, AuditBuilder, signal};
 use crate::effect::generator;
 use crate::effect::generator::custom::CustomParser;
-use crate::effect::scenario::Scenario;
 use crate::effect::simulation::{Simulation, SimulationBuilder};
 use crate::moment::Moment;
 use crate::parse::ChannelParser;
@@ -75,17 +74,16 @@ impl Dialect {
     pub fn parse_simulation(&self, spec: Spec) -> Result<SimulationBuilder, Vec<ParseError>> {
         let mut errors = vec![];
         let mut simulation_builder = Simulation::builder();
-        let mut scenario_builder = Scenario::builder();
         let simulation_moment_parser = Moment::parser();
 
         if let Some(seed) = spec.seed {
-            scenario_builder.set_seed(seed);
+            simulation_builder.set_seed(seed);
         }
 
         if let Some(start) = &spec.start {
             match simulation_moment_parser.parse("start", start) {
                 Ok(timestamp) => {
-                    scenario_builder.set_start(timestamp);
+                    simulation_builder.set_start(timestamp);
                 }
                 Err(mut e) => errors.append(&mut e),
             };
@@ -94,7 +92,7 @@ impl Dialect {
         if let Some(end) = &spec.end {
             match simulation_moment_parser.parse("end", end) {
                 Ok(timestamp) => {
-                    scenario_builder.set_end(timestamp);
+                    simulation_builder.set_end(timestamp);
                 }
                 Err(mut e) => errors.append(&mut e),
             };
@@ -114,7 +112,7 @@ impl Dialect {
         };
 
         for (name, phase) in &spec.phases {
-            scenario_builder.with_phase(name, |mut phase_builder| {
+            simulation_builder.with_phase(name, |mut phase_builder| {
                 if let Some(start) = &phase.start {
                     phase_builder.set_start_expression(start.clone());
                 }
@@ -125,21 +123,6 @@ impl Dialect {
 
                 phase_builder
             });
-        }
-
-        let scenario = match scenario_builder.build() {
-            Ok(scenario) => Some(scenario),
-            Err(e) => {
-                errors.extend(
-                    e.iter()
-                        .map(|e| ParseError::invalid(e.message()).at(["phases"])),
-                );
-                None
-            }
-        };
-
-        if let Some(scenario) = &scenario {
-            simulation_builder.set_scenario(scenario.clone());
         }
 
         for name in spec.generators.keys() {
@@ -160,10 +143,7 @@ impl Dialect {
         );
 
         for (key, effect) in &spec.effects {
-            let phase = scenario.as_ref().and_then(|scenario| {
-                let name = effect_phases.get(key.as_str())?;
-                Some(Rc::clone(scenario.phase(name)))
-            });
+            let phase = effect_phases.get(key.as_str()).cloned();
 
             let visitor = GeneratorParseVisitor::new(
                 self.generator_parsers.clone(),
