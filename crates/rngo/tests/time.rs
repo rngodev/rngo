@@ -1,7 +1,8 @@
-use chrono::{DateTime, FixedOffset, TimeDelta};
+use chrono::{DateTime, FixedOffset, TimeDelta, Utc};
 use rngo::build::*;
-use rngo::{BuildError, Dialect, EffectKey, Moment, Simulation, SimulationBuilder};
+use rngo::{BuildError, Dialect, EffectKey, Moment, Phase, Scenario, Simulation};
 use serde_json::Value;
+use std::rc::Rc;
 
 fn start() -> DateTime<FixedOffset> {
     DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap()
@@ -14,10 +15,26 @@ fn offsets_in_seconds(sim: Simulation, take: usize) -> Vec<i64> {
         .collect()
 }
 
-fn fixed_window() -> SimulationBuilder {
-    Simulation::builder()
-        .start(Moment::Absolute(start()))
-        .end(Moment::Absolute(start() + TimeDelta::days(30)))
+fn phase_of(scenario: Scenario) -> Rc<Phase> {
+    Rc::clone(scenario.default_phase())
+}
+
+fn fixed_window() -> Rc<Phase> {
+    phase_of(
+        Scenario::builder()
+            .start(Moment::Absolute(start()))
+            .end(Moment::Absolute(start() + TimeDelta::days(30)))
+            .build(Utc::now().fixed_offset())
+            .unwrap(),
+    )
+}
+
+fn default_window() -> Rc<Phase> {
+    phase_of(
+        Scenario::builder()
+            .build(Utc::now().fixed_offset())
+            .unwrap(),
+    )
 }
 
 /// The simulation window is 30 days.
@@ -28,8 +45,11 @@ fn fixed_window() -> SimulationBuilder {
 /// the simulation ~60 days into the future — well past the end.
 #[test]
 fn simulation_respects_end_time() {
-    let mut builder = fixed_window();
-    builder.with_effect("events", |e| e.generator(constant().value(Value::Null)));
+    let mut builder = Simulation::builder();
+    builder.with_effect("events", |e| {
+        e.phase(fixed_window())
+            .generator(constant().value(Value::Null))
+    });
 
     let offsets = offsets_in_seconds(
         builder
@@ -57,9 +77,10 @@ fn simulation_respects_end_time() {
 /// even though the simulation window begins earlier.
 #[test]
 fn effect_respects_start_time() {
-    let mut builder = fixed_window();
+    let mut builder = Simulation::builder();
     builder.with_effect("events", |e| {
-        e.start(Moment::Absolute(start() + TimeDelta::days(15)))
+        e.phase(fixed_window())
+            .start(Moment::Absolute(start() + TimeDelta::days(15)))
             .generator(constant().value(Value::Null))
     });
 
@@ -210,7 +231,8 @@ fn effect_start_before_simulation_start_is_error() {
     let mut builder = Simulation::builder();
     // Simulation: -30d to now. Effect tries to start before the simulation at -60d.
     builder.with_effect("events", |e| {
-        e.start(Moment::Relative(TimeDelta::days(-60)))
+        e.phase(default_window())
+            .start(Moment::Relative(TimeDelta::days(-60)))
             .generator(constant().value(Value::Null))
     });
 
@@ -238,7 +260,8 @@ fn effect_end_after_simulation_end_is_error() {
     let mut builder = Simulation::builder();
     // Simulation: -30d to now. Effect tries to end after the simulation at +1d.
     builder.with_effect("events", |e| {
-        e.end(Moment::Relative(TimeDelta::days(1)))
+        e.phase(default_window())
+            .end(Moment::Relative(TimeDelta::days(1)))
             .generator(constant().value(Value::Null))
     });
 

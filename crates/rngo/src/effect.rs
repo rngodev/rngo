@@ -7,7 +7,6 @@ mod trigger;
 
 use crate::build::{BuildError, EffectKey};
 use crate::effect::phase::{Phase, PhaseBuilder};
-use crate::effect::scenario::ScenarioBuilder;
 use crate::log::{Metadata, RunLogReader, SimpleEventRunLog};
 use crate::moment::Moment;
 use chrono::{DateTime, FixedOffset, TimeDelta};
@@ -138,8 +137,7 @@ pub struct EffectBuilder {
     key: String,
     window: PhaseBuilder,
     limit: Option<NonZeroU64>,
-    now: Option<DateTime<FixedOffset>>,
-    phase: Option<String>,
+    phase: Option<Rc<Phase>>,
     event_run_log: Option<Rc<dyn RunLogReader>>,
     trigger: TriggerConfig,
     generator_builder: Option<Box<dyn GeneratorBuilder>>,
@@ -151,7 +149,6 @@ impl EffectBuilder {
             key,
             window: PhaseBuilder::default(),
             limit: None,
-            now: None,
             phase: None,
             event_run_log: None,
             trigger: TriggerConfig::ClockExpression("hz(1, day)".into()),
@@ -201,24 +198,14 @@ impl EffectBuilder {
         self
     }
 
-    pub fn now(mut self, now: DateTime<FixedOffset>) -> Self {
-        self.set_now(now);
+    pub fn phase(mut self, phase: Rc<Phase>) -> Self {
+        self.set_phase(phase);
         self
     }
 
-    pub fn set_now(&mut self, now: DateTime<FixedOffset>) -> &mut Self {
-        self.now = Some(now);
-        self
-    }
-
-    pub fn phase(mut self, name: impl Into<String>) -> Self {
-        self.set_phase(name);
-        self
-    }
-
-    /// Names the phase whose window bounds this effect and its generators; defaults to the default phase.
-    pub fn set_phase(&mut self, name: impl Into<String>) -> &mut Self {
-        self.phase = Some(name.into());
+    /// Sets the built phase whose window bounds this effect and its generators, and whose scenario supplies the seed and origin; required.
+    pub fn set_phase(&mut self, phase: Rc<Phase>) -> &mut Self {
+        self.phase = Some(phase);
         self
     }
 
@@ -272,21 +259,17 @@ impl EffectBuilder {
         self
     }
 
-    /// Builds the effect on its own, in a default scenario at `now`, which must be set.
+    /// Builds the effect inside its phase, measuring offsets from its scenario's origin.
     pub fn build(self) -> Result<Effect, Vec<BuildError>> {
-        let Some(now) = self.now else {
+        let Some(phase) = &self.phase else {
             return Err(vec![BuildError::effect(
                 self.key,
                 EffectKey::Config,
-                "now must be set via set_now()",
+                "phase must be set via set_phase()",
             )]);
         };
-        let scenario = ScenarioBuilder::default().build(now)?;
-        self.build_in(scenario.default_phase())
-    }
-
-    /// Builds the effect inside `phase`, measuring offsets from its scenario's origin.
-    pub(crate) fn build_in(self, phase: &Rc<Phase>) -> Result<Effect, Vec<BuildError>> {
+        let phase = Rc::clone(phase);
+        let phase = &phase;
         let origin = phase.scenario.origin;
         let seed = phase.scenario.seed;
         let run_log_reader: Rc<dyn RunLogReader> = self
@@ -375,14 +358,16 @@ impl EffectBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::Effect;
+    use super::{Effect, EffectBuilder};
     use crate::build::{BuildError, constant};
     use crate::effect::generator::{
         Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
         Metadata,
     };
+    use crate::effect::scenario::ScenarioBuilder;
     use chrono::Utc;
     use std::num::NonZeroU64;
+    use std::rc::Rc;
 
     #[derive(Debug, Default)]
     struct AlternatingGenerator {
@@ -422,15 +407,24 @@ mod tests {
         }
     }
 
+    fn build(builder: EffectBuilder) -> Effect {
+        let scenario = ScenarioBuilder::default()
+            .build(Utc::now().fixed_offset())
+            .unwrap();
+        builder
+            .phase(Rc::clone(scenario.default_phase()))
+            .build()
+            .unwrap()
+    }
+
     #[test]
     fn limit_caps_produced_inputs() {
-        let effect = Effect::builder("ping".into())
-            .now(Utc::now().fixed_offset())
-            .trigger_hertz(1000.0)
-            .limit(NonZeroU64::new(3).unwrap())
-            .generator(constant().value(1))
-            .build()
-            .unwrap();
+        let effect = build(
+            Effect::builder("ping".into())
+                .trigger_hertz(1000.0)
+                .limit(NonZeroU64::new(3).unwrap())
+                .generator(constant().value(1)),
+        );
 
         let results: Vec<_> = effect.collect();
 
@@ -440,13 +434,12 @@ mod tests {
 
     #[test]
     fn limit_does_not_count_skipped_inputs() {
-        let effect = Effect::builder("alternating".into())
-            .now(Utc::now().fixed_offset())
-            .trigger_hertz(1000.0)
-            .limit(NonZeroU64::new(3).unwrap())
-            .generator(AlternatingGeneratorBuilder)
-            .build()
-            .unwrap();
+        let effect = build(
+            Effect::builder("alternating".into())
+                .trigger_hertz(1000.0)
+                .limit(NonZeroU64::new(3).unwrap())
+                .generator(AlternatingGeneratorBuilder),
+        );
 
         let results: Vec<_> = effect.collect();
 

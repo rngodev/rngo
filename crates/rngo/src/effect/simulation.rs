@@ -1,10 +1,8 @@
 use crate::RunLogReader;
-use crate::build::{BuildError, EffectKey, SimulationKey};
-use crate::effect::phase::PhaseBuilder;
+use crate::build::{BuildError, SimulationKey};
 use crate::effect::scenario::ScenarioBuilder;
 use crate::effect::{Effect, EffectBuilder, Input, SkippedInput};
 use crate::log::SimpleEventRunLog;
-use crate::moment::Moment;
 use chrono::Utc;
 use std::rc::Rc;
 
@@ -70,7 +68,6 @@ impl Iterator for StandaloneSimulation {
 pub struct SimulationBuilder {
     run_log_reader: Option<Rc<dyn RunLogReader>>,
     effect_builders: Vec<EffectBuilder>,
-    scenario: ScenarioBuilder,
     limit: Option<u64>,
 }
 
@@ -79,61 +76,12 @@ impl SimulationBuilder {
         SimulationBuilder {
             run_log_reader: None,
             effect_builders: vec![],
-            scenario: ScenarioBuilder::default(),
             limit: None,
         }
     }
 
     pub fn run_log_reader<T: RunLogReader + 'static>(mut self, reader: Rc<T>) -> Self {
         self.run_log_reader = Some(reader as Rc<dyn RunLogReader>);
-        self
-    }
-
-    /// Sets the seed; defaults to 1.
-    pub fn seed(mut self, seed: u64) -> Self {
-        self.set_seed(seed);
-        self
-    }
-
-    pub fn set_seed(&mut self, seed: u64) -> &mut Self {
-        self.scenario.set_seed(seed);
-        self
-    }
-
-    /// Sets the default phase's start; defaults to 30 days before now.
-    pub fn start(mut self, start: Moment) -> Self {
-        self.set_start(start);
-        self
-    }
-
-    pub fn set_start(&mut self, start: Moment) -> &mut Self {
-        self.scenario.set_start(start);
-        self
-    }
-
-    /// Sets the default phase's end; defaults to now.
-    pub fn end(mut self, end: Moment) -> Self {
-        self.set_end(end);
-        self
-    }
-
-    pub fn set_end(&mut self, end: Moment) -> &mut Self {
-        self.scenario.set_end(end);
-        self
-    }
-
-    pub fn phase(mut self, name: &str, f: impl FnOnce(PhaseBuilder) -> PhaseBuilder) -> Self {
-        self.with_phase(name, f);
-        self
-    }
-
-    /// Defines a named phase; `f` configures its builder, and whatever it leaves unset comes from the default phase.
-    pub fn with_phase(
-        &mut self,
-        name: &str,
-        f: impl FnOnce(PhaseBuilder) -> PhaseBuilder,
-    ) -> &mut Self {
-        self.scenario.with_phase(name, f);
         self
     }
 
@@ -177,28 +125,25 @@ impl SimulationBuilder {
             return Err(errors);
         };
 
-        let scenario = self.scenario.build(Utc::now().fixed_offset())?;
-
+        let mut default_phase = None;
         let mut effects = vec![];
         for mut effect_builder in self.effect_builders {
             effect_builder.set_event_run_log(run_log_reader.clone());
-
-            let phase = match &effect_builder.phase {
-                Some(name) => match scenario.get_phase(name) {
-                    Some(phase) => phase,
+            if effect_builder.phase.is_none() {
+                let phase = match &default_phase {
+                    Some(phase) => Rc::clone(phase),
                     None => {
-                        errors.push(BuildError::effect(
-                            effect_builder.key.clone(),
-                            EffectKey::Config,
-                            format!("unknown phase \"{name}\""),
-                        ));
-                        continue;
+                        let scenario =
+                            ScenarioBuilder::default().build(Utc::now().fixed_offset())?;
+                        let phase = Rc::clone(scenario.default_phase());
+                        default_phase = Some(Rc::clone(&phase));
+                        phase
                     }
-                },
-                None => scenario.default_phase(),
-            };
+                };
+                effect_builder.set_phase(phase);
+            }
 
-            match effect_builder.build_in(phase) {
+            match effect_builder.build() {
                 Ok(effect) => effects.push(effect),
                 Err(mut e) => errors.append(&mut e),
             }
@@ -223,6 +168,10 @@ mod tests {
         Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
         Metadata,
     };
+    use crate::effect::phase::Phase;
+    use crate::effect::scenario::ScenarioBuilder;
+    use chrono::Utc;
+    use std::rc::Rc;
 
     #[derive(Debug, Default)]
     struct AlternatingGenerator {
@@ -262,13 +211,21 @@ mod tests {
         }
     }
 
+    fn phase() -> Rc<Phase> {
+        let scenario = ScenarioBuilder::default()
+            .build(Utc::now().fixed_offset())
+            .unwrap();
+        Rc::clone(scenario.default_phase())
+    }
+
     #[test]
     fn limit_counts_only_inputs() {
         let mut simulation_builder =
             super::Simulation::builder().run_log_reader(crate::SimpleEventRunLog::new());
 
         simulation_builder.with_effect("alternating", |e| {
-            e.trigger_hertz(1000.0)
+            e.phase(phase())
+                .trigger_hertz(1000.0)
                 .generator(AlternatingGeneratorBuilder)
         });
 
@@ -305,12 +262,14 @@ mod tests {
         let mut simulation_builder = super::Simulation::builder();
         simulation_builder
             .with_effect("upstream", |e| {
-                e.trigger_hertz(1.0)
+                e.phase(phase())
+                    .trigger_hertz(1.0)
                     .limit(std::num::NonZeroU64::new(3).unwrap())
                     .generator(AlternatingGeneratorBuilder)
             })
             .with_effect("downstream", |e| {
-                e.trigger_effect("upstream".into())
+                e.phase(phase())
+                    .trigger_effect("upstream".into())
                     .generator(AlternatingGeneratorBuilder)
             });
 
