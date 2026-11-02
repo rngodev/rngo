@@ -27,16 +27,16 @@ let scenario = rngo::Scenario::builder()
     .phase("recent", |phase| {
         phase.start(Moment::Relative(TimeDelta::days(-7)))
     })
-    .build(Utc::now().fixed_offset())?;
+    .build()?;
 ```
 
-Then a `Simulation`, whose effects each run in one of the scenario's phases (an effect given no phase runs in a scenario of its own, with the default seed and window):
+Then a `Simulation` over the scenario. Its effects run in the scenario's default phase unless they are given a named one:
 
 ```rust
 let mut simulation = rngo::Simulation::builder()
+    .scenario(scenario.clone())
     .effect("user", |effect| {
         effect
-            .phase(scenario.default_phase().clone())
             .trigger_expression("hz(10, hour) * (offset * 0.0001)")
             .limit(NonZeroU64::new(1000).unwrap())
             .schema(

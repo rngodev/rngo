@@ -1,4 +1,4 @@
-use chrono::{DateTime, FixedOffset, TimeDelta, Utc};
+use chrono::{DateTime, FixedOffset, TimeDelta};
 use rngo::build::*;
 use rngo::{BuildError, Dialect, EffectKey, Moment, Phase, Scenario, Simulation};
 use serde_json::Value;
@@ -24,17 +24,13 @@ fn fixed_window() -> Rc<Phase> {
         Scenario::builder()
             .start(Moment::Absolute(start()))
             .end(Moment::Absolute(start() + TimeDelta::days(30)))
-            .build(Utc::now().fixed_offset())
+            .build()
             .unwrap(),
     )
 }
 
 fn default_window() -> Rc<Phase> {
-    phase_of(
-        Scenario::builder()
-            .build(Utc::now().fixed_offset())
-            .unwrap(),
-    )
+    phase_of(Scenario::builder().build().unwrap())
 }
 
 /// The simulation window is 30 days.

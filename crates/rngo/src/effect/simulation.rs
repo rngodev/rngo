@@ -1,9 +1,8 @@
 use crate::RunLogReader;
 use crate::build::{BuildError, SimulationKey};
-use crate::effect::scenario::ScenarioBuilder;
+use crate::effect::scenario::{Scenario, ScenarioBuilder};
 use crate::effect::{Effect, EffectBuilder, Input, SkippedInput};
 use crate::log::SimpleEventRunLog;
-use chrono::Utc;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -68,6 +67,7 @@ impl Iterator for StandaloneSimulation {
 pub struct SimulationBuilder {
     run_log_reader: Option<Rc<dyn RunLogReader>>,
     effect_builders: Vec<EffectBuilder>,
+    scenario: Option<Scenario>,
     limit: Option<u64>,
 }
 
@@ -76,12 +76,24 @@ impl SimulationBuilder {
         SimulationBuilder {
             run_log_reader: None,
             effect_builders: vec![],
+            scenario: None,
             limit: None,
         }
     }
 
     pub fn run_log_reader<T: RunLogReader + 'static>(mut self, reader: Rc<T>) -> Self {
         self.run_log_reader = Some(reader as Rc<dyn RunLogReader>);
+        self
+    }
+
+    pub fn scenario(mut self, scenario: Scenario) -> Self {
+        self.set_scenario(scenario);
+        self
+    }
+
+    /// Sets the scenario whose default phase an effect runs in unless it is given a phase; defaults to a scenario with the default seed and window.
+    pub fn set_scenario(&mut self, scenario: Scenario) -> &mut Self {
+        self.scenario = Some(scenario);
         self
     }
 
@@ -125,22 +137,16 @@ impl SimulationBuilder {
             return Err(errors);
         };
 
-        let mut default_phase = None;
+        let scenario = match self.scenario {
+            Some(scenario) => scenario,
+            None => ScenarioBuilder::default().build()?,
+        };
+
         let mut effects = vec![];
         for mut effect_builder in self.effect_builders {
             effect_builder.set_event_run_log(run_log_reader.clone());
             if effect_builder.phase.is_none() {
-                let phase = match &default_phase {
-                    Some(phase) => Rc::clone(phase),
-                    None => {
-                        let scenario =
-                            ScenarioBuilder::default().build(Utc::now().fixed_offset())?;
-                        let phase = Rc::clone(scenario.default_phase());
-                        default_phase = Some(Rc::clone(&phase));
-                        phase
-                    }
-                };
-                effect_builder.set_phase(phase);
+                effect_builder.set_phase(Rc::clone(scenario.default_phase()));
             }
 
             match effect_builder.build() {
@@ -170,7 +176,6 @@ mod tests {
     };
     use crate::effect::phase::Phase;
     use crate::effect::scenario::ScenarioBuilder;
-    use chrono::Utc;
     use std::rc::Rc;
 
     #[derive(Debug, Default)]
@@ -212,9 +217,7 @@ mod tests {
     }
 
     fn phase() -> Rc<Phase> {
-        let scenario = ScenarioBuilder::default()
-            .build(Utc::now().fixed_offset())
-            .unwrap();
+        let scenario = ScenarioBuilder::default().build().unwrap();
         Rc::clone(scenario.default_phase())
     }
 

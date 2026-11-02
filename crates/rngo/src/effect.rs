@@ -365,7 +365,6 @@ mod tests {
         Metadata,
     };
     use crate::effect::scenario::ScenarioBuilder;
-    use chrono::Utc;
     use std::num::NonZeroU64;
     use std::rc::Rc;
 
@@ -408,9 +407,7 @@ mod tests {
     }
 
     fn build(builder: EffectBuilder) -> Effect {
-        let scenario = ScenarioBuilder::default()
-            .build(Utc::now().fixed_offset())
-            .unwrap();
+        let scenario = ScenarioBuilder::default().build().unwrap();
         builder
             .phase(Rc::clone(scenario.default_phase()))
             .build()

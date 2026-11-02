@@ -1,4 +1,4 @@
-use chrono::{TimeDelta, Utc};
+use chrono::TimeDelta;
 use rngo::build::*;
 use rngo::{Input, Metadata, Moment, Phase, RunLogWriter, Scenario, Simulation, SqliteRunLog};
 use rusqlite::Connection;
@@ -8,7 +8,7 @@ use tempfile::TempDir;
 fn short_window() -> Rc<Phase> {
     let scenario = Scenario::builder()
         .start(Moment::Relative(TimeDelta::seconds(-5)))
-        .build(Utc::now().fixed_offset())
+        .build()
         .unwrap();
     Rc::clone(scenario.default_phase())
 }

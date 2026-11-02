@@ -1,12 +1,12 @@
 use super::phase::{Phase, PhaseBuilder};
 use crate::build::BuildError;
 use crate::moment::Moment;
-use chrono::{DateTime, FixedOffset};
+use chrono::{DateTime, FixedOffset, Utc};
 use indexmap::IndexMap;
 use std::rc::Rc;
 
 /// A built scenario: its [`ScenarioData`], default phase and named phases, each of which refers back to the data.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Scenario {
     pub data: Rc<ScenarioData>,
     default_phase: Rc<Phase>,
@@ -45,6 +45,7 @@ pub struct ScenarioData {
 #[derive(Clone, Debug, Default)]
 pub struct ScenarioBuilder {
     seed: Option<u64>,
+    now: Option<DateTime<FixedOffset>>,
     default_phase: PhaseBuilder,
     phases: IndexMap<String, PhaseBuilder>,
 }
@@ -57,6 +58,17 @@ impl ScenarioBuilder {
 
     pub fn set_seed(&mut self, seed: u64) -> &mut Self {
         self.seed = Some(seed);
+        self
+    }
+
+    pub fn now(mut self, now: DateTime<FixedOffset>) -> Self {
+        self.set_now(now);
+        self
+    }
+
+    /// Sets the instant relative moments resolve against; defaults to the current time at build.
+    pub fn set_now(&mut self, now: DateTime<FixedOffset>) -> &mut Self {
+        self.now = Some(now);
         self
     }
 
@@ -98,8 +110,9 @@ impl ScenarioBuilder {
         self
     }
 
-    /// Builds the default phase and each named phase (with the default as its parent) at `now`; the scenario's origin is the earliest start among them.
-    pub fn build(&self, now: DateTime<FixedOffset>) -> Result<Scenario, Vec<BuildError>> {
+    /// Builds the default phase and each named phase (with the default as its parent); the scenario's origin is the earliest start among them.
+    pub fn build(&self) -> Result<Scenario, Vec<BuildError>> {
+        let now = self.now.unwrap_or_else(|| Utc::now().fixed_offset());
         let seed = self.seed.unwrap_or(1);
         let provisional = Rc::new(ScenarioData {
             seed,

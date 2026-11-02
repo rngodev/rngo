@@ -13,7 +13,6 @@ use crate::parse::ChannelParser;
 use crate::proxy::channel::{self, ChannelBuilder};
 use crate::proxy::{Proxy, ProxyBuilder, format};
 use crate::spec::{self, ParseError, Spec};
-use chrono::Utc;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -128,7 +127,7 @@ impl Dialect {
             });
         }
 
-        let scenario = match scenario_builder.build(Utc::now().fixed_offset()) {
+        let scenario = match scenario_builder.build() {
             Ok(scenario) => Some(scenario),
             Err(e) => {
                 errors.extend(
@@ -138,6 +137,10 @@ impl Dialect {
                 None
             }
         };
+
+        if let Some(scenario) = &scenario {
+            simulation_builder.set_scenario(scenario.clone());
+        }
 
         for name in spec.generators.keys() {
             if self.generator_parsers.iter().any(|p| p.key() == name) {
@@ -157,12 +160,10 @@ impl Dialect {
         );
 
         for (key, effect) in &spec.effects {
-            let phase = scenario
-                .as_ref()
-                .map(|scenario| match effect_phases.get(key.as_str()) {
-                    Some(name) => Rc::clone(scenario.phase(name)),
-                    None => Rc::clone(scenario.default_phase()),
-                });
+            let phase = scenario.as_ref().and_then(|scenario| {
+                let name = effect_phases.get(key.as_str())?;
+                Some(Rc::clone(scenario.phase(name)))
+            });
 
             let visitor = GeneratorParseVisitor::new(
                 self.generator_parsers.clone(),
@@ -180,11 +181,11 @@ impl Dialect {
                 }
             };
 
-            let Some(phase) = phase else { continue };
-
             simulation_builder.with_effect(key, |mut effect_builder| {
                 effect_builder.set_generator(generator_builder);
-                effect_builder.set_phase(phase);
+                if let Some(phase) = phase {
+                    effect_builder.set_phase(phase);
+                }
 
                 if let Some(start) = &effect.start {
                     effect_builder.set_start_expression(start.clone());
