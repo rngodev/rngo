@@ -4,22 +4,9 @@ use crate::effect::phase::{Phase, PhaseBuilder};
 use crate::effect::{Effect, EffectBuilder, Input, SkippedInput};
 use crate::log::SimpleEventRunLog;
 use crate::moment::Moment;
-use chrono::{DateTime, FixedOffset, Utc};
+use chrono::{DateTime, FixedOffset, TimeDelta, Utc};
 use indexmap::IndexMap;
 use std::rc::Rc;
-
-/// What a run is parameterized by besides time windows: the `seed`, the `now` that relative moments resolve against and the `origin` (the earliest phase start) that offsets are measured from, so inputs from different phases stay comparable.
-#[derive(Clone, Debug)]
-pub struct SimulationData {
-    pub seed: u64,
-    pub now: DateTime<FixedOffset>,
-    pub origin: DateTime<FixedOffset>,
-}
-
-struct Phases {
-    default: Rc<Phase>,
-    named: IndexMap<String, Rc<Phase>>,
-}
 
 #[derive(Debug)]
 pub struct Simulation {
@@ -97,7 +84,9 @@ impl SimulationBuilder {
             effect_builders: vec![],
             seed: None,
             now: None,
-            default_phase: PhaseBuilder::default(),
+            default_phase: PhaseBuilder::default()
+                .start(Moment::Relative(TimeDelta::days(-30)))
+                .end(Moment::Relative(TimeDelta::zero())),
             phases: IndexMap::new(),
             limit: None,
         }
@@ -157,7 +146,7 @@ impl SimulationBuilder {
         self
     }
 
-    /// Defines a named phase; `f` configures its builder, and whatever it leaves unset comes from the default phase.
+    /// Defines a named phase; `f` configures its builder.
     pub fn with_phase(
         &mut self,
         name: &str,
@@ -209,31 +198,63 @@ impl SimulationBuilder {
         };
 
         let now = self.now.unwrap_or_else(|| Utc::now().fixed_offset());
+        let default_phase = self.default_phase.clone().now(now).build()?;
+        let (Some(start), Some(end)) = (default_phase.start, default_phase.end) else {
+            return Err(vec![BuildError::simulation(
+                SimulationKey::Start,
+                "the default phase must have a start and an end",
+            )]);
+        };
+        let bounds = (start, end);
+
+        let mut phases = IndexMap::new();
+        for (name, builder) in &self.phases {
+            match builder
+                .clone()
+                .now(now)
+                .simulation(bounds.0, bounds.1)
+                .build()
+            {
+                Ok(phase) => {
+                    phases.insert(name.clone(), phase);
+                }
+                Err(mut e) => errors.append(&mut e),
+            }
+        }
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+
+        let empty = Phase::default();
+        let mut effect_builders = self.effect_builders;
+        let mut origin = start;
+        for effect_builder in &mut effect_builders {
+            let phase = match effect_builder.get_phase_key() {
+                Some(key) => phases.get(key).unwrap_or(&empty),
+                None => &default_phase,
+            };
+            effect_builder
+                .set_phase(phase)
+                .set_now(now)
+                .set_simulation(start, end);
+            match effect_builder.resolved_start() {
+                Ok(effect_start) => origin = origin.min(effect_start),
+                Err(mut e) => errors.append(&mut e),
+            }
+        }
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+
         let seed = self.seed.unwrap_or(1);
-        let provisional = Rc::new(SimulationData {
-            seed,
-            now,
-            origin: now,
-        });
-        let phases = build_phases(&self.default_phase, &self.phases, &provisional)?;
-        let origin = phases
-            .named
-            .values()
-            .map(|phase| phase.start)
-            .fold(phases.default.start, |a, b| a.min(b));
-        let data = Rc::new(SimulationData { seed, now, origin });
-        let phases = build_phases(&self.default_phase, &self.phases, &data)?;
 
         let mut effects = vec![];
-        for mut effect_builder in self.effect_builders {
-            effect_builder.set_event_run_log(run_log_reader.clone());
-            let phase = effect_builder
-                .phase
-                .as_ref()
-                .and_then(|name| phases.named.get(name))
-                .unwrap_or(&phases.default);
-
-            match effect_builder.build(phase) {
+        for mut effect_builder in effect_builders {
+            effect_builder
+                .set_event_run_log(run_log_reader.clone())
+                .set_seed(seed)
+                .set_origin(origin);
+            match effect_builder.build() {
                 Ok(effect) => effects.push(effect),
                 Err(mut e) => errors.append(&mut e),
             }
@@ -248,40 +269,6 @@ impl SimulationBuilder {
         } else {
             Err(errors)
         }
-    }
-}
-
-/// Builds the default phase and each named phase (with the default as its parent), so every phase is validated, used or not.
-fn build_phases(
-    default: &PhaseBuilder,
-    named: &IndexMap<String, PhaseBuilder>,
-    data: &Rc<SimulationData>,
-) -> Result<Phases, Vec<BuildError>> {
-    let default = Rc::new(default.clone().simulation(Rc::clone(data)).build()?);
-
-    let mut errors = vec![];
-    let mut phases = IndexMap::new();
-    for (name, builder) in named {
-        match builder
-            .clone()
-            .simulation(Rc::clone(data))
-            .parent(Rc::clone(&default))
-            .build()
-        {
-            Ok(phase) => {
-                phases.insert(name.clone(), Rc::new(phase));
-            }
-            Err(mut e) => errors.append(&mut e),
-        }
-    }
-
-    if errors.is_empty() {
-        Ok(Phases {
-            default,
-            named: phases,
-        })
-    } else {
-        Err(errors)
     }
 }
 

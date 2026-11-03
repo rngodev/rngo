@@ -121,6 +121,10 @@ impl Dialect {
                     phase_builder.set_end_expression(end.clone());
                 }
 
+                if let Some(limit) = phase.limit {
+                    phase_builder.set_limit(limit);
+                }
+
                 phase_builder
             });
         }
@@ -164,7 +168,7 @@ impl Dialect {
             simulation_builder.with_effect(key, |mut effect_builder| {
                 effect_builder.set_generator(generator_builder);
                 if let Some(phase) = phase {
-                    effect_builder.set_phase(phase);
+                    effect_builder.set_phase_key(phase);
                 }
 
                 if let Some(start) = &effect.start {

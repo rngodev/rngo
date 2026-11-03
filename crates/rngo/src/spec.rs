@@ -57,11 +57,12 @@ impl Spec {
     }
 }
 
-/// A named time window for its member effects; a missing `start` or `end` falls back to the default phase.
+/// A named time window and input cap for its member effects, which can each override them; a missing part stays unset.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Phase {
     pub start: Option<String>,
     pub end: Option<String>,
+    pub limit: Option<NonZeroU64>,
     /// Effects writing to these channels belong to the phase, unless listed in some phase's `effects`.
     #[serde(default)]
     pub channels: Vec<String>,

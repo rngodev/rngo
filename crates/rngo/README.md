@@ -17,7 +17,7 @@ You can define a cell using a builder DSL. First we'll define a `SqliteRunLog`:
 let run_log = rngo::SqliteRunLog::new(".".into())?;
 ```
 
-Next a `Simulation`. Its `seed`, `start` and `end` define the default phase, and `phase` adds a named time window, which takes whatever it leaves unset from the default. Effects run in the default phase unless they name one (a name matching no phase means the default):
+Next a `Simulation`. Its `seed`, `start` and `end` define the default phase, and `phase` adds a named time window and `limit`. Effects run in the default phase unless they name one, and a name matching no phase gives an empty one. An effect's own `start`, `end` and `limit` win over its phase's, and it needs a `start` and an `end` or `limit` from one or the other; with both `end` and `limit`, whichever is reached first stops it:
 
 ```rust
 let mut simulation = rngo::Simulation::builder()
@@ -25,7 +25,9 @@ let mut simulation = rngo::Simulation::builder()
     .start(Moment::Relative(TimeDelta::days(-90)))
     .end(Moment::Relative(TimeDelta::zero()))
     .phase("recent", |phase| {
-        phase.start(Moment::Relative(TimeDelta::days(-7)))
+        phase
+            .start(Moment::Relative(TimeDelta::days(-7)))
+            .end(Moment::Relative(TimeDelta::zero()))
     })
     .effect("user", |effect| {
         effect
@@ -47,7 +49,7 @@ let mut simulation = rngo::Simulation::builder()
     })
     .effect("post", |effect| {
         effect
-            .phase("recent")
+            .phase_key("recent")
             .trigger_expression("hz(100, hour) * (offset * 0.0001)")
             .schema(
                 object()
@@ -142,6 +144,7 @@ You can also define the above in JSON (or YAML) spec - it would look like this:
     "phases": {
         "recent": {
             "start": "now - days(7)",
+            "end": "now",
             "effects": ["post"],
             "scenarios": { "backfill": { "start": "now - months(6)" } }
         }

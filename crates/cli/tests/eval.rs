@@ -1358,6 +1358,7 @@ fn write_phase_fixture(base: &Path) {
             "phases": {
                 "late": {
                     "effects": ["ping"],
+                    "end": "2024-01-11",
                     "start": "2024-01-06",
                     "scenarios": { "later": { "start": "2024-01-09" } }
                 }

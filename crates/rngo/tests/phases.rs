@@ -56,7 +56,7 @@ fn dates(value: Value, effect: &str) -> Vec<String> {
 #[test]
 fn effects_follow_their_phase_bounds_and_stay_time_ordered() {
     let value = spec(
-        json!({ "late": { "start": "2024-01-06", "channels": ["api"] } }),
+        json!({ "late": { "start": "2024-01-06", "end": "2024-01-11", "channels": ["api"] } }),
         json!({ "a": effect(Some("db"), json!({})), "b": effect(Some("api"), json!({})) }),
     );
     let simulation = Dialect::primitive()
@@ -75,7 +75,7 @@ fn effects_follow_their_phase_bounds_and_stay_time_ordered() {
 #[test]
 fn effects_list_beats_channels() {
     let value = spec(
-        json!({ "late": { "start": "2024-01-06", "channels": ["db"], "effects": ["b"] } }),
+        json!({ "late": { "start": "2024-01-06", "end": "2024-01-11", "channels": ["db"], "effects": ["b"] } }),
         json!({ "a": effect(Some("db"), json!({})), "b": effect(Some("api"), json!({})) }),
     );
     assert_eq!(dates(value.clone(), "a").first().unwrap(), "2024-01-06");
@@ -85,25 +85,66 @@ fn effects_list_beats_channels() {
 #[test]
 fn effect_without_channel_uses_default_phase() {
     let value = spec(
-        json!({ "late": { "start": "2024-01-06", "channels": ["db"] } }),
+        json!({ "late": { "start": "2024-01-06", "end": "2024-01-11", "channels": ["db"] } }),
         json!({ "a": effect(None, json!({})) }),
     );
     assert_eq!(dates(value, "a").first().unwrap(), "2024-01-01");
 }
 
 #[test]
-fn effect_outside_its_phase_is_rejected() {
+fn an_effect_overrides_its_phase() {
+    let value = spec(
+        json!({ "late": { "start": "2024-01-06", "end": "2024-01-11", "channels": ["db"] } }),
+        json!({ "a": effect(Some("db"), json!({ "start": "2024-01-02", "end": "2024-01-04" })) }),
+    );
+    let a = dates(value, "a");
+    assert_eq!(a.first().unwrap(), "2024-01-02");
+    assert_eq!(a.last().unwrap(), "2024-01-03");
+}
+
+#[test]
+fn a_phase_does_not_inherit_from_the_default_phase() {
     let value = spec(
         json!({ "late": { "start": "2024-01-06", "channels": ["db"] } }),
-        json!({ "a": effect(Some("db"), json!({ "start": "2024-01-02" })) }),
+        json!({ "a": effect(Some("db"), json!({})) }),
     );
     let errors = errors(value);
     assert!(
         errors
             .iter()
-            .any(|e| e.contains("before phase \"late\" start")),
+            .any(|e| e.contains("end or limit must be set")),
         "{errors:?}"
     );
+}
+
+#[test]
+fn a_phase_limit_caps_its_effects_unless_they_set_their_own() {
+    let value = spec(
+        json!({ "few": { "start": "2024-01-01", "limit": 3, "channels": ["db"] } }),
+        json!({
+            "a": effect(Some("db"), json!({})),
+            "b": effect(Some("db"), json!({ "limit": 2 })),
+        }),
+    );
+    assert_eq!(dates(value.clone(), "a").len(), 3);
+    assert_eq!(dates(value, "b").len(), 2);
+}
+
+#[test]
+fn a_limit_and_an_end_stop_at_whichever_comes_first() {
+    let value = spec(
+        json!({}),
+        json!({ "a": effect(None, json!({ "limit": 20 })) }),
+    );
+    let capped = dates(value, "a");
+    assert!(capped.len() < 20);
+    assert!(capped.iter().all(|date| date.as_str() <= "2024-01-11"));
+
+    let value = spec(
+        json!({}),
+        json!({ "a": effect(None, json!({ "limit": 4 })) }),
+    );
+    assert_eq!(dates(value, "a").len(), 4);
 }
 
 #[test]
