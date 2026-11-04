@@ -1,17 +1,16 @@
 # rngo
 
-The `rngo` library lets you assemble **cells** and define **audits** in Rust.
+The `rngo` library lets you build a **spec** in Rust and evaluate it.
 
-A **cell** is responsible for sending inputs to and capturing outputs from the system under test (SUT). Its components include:
-- a `RunLog` that records inputs, outputs and metadata (and may be shared by other cells)
-- one or more `Simulation`s that generate and log inputs
-- a single `Proxy` that routes the inputs and logs the outputs
-
-An **audit** surfaces patterns in the `RunLog` and usually sets expectations of those patterns.
+A **spec** describes the behavior of a system using the following components:
+- a `RunLog` records inputs, outputs and metadata
+- a `Simulation` generates a deterministic stream of inputs
+- a `Proxy` routes inputs to the appropriate system interfaces and captures outputs
+- an `Audit` surfaces pattern in logged inputs and outputs and may set expectations
 
 ## DSL
 
-You can define a cell using a builder DSL. First we'll define a `SqliteRunLog`:
+You can define a spec using a builder DSL. First we'll define a `SqliteRunLog`:
 
 ```rust
 let run_log = rngo::SqliteRunLog::new(".".into())?;
@@ -20,11 +19,16 @@ let run_log = rngo::SqliteRunLog::new(".".into())?;
 Next a `Simulation`:
 
 ```rust
-let mut simulation = rngo::Simulation.builder()
+let mut simulation = rngo::Simulation::builder()
     .seed(41)
-    .start(TimeDelta.months(-3))
-    .end(TimeDelta.zero())
-    .with_effect("user", |effect| {
+    .start(Moment::Relative(TimeDelta::days(-90)))
+    .end(Moment::Relative(TimeDelta::zero()))
+    .phase("recent", |phase| {
+        phase
+            .start(Moment::Relative(TimeDelta::days(-7)))
+            .end(Moment::Relative(TimeDelta::zero()))
+    })
+    .effect("user", |effect| {
         effect
             .trigger_expression("hz(10, hour) * (offset * 0.0001)")
             .limit(NonZeroU64::new(1000).unwrap())
@@ -42,8 +46,9 @@ let mut simulation = rngo::Simulation.builder()
             )
           
     })
-    .with_effect("post", |effect| {
+    .effect("post", |effect| {
         effect
+            .phase_key("recent")
             .trigger_expression("hz(100, hour) * (offset * 0.0001)")
             .schema(
                 object()
@@ -66,7 +71,7 @@ let mut simulation = rngo::Simulation.builder()
                     .property("created_at", context().path(["clock", "now"])),
             )
     })
-    .run_log(run_log.clone())
+    .run_log_reader(run_log.clone())
     .build()?;
 ```
 
@@ -90,7 +95,7 @@ let proxy = rngo::Proxy::builder()
     .build()?
 ```
 
-Now we can run the `Simulation` against the `Proxy` (and exit the sub-shells): 
+To evaluate the spec, first run the `Simulation` against the `Proxy`: 
 
 ```rust
 for input in &mut simulation {
@@ -100,7 +105,7 @@ for input in &mut simulation {
 proxy.finish()?;
 ```
 
-Finally, we can build an `Audit` and set some expectations for the inputs and ouputs
+Then build an `Audit` and run it against the `RunLog`:
 
 ```rust
 let audit = rngo::Audit::builder()
@@ -135,6 +140,14 @@ You can also define the above in JSON (or YAML) spec - it would look like this:
     "seed": 41,
     "start": "now - months(3)",
     "end": "now",
+    "phases": {
+        "recent": {
+            "start": "now - days(7)",
+            "end": "now",
+            "effects": ["post"],
+            "scenarios": { "backfill": { "start": "now - months(6)" } }
+        }
+    },
     "effects": {
         "user": {
             "channel": "db",

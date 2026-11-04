@@ -1,6 +1,6 @@
 use chrono::{DateTime, FixedOffset, TimeDelta};
 use rngo::build::*;
-use rngo::{BuildError, Dialect, EffectKey, Moment, Simulation};
+use rngo::{BuildError, Dialect, EffectKey, Moment, Simulation, SimulationBuilder};
 use serde_json::Value;
 
 fn start() -> DateTime<FixedOffset> {
@@ -14,12 +14,10 @@ fn offsets_in_seconds(sim: Simulation, take: usize) -> Vec<i64> {
         .collect()
 }
 
-fn fixed_window() -> rngo::SimulationBuilder {
-    let mut builder = Simulation::builder();
-    builder
-        .set_start(Moment::Absolute(start()))
-        .set_end(Moment::Absolute(start() + TimeDelta::days(30)));
-    builder
+fn fixed_window() -> SimulationBuilder {
+    Simulation::builder()
+        .start(Moment::Absolute(start()))
+        .end(Moment::Absolute(start() + TimeDelta::days(30)))
 }
 
 /// The simulation window is 30 days.
@@ -208,11 +206,16 @@ fn effect_respects_both_start_and_end() {
 }
 
 #[test]
-fn effect_start_before_simulation_start_is_error() {
-    let mut builder = Simulation::builder();
-    // Simulation: -30d to now. Effect tries to start before the simulation at -60d.
-    builder.with_effect("events", |e| {
-        e.start(Moment::Relative(TimeDelta::days(-60)))
+fn an_effect_without_a_start_is_an_error() {
+    let spec = serde_json::json!({
+        "effects": {
+            "events": { "generator": { "type": "constant", "value": null } }
+        }
+    });
+    let mut builder = Dialect::primitive().parse_simulation_json(spec).unwrap();
+    builder.with_effect("loose", |e| {
+        e.phase_key("nowhere")
+            .end(Moment::Relative(TimeDelta::zero()))
             .generator(constant().value(Value::Null))
     });
 
@@ -220,27 +223,19 @@ fn effect_start_before_simulation_start_is_error() {
         .run_log_reader(rngo::SimpleEventRunLog::new())
         .build()
         .unwrap_err();
-    let error = errors
-        .iter()
-        .find(|e| matches!(e, BuildError::Effect { effect, .. } if effect == "events"))
-        .unwrap();
 
-    assert_eq!(error.message(), "start cannot be before simulation start");
-    assert!(matches!(
-        error,
-        BuildError::Effect {
-            key: EffectKey::Start,
-            ..
-        }
-    ));
+    assert!(errors.iter().any(|e| matches!(
+        e,
+        BuildError::Effect { effect, key: EffectKey::Start, .. } if effect == "loose"
+    )));
 }
 
 #[test]
-fn effect_end_after_simulation_end_is_error() {
+fn an_effect_without_an_end_or_limit_is_an_error() {
     let mut builder = Simulation::builder();
-    // Simulation: -30d to now. Effect tries to end after the simulation at +1d.
     builder.with_effect("events", |e| {
-        e.end(Moment::Relative(TimeDelta::days(1)))
+        e.phase_key("nowhere")
+            .start(Moment::Relative(TimeDelta::days(-1)))
             .generator(constant().value(Value::Null))
     });
 
@@ -248,57 +243,32 @@ fn effect_end_after_simulation_end_is_error() {
         .run_log_reader(rngo::SimpleEventRunLog::new())
         .build()
         .unwrap_err();
-    let error = errors
-        .iter()
-        .find(|e| matches!(e, BuildError::Effect { effect, .. } if effect == "events"))
-        .unwrap();
 
-    assert_eq!(error.message(), "end cannot be after simulation end");
     assert!(matches!(
-        error,
-        BuildError::Effect {
+        errors.as_slice(),
+        [BuildError::Effect {
             key: EffectKey::End,
             ..
-        }
+        }]
     ));
 }
 
 #[test]
-fn effect_bounds_outside_simulation_via_spec_are_errors() {
-    let spec = serde_json::json!({
-        "start": "2024-01-01",
-        "end": "2024-12-31",
-        "effects": {
-            "too_early": {
-                "start": "2023-06-01",
-                "generator": { "type": "constant", "value": null }
-            },
-            "too_late": {
-                "end": "2025-06-01",
-                "generator": { "type": "constant", "value": null }
-            }
-        }
+fn an_effect_in_an_unknown_phase_runs_on_its_own_values() {
+    let mut builder = Simulation::builder();
+    builder.with_effect("events", |e| {
+        e.phase_key("nowhere")
+            .start(Moment::Relative(TimeDelta::days(-1)))
+            .limit(std::num::NonZeroU64::new(2).unwrap())
+            .generator(constant().value(Value::Null))
     });
 
-    let errors = Dialect::primitive()
-        .parse_simulation_json(spec)
-        .unwrap()
+    let inputs = builder
         .run_log_reader(rngo::SimpleEventRunLog::new())
         .build()
-        .unwrap_err();
+        .unwrap()
+        .flatten()
+        .count();
 
-    let start_error = errors
-        .iter()
-        .find(|e| matches!(e, BuildError::Effect { effect, key: EffectKey::Start, .. } if effect == "too_early"))
-        .unwrap();
-    assert_eq!(
-        start_error.message(),
-        "start cannot be before simulation start"
-    );
-
-    let end_error = errors
-        .iter()
-        .find(|e| matches!(e, BuildError::Effect { effect, key: EffectKey::End, .. } if effect == "too_late"))
-        .unwrap();
-    assert_eq!(end_error.message(), "end cannot be after simulation end");
+    assert_eq!(inputs, 2);
 }

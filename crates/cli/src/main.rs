@@ -41,6 +41,9 @@ enum Commands {
         /// Cap the number of inputs an eval produces
         #[arg(long)]
         limit: Option<std::num::NonZeroU64>,
+        /// Apply the named scenario to every phase that defines it
+        #[arg(long)]
+        scenario: Option<String>,
         /// Wait for each event's timestamp before sending it instead of sending right away
         #[arg(long)]
         realtime: bool,
@@ -97,6 +100,7 @@ fn main() {
             stdout,
             dry_run,
             limit,
+            scenario,
             realtime,
             path,
         } => match eval::eval(
@@ -105,6 +109,7 @@ fn main() {
                 stdout,
                 dry_run,
                 limit,
+                scenario,
                 realtime,
                 stop: stop_on_interrupt(),
             },

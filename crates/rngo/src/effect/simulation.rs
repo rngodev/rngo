@@ -1,9 +1,11 @@
 use crate::RunLogReader;
 use crate::build::{BuildError, SimulationKey};
+use crate::effect::phase::{Phase, PhaseBuilder};
 use crate::effect::{Effect, EffectBuilder, Input, SkippedInput};
 use crate::log::SimpleEventRunLog;
 use crate::moment::Moment;
-use chrono::{TimeDelta, Utc};
+use chrono::{DateTime, FixedOffset, TimeDelta, Utc};
+use indexmap::IndexMap;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -66,22 +68,26 @@ impl Iterator for StandaloneSimulation {
 
 #[derive(Debug)]
 pub struct SimulationBuilder {
-    pub seed: u64,
-    pub start: Moment,
-    pub end: Moment,
     run_log_reader: Option<Rc<dyn RunLogReader>>,
     effect_builders: Vec<EffectBuilder>,
+    seed: Option<u64>,
+    now: Option<DateTime<FixedOffset>>,
+    default_phase: PhaseBuilder,
+    phases: IndexMap<String, PhaseBuilder>,
     limit: Option<u64>,
 }
 
 impl SimulationBuilder {
     fn new() -> Self {
         SimulationBuilder {
-            seed: 1,
-            start: Moment::Relative(TimeDelta::days(-30)),
-            end: Moment::Relative(TimeDelta::zero()),
             run_log_reader: None,
             effect_builders: vec![],
+            seed: None,
+            now: None,
+            default_phase: PhaseBuilder::default()
+                .start(Moment::Relative(TimeDelta::days(-30)))
+                .end(Moment::Relative(TimeDelta::zero())),
+            phases: IndexMap::new(),
             limit: None,
         }
     }
@@ -91,45 +97,72 @@ impl SimulationBuilder {
         self
     }
 
-    pub fn limit(mut self, limit: u64) -> Self {
-        self.limit = Some(limit);
-        self
-    }
-
     pub fn seed(mut self, seed: u64) -> Self {
         self.set_seed(seed);
         self
     }
 
+    /// Sets the seed; defaults to 1.
     pub fn set_seed(&mut self, seed: u64) -> &mut Self {
-        self.seed = seed;
+        self.seed = Some(seed);
         self
     }
 
+    pub fn now(mut self, now: DateTime<FixedOffset>) -> Self {
+        self.set_now(now);
+        self
+    }
+
+    /// Sets the instant relative moments resolve against; defaults to the current time at build.
+    pub fn set_now(&mut self, now: DateTime<FixedOffset>) -> &mut Self {
+        self.now = Some(now);
+        self
+    }
+
+    /// Sets the default phase's start; defaults to 30 days before now.
     pub fn start(mut self, start: Moment) -> Self {
         self.set_start(start);
         self
     }
 
     pub fn set_start(&mut self, start: Moment) -> &mut Self {
-        self.start = start;
+        self.default_phase.set_start(start);
         self
     }
 
+    /// Sets the default phase's end; defaults to now.
     pub fn end(mut self, end: Moment) -> Self {
         self.set_end(end);
         self
     }
 
     pub fn set_end(&mut self, end: Moment) -> &mut Self {
-        self.end = end;
+        self.default_phase.set_end(end);
         self
     }
 
-    pub fn set_effect(&mut self, effect: EffectBuilder) {
-        self.effect_builders.push(effect)
+    pub fn phase(mut self, name: &str, f: impl FnOnce(PhaseBuilder) -> PhaseBuilder) -> Self {
+        self.with_phase(name, f);
+        self
     }
 
+    /// Defines a named phase; `f` configures its builder.
+    pub fn with_phase(
+        &mut self,
+        name: &str,
+        f: impl FnOnce(PhaseBuilder) -> PhaseBuilder,
+    ) -> &mut Self {
+        self.phases
+            .insert(name.into(), f(PhaseBuilder::default().name(name)));
+        self
+    }
+
+    pub fn limit(mut self, limit: u64) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+
+    /// Adds an effect; `f` configures its builder.
     pub fn with_effect(
         &mut self,
         key: &str,
@@ -138,6 +171,11 @@ impl SimulationBuilder {
         let builder = Effect::builder(key.into());
         let builder = f(builder);
         self.effect_builders.push(builder);
+        self
+    }
+
+    pub fn effect(mut self, key: &str, f: impl FnOnce(EffectBuilder) -> EffectBuilder) -> Self {
+        self.with_effect(key, f);
         self
     }
 
@@ -150,16 +188,6 @@ impl SimulationBuilder {
 
     pub fn build(self) -> Result<Simulation, Vec<BuildError>> {
         let mut errors = vec![];
-        let now = Utc::now().fixed_offset();
-        let start = self.start.resolve(now);
-        let end = self.end.resolve(now);
-
-        if start >= end {
-            errors.push(BuildError::simulation(
-                SimulationKey::Start,
-                "start must be before end",
-            ));
-        }
 
         let Some(run_log_reader) = self.run_log_reader else {
             errors.push(BuildError::simulation(
@@ -169,19 +197,61 @@ impl SimulationBuilder {
             return Err(errors);
         };
 
-        let mut effects = vec![];
+        let now = self.now.unwrap_or_else(|| Utc::now().fixed_offset());
+        let default_phase = self.default_phase.clone().now(now).build()?;
+        let (Some(start), Some(_)) = (default_phase.start, default_phase.end) else {
+            return Err(vec![BuildError::simulation(
+                SimulationKey::Start,
+                "the default phase must have a start and an end",
+            )]);
+        };
 
+        let mut phases = IndexMap::new();
+        for (name, builder) in &self.phases {
+            match builder
+                .clone()
+                .now(now)
+                .default_phase(&default_phase)
+                .build()
+            {
+                Ok(phase) => {
+                    phases.insert(name.clone(), phase);
+                }
+                Err(mut e) => errors.append(&mut e),
+            }
+        }
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+
+        let empty_phase = Phase::default();
+
+        let mut effects = vec![];
         for mut effect_builder in self.effect_builders {
+            let phase = match effect_builder.get_phase_key() {
+                Some(key) => phases.get(key).unwrap_or(&empty_phase),
+                None => &default_phase,
+            };
             effect_builder
+                .set_phase(phase)
                 .set_now(now)
-                .set_sim_start(start)
-                .set_sim_end(end)
+                .set_default_phase(&default_phase)
                 .set_event_run_log(run_log_reader.clone())
-                .set_seed(self.seed);
+                .set_seed(self.seed.unwrap_or(1));
 
             match effect_builder.build() {
                 Ok(effect) => effects.push(effect),
                 Err(mut e) => errors.append(&mut e),
+            }
+        }
+
+        let origin = effects
+            .iter()
+            .map(|effect| effect.start)
+            .fold(start, Ord::min);
+        for effect in &mut effects {
+            if let Err(mut e) = effect.set_origin(origin) {
+                errors.append(&mut e);
             }
         }
 
