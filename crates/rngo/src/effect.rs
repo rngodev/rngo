@@ -28,6 +28,8 @@ pub struct Effect {
     pub key: String,
     run_log_reader: Rc<dyn RunLogReader>,
     trigger: Trigger,
+    trigger_config: TriggerConfig,
+    seed: u64,
     generator: Box<dyn Generator>,
     end_offset: Option<i64>,
     limit: Option<u64>,
@@ -41,17 +43,27 @@ pub struct Effect {
     simulation_end: DateTime<FixedOffset>,
 }
 
-/// What an effect's window comes to once its own values are laid over its phase's: a start, and an end, a limit or both.
-#[derive(Clone, Copy, Debug)]
-struct Window {
-    pub start: DateTime<FixedOffset>,
-    pub end: Option<DateTime<FixedOffset>>,
-    pub limit: Option<u64>,
-}
-
 impl Effect {
     pub fn builder(key: String) -> EffectBuilder {
         EffectBuilder::new(key)
+    }
+
+    /// Moves the instant offsets are measured from, rebuilding the trigger around it; call before iterating, once every effect of the simulation is built and the earliest start is known.
+    pub fn set_origin(
+        &mut self,
+        origin: DateTime<FixedOffset>,
+    ) -> Result<&mut Self, Vec<BuildError>> {
+        self.trigger = build_trigger(
+            self.trigger_config.clone(),
+            &self.key,
+            self.seed,
+            self.start,
+            origin,
+            &self.run_log_reader,
+        )?;
+        self.end_offset = self.end.map(|end| offset_from(end, origin));
+        self.origin = origin;
+        Ok(self)
     }
 
     /// Milliseconds since the simulation origin at which this effect next fires.
@@ -151,7 +163,6 @@ pub struct EffectBuilder {
     phase_key: Option<String>,
     phase: Option<Phase>,
     seed: Option<u64>,
-    origin: Option<DateTime<FixedOffset>>,
     simulation: Option<(DateTime<FixedOffset>, DateTime<FixedOffset>)>,
     event_run_log: Option<Rc<dyn RunLogReader>>,
     trigger: TriggerConfig,
@@ -166,7 +177,6 @@ impl EffectBuilder {
             phase_key: None,
             phase: None,
             seed: None,
-            origin: None,
             simulation: None,
             event_run_log: None,
             trigger: TriggerConfig::ClockExpression("hz(1, day)".into()),
@@ -275,25 +285,9 @@ impl EffectBuilder {
         self
     }
 
-    pub fn origin(mut self, origin: DateTime<FixedOffset>) -> Self {
-        self.set_origin(origin);
-        self
-    }
-
-    /// Sets the instant offsets are measured from, shared by the simulation's effects so their inputs stay comparable; defaults to the effect's own start.
-    pub fn set_origin(&mut self, origin: DateTime<FixedOffset>) -> &mut Self {
-        self.origin = Some(origin);
-        self
-    }
-
     /// The key of the phase this effect asked for, if any.
     pub fn get_phase_key(&self) -> Option<&str> {
         self.phase_key.as_deref()
-    }
-
-    /// The instant the effect starts at, resolved from its own `start` or its phase's; errors as `build` does for the window.
-    pub fn resolved_start(&self) -> Result<DateTime<FixedOffset>, Vec<BuildError>> {
-        self.window().map(|window| window.start)
     }
 
     pub fn event_run_log(mut self, event_run_log: Rc<dyn RunLogReader>) -> Self {
@@ -346,7 +340,8 @@ impl EffectBuilder {
         self
     }
 
-    fn window(&self) -> Result<Window, Vec<BuildError>> {
+    /// Lays the effect's own `start`, `end` and `limit` over its phase's and builds it; errors unless the window has a `start` and an `end` or `limit`, and a `start` before any `end`.
+    pub fn build(self) -> Result<Effect, Vec<BuildError>> {
         let own = self
             .custom_phase
             .clone()
@@ -358,7 +353,7 @@ impl EffectBuilder {
         let end = own.end.or(phase.end);
         let limit = own.limit.or(phase.limit).map(NonZeroU64::get);
 
-        let mut errors = vec![];
+        let mut errors: Vec<BuildError> = vec![];
         if start.is_none() {
             errors.push(BuildError::effect(
                 self.key.clone(),
@@ -382,22 +377,14 @@ impl EffectBuilder {
                 "start must be before end",
             ));
         }
+        let Some(start) = start.filter(|_| errors.is_empty()) else {
+            return Err(errors);
+        };
 
-        match start {
-            Some(start) if errors.is_empty() => Ok(Window { start, end, limit }),
-            _ => Err(errors),
-        }
-    }
-
-    /// Lays the effect's own `start`, `end` and `limit` over its phase's and builds it; errors unless the window has a `start` and an `end` or `limit`, and a `start` before any `end`.
-    pub fn build(self) -> Result<Effect, Vec<BuildError>> {
-        let window = self.window()?;
         let seed = self.seed.unwrap_or(1);
-        let origin = self.origin.unwrap_or(window.start);
-        let (simulation_start, simulation_end) = self
-            .simulation
-            .unwrap_or((window.start, window.end.unwrap_or(window.start)));
-        let mut errors: Vec<BuildError> = vec![];
+        let origin = start;
+        let (simulation_start, simulation_end) =
+            self.simulation.unwrap_or((start, end.unwrap_or(start)));
 
         let run_log_reader: Rc<dyn RunLogReader> = self
             .event_run_log
@@ -420,34 +407,14 @@ impl EffectBuilder {
             )])
         };
 
-        let trigger_result = match self.trigger {
-            TriggerConfig::Effect { key } => Ok(Trigger::Effect {
-                run_log_reader: run_log_reader.clone(),
-                key,
-                sim_start: origin,
-                last_offset: 0,
-            }),
-            TriggerConfig::ClockHertz(hertz) => Clock::builder()
-                .key(self.key.clone())
-                .seed(seed)
-                .hertz(hertz)
-                .start_offset((window.start - origin).num_milliseconds().max(0))
-                .build()
-                .map(|mut clock| {
-                    let next_offset = clock.next();
-                    Trigger::Clock { clock, next_offset }
-                }),
-            TriggerConfig::ClockExpression(expression) => Clock::builder()
-                .key(self.key.clone())
-                .seed(seed)
-                .expression(expression)
-                .start_offset((window.start - origin).num_milliseconds().max(0))
-                .build()
-                .map(|mut clock| {
-                    let next_offset = clock.next();
-                    Trigger::Clock { clock, next_offset }
-                }),
-        };
+        let trigger_result = build_trigger(
+            self.trigger.clone(),
+            &self.key,
+            seed,
+            start,
+            origin,
+            &run_log_reader,
+        );
 
         match generator_result
             .and_try(trigger_result)
@@ -457,15 +424,15 @@ impl EffectBuilder {
                 key: self.key,
                 run_log_reader: run_log_reader.clone(),
                 trigger,
+                trigger_config: self.trigger,
+                seed,
                 generator,
-                end_offset: window
-                    .end
-                    .map(|end| (end - origin).num_milliseconds().max(0)),
-                limit: window.limit,
+                end_offset: end.map(|end| offset_from(end, origin)),
+                limit,
                 produced: 0,
                 origin,
-                start: window.start,
-                end: window.end,
+                start,
+                end,
                 phase: self.phase_key,
                 simulation_start,
                 simulation_end,
@@ -475,6 +442,44 @@ impl EffectBuilder {
                 errors.append(&mut e);
                 Err(errors)
             }
+        }
+    }
+}
+
+fn offset_from(instant: DateTime<FixedOffset>, origin: DateTime<FixedOffset>) -> i64 {
+    (instant - origin).num_milliseconds().max(0)
+}
+
+fn build_trigger(
+    config: TriggerConfig,
+    key: &str,
+    seed: u64,
+    start: DateTime<FixedOffset>,
+    origin: DateTime<FixedOffset>,
+    run_log_reader: &Rc<dyn RunLogReader>,
+) -> Result<Trigger, Vec<BuildError>> {
+    let clock = |builder: clock::ClockBuilder| {
+        builder
+            .key(key.to_string())
+            .seed(seed)
+            .start_offset(offset_from(start, origin))
+            .build()
+            .map(|mut clock| {
+                let next_offset = clock.next();
+                Trigger::Clock { clock, next_offset }
+            })
+    };
+
+    match config {
+        TriggerConfig::Effect { key } => Ok(Trigger::Effect {
+            run_log_reader: run_log_reader.clone(),
+            key,
+            sim_start: origin,
+            last_offset: 0,
+        }),
+        TriggerConfig::ClockHertz(hertz) => clock(Clock::builder().hertz(hertz)),
+        TriggerConfig::ClockExpression(expression) => {
+            clock(Clock::builder().expression(expression))
         }
     }
 }

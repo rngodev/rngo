@@ -205,16 +205,10 @@ impl SimulationBuilder {
                 "the default phase must have a start and an end",
             )]);
         };
-        let bounds = (start, end);
 
         let mut phases = IndexMap::new();
         for (name, builder) in &self.phases {
-            match builder
-                .clone()
-                .now(now)
-                .simulation(bounds.0, bounds.1)
-                .build()
-            {
+            match builder.clone().now(now).simulation(start, end).build() {
                 Ok(phase) => {
                     phases.insert(name.clone(), phase);
                 }
@@ -225,38 +219,34 @@ impl SimulationBuilder {
             return Err(errors);
         }
 
-        let empty = Phase::default();
-        let mut effect_builders = self.effect_builders;
-        let mut origin = start;
-        for effect_builder in &mut effect_builders {
+        let empty_phase = Phase::default();
+
+        let mut effects = vec![];
+        for mut effect_builder in self.effect_builders {
             let phase = match effect_builder.get_phase_key() {
-                Some(key) => phases.get(key).unwrap_or(&empty),
+                Some(key) => phases.get(key).unwrap_or(&empty_phase),
                 None => &default_phase,
             };
             effect_builder
                 .set_phase(phase)
                 .set_now(now)
-                .set_simulation(start, end);
-            match effect_builder.resolved_start() {
-                Ok(effect_start) => origin = origin.min(effect_start),
-                Err(mut e) => errors.append(&mut e),
-            }
-        }
-        if !errors.is_empty() {
-            return Err(errors);
-        }
-
-        let seed = self.seed.unwrap_or(1);
-
-        let mut effects = vec![];
-        for mut effect_builder in effect_builders {
-            effect_builder
+                .set_simulation(start, end)
                 .set_event_run_log(run_log_reader.clone())
-                .set_seed(seed)
-                .set_origin(origin);
+                .set_seed(self.seed.unwrap_or(1));
+
             match effect_builder.build() {
                 Ok(effect) => effects.push(effect),
                 Err(mut e) => errors.append(&mut e),
+            }
+        }
+
+        let origin = effects
+            .iter()
+            .map(|effect| effect.start)
+            .fold(start, Ord::min);
+        for effect in &mut effects {
+            if let Err(mut e) = effect.set_origin(origin) {
+                errors.append(&mut e);
             }
         }
 
