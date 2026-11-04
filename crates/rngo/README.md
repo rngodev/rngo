@@ -1,23 +1,22 @@
 # rngo
 
-The `rngo` library lets you assemble **cells** and define **audits** in Rust.
+The `rngo` library lets you build a **spec** in Rust and evaluate it.
 
-A **cell** is responsible for sending inputs to and capturing outputs from the system under test (SUT). Its components include:
-- a `RunLog` that records inputs, outputs and metadata (and may be shared by other cells)
-- one or more `Simulation`s that generate and log inputs
-- a single `Proxy` that routes the inputs and logs the outputs
-
-An **audit** surfaces patterns in the `RunLog` and usually sets expectations of those patterns.
+A **spec** describes the behavior of a system using the following components:
+- a `RunLog` records inputs, outputs and metadata
+- a `Simulation` generates a deterministic stream of inputs
+- a `Proxy` routes inputs to the appropriate system interfaces and captures outputs
+- an `Audit` surfaces pattern in logged inputs and outputs and may set expectations
 
 ## DSL
 
-You can define a cell using a builder DSL. First we'll define a `SqliteRunLog`:
+You can define a spec using a builder DSL. First we'll define a `SqliteRunLog`:
 
 ```rust
 let run_log = rngo::SqliteRunLog::new(".".into())?;
 ```
 
-Next a `Simulation`. Its `seed`, `start` and `end` define the default phase, and `phase` adds a named time window and `limit`. Effects run in the default phase unless they name one, and a name matching no phase gives an empty one. An effect's own `start`, `end` and `limit` win over its phase's, and it needs a `start` and an `end` or `limit` from one or the other; with both `end` and `limit`, whichever is reached first stops it:
+Next a `Simulation`:
 
 ```rust
 let mut simulation = rngo::Simulation::builder()
@@ -96,7 +95,7 @@ let proxy = rngo::Proxy::builder()
     .build()?
 ```
 
-Now we can run the `Simulation` against the `Proxy` (and exit the sub-shells): 
+To evaluate the spec, first run the `Simulation` against the `Proxy`: 
 
 ```rust
 for input in &mut simulation {
@@ -106,7 +105,7 @@ for input in &mut simulation {
 proxy.finish()?;
 ```
 
-Finally, we can build an `Audit` and set some expectations for the inputs and ouputs
+Then build an `Audit` and run it against the `RunLog`:
 
 ```rust
 let audit = rngo::Audit::builder()

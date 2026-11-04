@@ -163,7 +163,7 @@ pub struct EffectBuilder {
     phase_key: Option<String>,
     phase: Option<Phase>,
     seed: Option<u64>,
-    simulation: Option<(DateTime<FixedOffset>, DateTime<FixedOffset>)>,
+    default_phase: Option<Phase>,
     event_run_log: Option<Rc<dyn RunLogReader>>,
     trigger: TriggerConfig,
     generator_builder: Option<Box<dyn GeneratorBuilder>>,
@@ -177,7 +177,7 @@ impl EffectBuilder {
             phase_key: None,
             phase: None,
             seed: None,
-            simulation: None,
+            default_phase: None,
             event_run_log: None,
             trigger: TriggerConfig::ClockExpression("hz(1, day)".into()),
             generator_builder: None,
@@ -263,14 +263,10 @@ impl EffectBuilder {
         self
     }
 
-    /// Sets the simulation's start and end, which the effect's expressions and generators see as `simulation`; default to the effect's own start and end.
-    pub fn set_simulation(
-        &mut self,
-        start: DateTime<FixedOffset>,
-        end: DateTime<FixedOffset>,
-    ) -> &mut Self {
-        self.simulation = Some((start, end));
-        self.custom_phase_mut().set_simulation(start, end);
+    /// Sets the default phase, whose `start` and `end` the effect's expressions and generators see as `simulation`; without them they default to the effect's own start and end.
+    pub fn set_default_phase(&mut self, phase: &Phase) -> &mut Self {
+        self.default_phase = Some(phase.clone());
+        self.custom_phase_mut().set_default_phase(phase);
         self
     }
 
@@ -383,8 +379,11 @@ impl EffectBuilder {
 
         let seed = self.seed.unwrap_or(1);
         let origin = start;
-        let (simulation_start, simulation_end) =
-            self.simulation.unwrap_or((start, end.unwrap_or(start)));
+        let (simulation_start, simulation_end) = self
+            .default_phase
+            .as_ref()
+            .and_then(|phase| Some((phase.start?, phase.end?)))
+            .unwrap_or((start, end.unwrap_or(start)));
 
         let run_log_reader: Rc<dyn RunLogReader> = self
             .event_run_log
@@ -537,13 +536,12 @@ mod tests {
     fn build(mut builder: EffectBuilder) -> Effect {
         let now = Utc::now().fixed_offset();
         let start = now - TimeDelta::days(30);
-        builder
-            .set_phase(&Phase {
-                start: Some(start),
-                end: Some(now),
-                ..Phase::default()
-            })
-            .set_simulation(start, now);
+        let phase = Phase {
+            start: Some(start),
+            end: Some(now),
+            ..Phase::default()
+        };
+        builder.set_phase(&phase).set_default_phase(&phase);
         builder.build().unwrap()
     }
 

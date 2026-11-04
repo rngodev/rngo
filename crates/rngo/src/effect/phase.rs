@@ -29,7 +29,7 @@ pub struct PhaseBuilder {
     end_expression: Option<String>,
     limit: Option<NonZeroU64>,
     now: Option<DateTime<FixedOffset>>,
-    simulation: Option<(DateTime<FixedOffset>, DateTime<FixedOffset>)>,
+    default_phase: Option<Phase>,
     effect: Option<String>,
 }
 
@@ -92,19 +92,14 @@ impl PhaseBuilder {
         self
     }
 
-    // TODO: change this to work with named ranges
-    pub fn simulation(mut self, start: DateTime<FixedOffset>, end: DateTime<FixedOffset>) -> Self {
-        self.set_simulation(start, end);
+    pub fn default_phase(mut self, phase: &Phase) -> Self {
+        self.set_default_phase(phase);
         self
     }
 
-    /// Sets the simulation's start and end, which expressions see as `simulation`; without them expressions can't refer to it.
-    pub fn set_simulation(
-        &mut self,
-        start: DateTime<FixedOffset>,
-        end: DateTime<FixedOffset>,
-    ) -> &mut Self {
-        self.simulation = Some((start, end));
+    /// Sets the default phase, whose `start` and `end` expressions see as `simulation`; without it, or if it lacks either, expressions can't refer to `simulation`.
+    pub fn set_default_phase(&mut self, phase: &Phase) -> &mut Self {
+        self.default_phase = Some(phase.clone());
         self
     }
 
@@ -118,8 +113,9 @@ impl PhaseBuilder {
     pub fn build(&self) -> Result<Phase, Vec<BuildError>> {
         let now = self.now.unwrap_or_else(|| Utc::now().fixed_offset());
         let simulation = self
-            .simulation
-            .map(|(start, end)| (Moment::from(start), Moment::from(end)));
+            .default_phase
+            .as_ref()
+            .and_then(|phase| Some((Moment::from(phase.start?), Moment::from(phase.end?))));
         let mut parser = Moment::parser();
         if let Some((start, end)) = &simulation {
             parser = parser.simulation(start, end);
@@ -210,7 +206,11 @@ mod tests {
         let now = now();
         let phase = builder
             .set_now(now)
-            .set_simulation(now - TimeDelta::days(30), now)
+            .set_default_phase(&Phase {
+                start: Some(now - TimeDelta::days(30)),
+                end: Some(now),
+                ..Phase::default()
+            })
             .build()
             .unwrap();
 

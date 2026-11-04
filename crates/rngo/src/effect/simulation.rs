@@ -199,7 +199,7 @@ impl SimulationBuilder {
 
         let now = self.now.unwrap_or_else(|| Utc::now().fixed_offset());
         let default_phase = self.default_phase.clone().now(now).build()?;
-        let (Some(start), Some(end)) = (default_phase.start, default_phase.end) else {
+        let (Some(start), Some(_)) = (default_phase.start, default_phase.end) else {
             return Err(vec![BuildError::simulation(
                 SimulationKey::Start,
                 "the default phase must have a start and an end",
@@ -208,7 +208,12 @@ impl SimulationBuilder {
 
         let mut phases = IndexMap::new();
         for (name, builder) in &self.phases {
-            match builder.clone().now(now).simulation(start, end).build() {
+            match builder
+                .clone()
+                .now(now)
+                .default_phase(&default_phase)
+                .build()
+            {
                 Ok(phase) => {
                     phases.insert(name.clone(), phase);
                 }
@@ -230,7 +235,7 @@ impl SimulationBuilder {
             effect_builder
                 .set_phase(phase)
                 .set_now(now)
-                .set_simulation(start, end)
+                .set_default_phase(&default_phase)
                 .set_event_run_log(run_log_reader.clone())
                 .set_seed(self.seed.unwrap_or(1));
 
