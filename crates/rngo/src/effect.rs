@@ -37,8 +37,8 @@ pub struct Effect {
     origin: DateTime<FixedOffset>,
     pub start: DateTime<FixedOffset>,
     pub end: Option<DateTime<FixedOffset>>,
-    /// The name of the phase the effect asked for; `None` for the default phase.
-    pub phase: Option<String>,
+    /// The name of the prototype the effect asked for; `None` for the default window.
+    pub prototype: Option<String>,
     simulation_start: DateTime<FixedOffset>,
     simulation_end: DateTime<FixedOffset>,
 }
@@ -160,7 +160,7 @@ impl From<SkippedInput> for Metadata {
 pub struct EffectBuilder {
     key: String,
     custom_phase: Option<PhaseBuilder>,
-    phase_key: Option<String>,
+    prototype_key: Option<String>,
     phase: Option<Phase>,
     seed: Option<u64>,
     default_phase: Option<Phase>,
@@ -174,7 +174,7 @@ impl EffectBuilder {
         EffectBuilder {
             key,
             custom_phase: None,
-            phase_key: None,
+            prototype_key: None,
             phase: None,
             seed: None,
             default_phase: None,
@@ -230,14 +230,14 @@ impl EffectBuilder {
         self
     }
 
-    pub fn phase_key(mut self, key: impl Into<String>) -> Self {
-        self.set_phase_key(key);
+    pub fn prototype_key(mut self, key: impl Into<String>) -> Self {
+        self.set_prototype_key(key);
         self
     }
 
-    /// Sets the key of the phase this effect belongs to; no key means the default phase and a key matching no phase an empty one.
-    pub fn set_phase_key(&mut self, key: impl Into<String>) -> &mut Self {
-        self.phase_key = Some(key.into());
+    /// Sets the key of the prototype this effect names; no key means the default window and a key matching no prototype an empty one.
+    pub fn set_prototype_key(&mut self, key: impl Into<String>) -> &mut Self {
+        self.prototype_key = Some(key.into());
         self
     }
 
@@ -282,8 +282,8 @@ impl EffectBuilder {
     }
 
     /// The key of the phase this effect asked for, if any.
-    pub fn get_phase_key(&self) -> Option<&str> {
-        self.phase_key.as_deref()
+    pub fn get_prototype_key(&self) -> Option<&str> {
+        self.prototype_key.as_deref()
     }
 
     pub fn event_run_log(mut self, event_run_log: Rc<dyn RunLogReader>) -> Self {
@@ -432,7 +432,7 @@ impl EffectBuilder {
                 origin,
                 start,
                 end,
-                phase: self.phase_key,
+                prototype: self.prototype_key,
                 simulation_start,
                 simulation_end,
             }),

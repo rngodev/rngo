@@ -73,7 +73,7 @@ pub struct SimulationBuilder {
     seed: Option<u64>,
     now: Option<DateTime<FixedOffset>>,
     default_phase: PhaseBuilder,
-    phases: IndexMap<String, PhaseBuilder>,
+    prototypes: IndexMap<String, PhaseBuilder>,
     limit: Option<u64>,
 }
 
@@ -87,7 +87,7 @@ impl SimulationBuilder {
             default_phase: PhaseBuilder::default()
                 .start(Moment::Relative(TimeDelta::days(-30)))
                 .end(Moment::Relative(TimeDelta::zero())),
-            phases: IndexMap::new(),
+            prototypes: IndexMap::new(),
             limit: None,
         }
     }
@@ -141,18 +141,18 @@ impl SimulationBuilder {
         self
     }
 
-    pub fn phase(mut self, name: &str, f: impl FnOnce(PhaseBuilder) -> PhaseBuilder) -> Self {
-        self.with_phase(name, f);
+    pub fn prototype(mut self, name: &str, f: impl FnOnce(PhaseBuilder) -> PhaseBuilder) -> Self {
+        self.with_prototype(name, f);
         self
     }
 
-    /// Defines a named phase; `f` configures its builder.
-    pub fn with_phase(
+    /// Defines a named prototype; `f` configures its builder.
+    pub fn with_prototype(
         &mut self,
         name: &str,
         f: impl FnOnce(PhaseBuilder) -> PhaseBuilder,
     ) -> &mut Self {
-        self.phases
+        self.prototypes
             .insert(name.into(), f(PhaseBuilder::default().name(name)));
         self
     }
@@ -202,12 +202,12 @@ impl SimulationBuilder {
         let (Some(start), Some(_)) = (default_phase.start, default_phase.end) else {
             return Err(vec![BuildError::simulation(
                 SimulationKey::Start,
-                "the default phase must have a start and an end",
+                "the simulation must have a start and an end",
             )]);
         };
 
         let mut phases = IndexMap::new();
-        for (name, builder) in &self.phases {
+        for (name, builder) in &self.prototypes {
             match builder
                 .clone()
                 .now(now)
@@ -228,7 +228,7 @@ impl SimulationBuilder {
 
         let mut effects = vec![];
         for mut effect_builder in self.effect_builders {
-            let phase = match effect_builder.get_phase_key() {
+            let phase = match effect_builder.get_prototype_key() {
                 Some(key) => phases.get(key).unwrap_or(&empty_phase),
                 None => &default_phase,
             };

@@ -146,7 +146,7 @@ impl PhaseBuilder {
             && start >= end
         {
             let message = match &self.name {
-                Some(name) => format!("phase \"{name}\": start must be before end"),
+                Some(name) => format!("prototype \"{name}\": start must be before end"),
                 None => "start must be before end".into(),
             };
             errors.push(self.error("start", message));

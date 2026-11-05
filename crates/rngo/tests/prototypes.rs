@@ -1,24 +1,24 @@
 use rngo::Dialect;
 use serde_json::{Value, json};
 
-fn spec(phases: Value, effects: Value) -> Value {
+fn spec(prototypes: Value, effects: Value) -> Value {
     json!({
         "seed": 1,
         "start": "2024-01-01",
         "end": "2024-01-11",
         "channels": { "db": { "type": "stdout" }, "api": { "type": "stdout" } },
-        "phases": phases,
+        "prototypes": prototypes,
         "effects": effects,
     })
 }
 
-fn effect(channel: Option<&str>, extra: Value) -> Value {
+fn effect(prototype: Option<&str>, extra: Value) -> Value {
     let mut effect = json!({
         "trigger": "hz(1, day)",
         "generator": { "type": "constant", "value": 1 },
     });
-    if let Some(channel) = channel {
-        effect["channel"] = json!(channel);
+    if let Some(prototype) = prototype {
+        effect["prototype"] = json!(prototype);
     }
     effect
         .as_object_mut()
@@ -54,10 +54,10 @@ fn dates(value: Value, effect: &str) -> Vec<String> {
 }
 
 #[test]
-fn effects_follow_their_phase_bounds_and_stay_time_ordered() {
+fn effects_follow_their_prototype_bounds_and_stay_time_ordered() {
     let value = spec(
-        json!({ "late": { "start": "2024-01-06", "end": "2024-01-11", "channels": ["api"] } }),
-        json!({ "a": effect(Some("db"), json!({})), "b": effect(Some("api"), json!({})) }),
+        json!({ "late": { "start": "2024-01-06", "end": "2024-01-11" } }),
+        json!({ "a": effect(None, json!({})), "b": effect(Some("late"), json!({})) }),
     );
     let simulation = Dialect::primitive()
         .parse_simulation_json(value.clone())
@@ -73,29 +73,19 @@ fn effects_follow_their_phase_bounds_and_stay_time_ordered() {
 }
 
 #[test]
-fn effects_list_beats_channels() {
+fn effect_without_prototype_uses_default_window() {
     let value = spec(
-        json!({ "late": { "start": "2024-01-06", "end": "2024-01-11", "channels": ["db"], "effects": ["b"] } }),
-        json!({ "a": effect(Some("db"), json!({})), "b": effect(Some("api"), json!({})) }),
-    );
-    assert_eq!(dates(value.clone(), "a").first().unwrap(), "2024-01-06");
-    assert_eq!(dates(value, "b").first().unwrap(), "2024-01-06");
-}
-
-#[test]
-fn effect_without_channel_uses_default_phase() {
-    let value = spec(
-        json!({ "late": { "start": "2024-01-06", "end": "2024-01-11", "channels": ["db"] } }),
+        json!({ "late": { "start": "2024-01-06", "end": "2024-01-11" } }),
         json!({ "a": effect(None, json!({})) }),
     );
     assert_eq!(dates(value, "a").first().unwrap(), "2024-01-01");
 }
 
 #[test]
-fn an_effect_overrides_its_phase() {
+fn an_effect_overrides_its_prototype() {
     let value = spec(
-        json!({ "late": { "start": "2024-01-06", "end": "2024-01-11", "channels": ["db"] } }),
-        json!({ "a": effect(Some("db"), json!({ "start": "2024-01-02", "end": "2024-01-04" })) }),
+        json!({ "late": { "start": "2024-01-06", "end": "2024-01-11" } }),
+        json!({ "a": effect(Some("late"), json!({ "start": "2024-01-02", "end": "2024-01-04" })) }),
     );
     let a = dates(value, "a");
     assert_eq!(a.first().unwrap(), "2024-01-02");
@@ -103,10 +93,10 @@ fn an_effect_overrides_its_phase() {
 }
 
 #[test]
-fn a_phase_does_not_inherit_from_the_default_phase() {
+fn a_prototype_does_not_inherit_from_the_default_window() {
     let value = spec(
-        json!({ "late": { "start": "2024-01-06", "channels": ["db"] } }),
-        json!({ "a": effect(Some("db"), json!({})) }),
+        json!({ "late": { "start": "2024-01-06" } }),
+        json!({ "a": effect(Some("late"), json!({})) }),
     );
     let errors = errors(value);
     assert!(
@@ -118,12 +108,12 @@ fn a_phase_does_not_inherit_from_the_default_phase() {
 }
 
 #[test]
-fn a_phase_limit_caps_its_effects_unless_they_set_their_own() {
+fn a_prototype_limit_caps_its_effects_unless_they_set_their_own() {
     let value = spec(
-        json!({ "few": { "start": "2024-01-01", "limit": 3, "channels": ["db"] } }),
+        json!({ "few": { "start": "2024-01-01", "limit": 3 } }),
         json!({
-            "a": effect(Some("db"), json!({})),
-            "b": effect(Some("db"), json!({ "limit": 2 })),
+            "a": effect(Some("few"), json!({})),
+            "b": effect(Some("few"), json!({ "limit": 2 })),
         }),
     );
     assert_eq!(dates(value.clone(), "a").len(), 3);
@@ -148,31 +138,75 @@ fn a_limit_and_an_end_stop_at_whichever_comes_first() {
 }
 
 #[test]
-fn invalid_phases_are_rejected() {
-    let effects = json!({ "a": effect(Some("db"), json!({})), "b": effect(None, json!({})) });
+fn invalid_prototypes_are_rejected() {
+    let effects = json!({ "a": effect(None, json!({})) });
     let cases = [
         (
             json!({ "p": { "start": "2024-01-09", "end": "2024-01-05" } }),
             "start must be before end",
         ),
-        (
-            json!({ "p": { "channels": ["db"] }, "q": { "channels": ["db"] } }),
-            "already claimed",
-        ),
-        (
-            json!({ "p": { "effects": ["a"] }, "q": { "effects": ["a"] } }),
-            "already in phase",
-        ),
-        (json!({ "p": { "effects": ["nope"] } }), "unknown effect"),
-        (json!({ "p": { "channels": ["nope"] } }), "nope"),
+        (json!({ "p": { "effects": ["a"] } }), "effects"),
+        (json!({ "p": { "channels": ["db"] } }), "channels"),
     ];
-    for (phases, expected) in cases {
-        let errors = errors(spec(phases.clone(), effects.clone()));
+    for (prototypes, expected) in cases {
+        let errors = errors(spec(prototypes.clone(), effects.clone()));
         assert!(
             errors.iter().any(|e| e.contains(expected)),
-            "{phases}: {errors:?}"
+            "{prototypes}: {errors:?}"
         );
     }
+}
+
+#[test]
+fn an_unknown_prototype_names_the_effect_and_the_prototype() {
+    let value = spec(json!({}), json!({ "a": effect(Some("nope"), json!({})) }));
+    let errors = errors(value);
+    assert!(
+        errors.iter().any(|e| e.starts_with("effects.a.prototype:")
+            && e.contains("\"a\"")
+            && e.contains("\"nope\"")),
+        "{errors:?}"
+    );
+}
+
+#[test]
+fn phases_are_no_longer_a_spec_field() {
+    let mut value = spec(json!({}), json!({ "a": effect(None, json!({})) }));
+    value["phases"] = json!({});
+    assert!(rngo::spec::from_value(value).is_err());
+}
+
+fn proxy_errors(value: Value) -> Vec<String> {
+    match Dialect::primitive().parse_proxy(rngo::spec::from_value(value).unwrap()) {
+        Err(errors) => errors
+            .iter()
+            .map(|e| format!("{}: {}", e.path().join("."), e))
+            .collect(),
+        Ok(_) => vec![],
+    }
+}
+
+#[test]
+fn a_prototype_channel_applies_unless_the_effect_sets_its_own() {
+    let mut value = spec(
+        json!({ "p": { "start": "2024-01-01", "limit": 1, "channel": "db" } }),
+        json!({ "a": effect(Some("p"), json!({})) }),
+    );
+    assert!(proxy_errors(value.clone()).is_empty());
+
+    value["effects"]["a"]["channel"] = json!("api");
+    assert!(proxy_errors(value).is_empty());
+}
+
+#[test]
+fn an_unknown_prototype_channel_is_reported_once_on_the_prototype() {
+    let value = spec(
+        json!({ "p": { "start": "2024-01-01", "limit": 1, "channel": "nope" } }),
+        json!({ "a": effect(Some("p"), json!({})), "b": effect(Some("p"), json!({})) }),
+    );
+    let errors = proxy_errors(value);
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert!(errors[0].starts_with("prototypes.p.channel:"), "{errors:?}");
 }
 
 #[test]
@@ -183,17 +217,17 @@ fn top_level_scenarios_are_rejected() {
 }
 
 #[test]
-fn scenario_patches_only_phases_defining_it() {
+fn scenario_patches_only_prototypes_defining_it() {
     let value = spec(
         json!({
-            "p": { "channels": ["db"], "start": "2024-01-05", "scenarios": { "long": { "start": "2024-01-03" } } },
-            "q": { "channels": ["api"], "start": "2024-01-05" },
+            "p": { "start": "2024-01-05", "scenarios": { "long": { "start": "2024-01-03" } } },
+            "q": { "start": "2024-01-05" },
         }),
         json!({}),
     );
     let parsed = rngo::spec::from_value(value).unwrap();
     let patched = parsed.with_scenario("long").unwrap();
-    assert_eq!(patched.phases["p"].start.as_deref(), Some("2024-01-03"));
-    assert_eq!(patched.phases["q"].start.as_deref(), Some("2024-01-05"));
+    assert_eq!(patched.prototypes["p"].start.as_deref(), Some("2024-01-03"));
+    assert_eq!(patched.prototypes["q"].start.as_deref(), Some("2024-01-05"));
     assert!(parsed.with_scenario("missing").is_err());
 }

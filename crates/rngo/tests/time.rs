@@ -214,7 +214,7 @@ fn an_effect_without_a_start_is_an_error() {
     });
     let mut builder = Dialect::primitive().parse_simulation_json(spec).unwrap();
     builder.with_effect("loose", |e| {
-        e.phase_key("nowhere")
+        e.prototype_key("nowhere")
             .end(Moment::Relative(TimeDelta::zero()))
             .generator(constant().value(Value::Null))
     });
@@ -234,7 +234,7 @@ fn an_effect_without_a_start_is_an_error() {
 fn an_effect_without_an_end_or_limit_is_an_error() {
     let mut builder = Simulation::builder();
     builder.with_effect("events", |e| {
-        e.phase_key("nowhere")
+        e.prototype_key("nowhere")
             .start(Moment::Relative(TimeDelta::days(-1)))
             .generator(constant().value(Value::Null))
     });
@@ -254,10 +254,10 @@ fn an_effect_without_an_end_or_limit_is_an_error() {
 }
 
 #[test]
-fn an_effect_in_an_unknown_phase_runs_on_its_own_values() {
+fn an_effect_in_an_unknown_prototype_runs_on_its_own_values() {
     let mut builder = Simulation::builder();
     builder.with_effect("events", |e| {
-        e.phase_key("nowhere")
+        e.prototype_key("nowhere")
             .start(Moment::Relative(TimeDelta::days(-1)))
             .limit(std::num::NonZeroU64::new(2).unwrap())
             .generator(constant().value(Value::Null))
