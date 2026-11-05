@@ -1,3 +1,4 @@
+pub mod bound;
 mod clock;
 pub mod generator;
 pub mod prototype;
@@ -5,7 +6,8 @@ pub mod simulation;
 mod trigger;
 
 use crate::build::{BuildError, EffectKey};
-use crate::effect::prototype::{Bound, Prototype, resolve_bound};
+use crate::effect::bound::{Bound, BoundKind};
+use crate::effect::prototype::Prototype;
 use crate::log::{Metadata, RunLogReader, SimpleEventRunLog};
 use chrono::{DateTime, FixedOffset, TimeDelta, Utc};
 use clock::Clock;
@@ -196,7 +198,8 @@ impl EffectBuilder {
 
     /// Sets `start` to a [`Bound`]; a string is a CEL expression, parsed at build so it can refer to the default prototype via `simulation`.
     pub fn set_start(&mut self, start: impl Into<Bound>) -> &mut Self {
-        self.start = Some(start.into());
+        let start: Bound = start.into();
+        self.start = Some(start.of_kind(BoundKind::Start));
         self
     }
 
@@ -207,7 +210,8 @@ impl EffectBuilder {
 
     /// Sets `end` to a [`Bound`]; a string is a CEL expression, parsed at build so it can refer to the default prototype via `simulation`.
     pub fn set_end(&mut self, end: impl Into<Bound>) -> &mut Self {
-        self.end = Some(end.into());
+        let end: Bound = end.into();
+        self.end = Some(end.of_kind(BoundKind::End));
         self
     }
 
@@ -329,22 +333,31 @@ impl EffectBuilder {
     /// Lays the effect's own `start`, `end` and `limit` over its prototype's and builds it; errors unless the window has a `start` and an `end` or `limit`, and a `start` before any `end`.
     pub fn build(self) -> Result<Effect, Vec<BuildError>> {
         let now = self.now.unwrap_or_else(|| Utc::now().fixed_offset());
-        let error = |field: &str, message: String| {
-            let key = if field == "start" {
-                EffectKey::Start
-            } else {
-                EffectKey::End
-            };
-            BuildError::effect(self.key.clone(), key, message)
-        };
         let default = self.default_prototype.as_ref();
         let mut errors: Vec<BuildError> = vec![];
-        let own_start = resolve_bound("start", self.start.as_ref(), now, default, &error)
-            .map_err(|e| errors.extend(e))
-            .ok()
-            .flatten();
-        let own_end = resolve_bound("end", self.end.as_ref(), now, default, &error)
-            .map_err(|e| errors.extend(e))
+        let own_start =
+            self.start
+                .as_ref()
+                .map(|bound| bound.resolve(now, default))
+                .transpose()
+                .map_err(|e| {
+                    errors.extend(e.iter().map(|e| {
+                        BuildError::effect(self.key.clone(), EffectKey::Start, e.message())
+                    }))
+                })
+                .ok()
+                .flatten();
+        let own_end = self
+            .end
+            .as_ref()
+            .map(|bound| bound.resolve(now, default))
+            .transpose()
+            .map_err(|e| {
+                errors.extend(
+                    e.iter()
+                        .map(|e| BuildError::effect(self.key.clone(), EffectKey::End, e.message())),
+                )
+            })
             .ok()
             .flatten();
         if !errors.is_empty() {
