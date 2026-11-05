@@ -10,6 +10,30 @@ pub enum Bound {
     Expression(String),
 }
 
+impl From<Moment> for Bound {
+    fn from(moment: Moment) -> Self {
+        Bound::Moment(moment)
+    }
+}
+
+impl From<DateTime<FixedOffset>> for Bound {
+    fn from(timestamp: DateTime<FixedOffset>) -> Self {
+        Bound::Moment(timestamp.into())
+    }
+}
+
+impl From<String> for Bound {
+    fn from(expression: String) -> Self {
+        Bound::Expression(expression)
+    }
+}
+
+impl From<&str> for Bound {
+    fn from(expression: &str) -> Self {
+        Bound::Expression(expression.into())
+    }
+}
+
 /// A time window and an input cap, each optional; an effect takes the parts it doesn't set itself from its prototype.
 #[derive(Clone, Debug, Default)]
 pub struct Prototype {
@@ -43,35 +67,25 @@ impl PrototypeBuilder {
         self
     }
 
-    pub fn start(mut self, start: Moment) -> Self {
+    pub fn start(mut self, start: impl Into<Bound>) -> Self {
         self.set_start(start);
         self
     }
 
-    pub fn set_start(&mut self, start: Moment) -> &mut Self {
-        self.start = Some(Bound::Moment(start));
+    /// Sets `start` to a [`Bound`]; a string is a CEL expression, parsed at build so it can refer to the default prototype via `simulation`.
+    pub fn set_start(&mut self, start: impl Into<Bound>) -> &mut Self {
+        self.start = Some(start.into());
         self
     }
 
-    /// Sets `start` from an expression, parsed at build.
-    pub fn set_start_expression(&mut self, expression: String) -> &mut Self {
-        self.start = Some(Bound::Expression(expression));
-        self
-    }
-
-    pub fn end(mut self, end: Moment) -> Self {
+    pub fn end(mut self, end: impl Into<Bound>) -> Self {
         self.set_end(end);
         self
     }
 
-    pub fn set_end(&mut self, end: Moment) -> &mut Self {
-        self.end = Some(Bound::Moment(end));
-        self
-    }
-
-    /// Sets `end` from an expression, parsed at build.
-    pub fn set_end_expression(&mut self, expression: String) -> &mut Self {
-        self.end = Some(Bound::Expression(expression));
+    /// Sets `end` to a [`Bound`]; a string is a CEL expression, parsed at build so it can refer to the default prototype via `simulation`.
+    pub fn set_end(&mut self, end: impl Into<Bound>) -> &mut Self {
+        self.end = Some(end.into());
         self
     }
 
@@ -194,7 +208,7 @@ mod tests {
         let mut builder = Prototype::builder().limit(NonZeroU64::new(3).unwrap());
         builder
             .set_start(Moment::Relative(TimeDelta::days(-2)))
-            .set_end_expression("simulation.end - days(1)".into());
+            .set_end("simulation.end - days(1)");
         let now = now();
         let prototype = builder
             .set_now(now)

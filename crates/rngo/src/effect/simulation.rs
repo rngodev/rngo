@@ -1,6 +1,6 @@
 use crate::RunLogReader;
 use crate::build::{BuildError, SimulationKey};
-use crate::effect::prototype::{Prototype, PrototypeBuilder};
+use crate::effect::prototype::{Bound, Prototype, PrototypeBuilder};
 use crate::effect::{Effect, EffectBuilder, Input, SkippedInput};
 use crate::log::SimpleEventRunLog;
 use crate::moment::Moment;
@@ -120,23 +120,23 @@ impl SimulationBuilder {
     }
 
     /// Sets the default prototype's start; defaults to 30 days before now.
-    pub fn start(mut self, start: Moment) -> Self {
+    pub fn start(mut self, start: impl Into<Bound>) -> Self {
         self.set_start(start);
         self
     }
 
-    pub fn set_start(&mut self, start: Moment) -> &mut Self {
+    pub fn set_start(&mut self, start: impl Into<Bound>) -> &mut Self {
         self.default_prototype.set_start(start);
         self
     }
 
     /// Sets the default prototype's end; defaults to now.
-    pub fn end(mut self, end: Moment) -> Self {
+    pub fn end(mut self, end: impl Into<Bound>) -> Self {
         self.set_end(end);
         self
     }
 
-    pub fn set_end(&mut self, end: Moment) -> &mut Self {
+    pub fn set_end(&mut self, end: impl Into<Bound>) -> &mut Self {
         self.default_prototype.set_end(end);
         self
     }

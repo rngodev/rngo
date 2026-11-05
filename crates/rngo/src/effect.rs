@@ -7,7 +7,6 @@ mod trigger;
 use crate::build::{BuildError, EffectKey};
 use crate::effect::prototype::{Bound, Prototype, resolve_bound};
 use crate::log::{Metadata, RunLogReader, SimpleEventRunLog};
-use crate::moment::Moment;
 use chrono::{DateTime, FixedOffset, TimeDelta, Utc};
 use clock::Clock;
 use generator::{
@@ -190,35 +189,25 @@ impl EffectBuilder {
         }
     }
 
-    pub fn start(mut self, start: Moment) -> Self {
+    pub fn start(mut self, start: impl Into<Bound>) -> Self {
         self.set_start(start);
         self
     }
 
-    pub fn set_start(&mut self, start: Moment) -> &mut Self {
-        self.start = Some(Bound::Moment(start));
+    /// Sets `start` to a [`Bound`]; a string is a CEL expression, parsed at build so it can refer to the default prototype via `simulation`.
+    pub fn set_start(&mut self, start: impl Into<Bound>) -> &mut Self {
+        self.start = Some(start.into());
         self
     }
 
-    pub fn end(mut self, end: Moment) -> Self {
+    pub fn end(mut self, end: impl Into<Bound>) -> Self {
         self.set_end(end);
         self
     }
 
-    pub fn set_end(&mut self, end: Moment) -> &mut Self {
-        self.end = Some(Bound::Moment(end));
-        self
-    }
-
-    /// Sets `start` from an expression, parsed when the effect builds so it can refer to the default prototype's bounds via `simulation`; overrides `start`.
-    pub fn set_start_expression(&mut self, expression: String) -> &mut Self {
-        self.start = Some(Bound::Expression(expression));
-        self
-    }
-
-    /// Sets `end` from an expression, parsed when the effect builds so it can refer to the default prototype's bounds via `simulation`; overrides `end`.
-    pub fn set_end_expression(&mut self, expression: String) -> &mut Self {
-        self.end = Some(Bound::Expression(expression));
+    /// Sets `end` to a [`Bound`]; a string is a CEL expression, parsed at build so it can refer to the default prototype via `simulation`.
+    pub fn set_end(&mut self, end: impl Into<Bound>) -> &mut Self {
+        self.end = Some(end.into());
         self
     }
 

@@ -107,11 +107,11 @@ impl Dialect {
         for (name, prototype) in &spec.prototypes {
             simulation_builder.with_prototype(name, |mut prototype_builder| {
                 if let Some(start) = &prototype.start {
-                    prototype_builder.set_start_expression(start.clone());
+                    prototype_builder.set_start(start.as_str());
                 }
 
                 if let Some(end) = &prototype.end {
-                    prototype_builder.set_end_expression(end.clone());
+                    prototype_builder.set_end(end.as_str());
                 }
 
                 if let Some(limit) = prototype.limit {
@@ -175,11 +175,11 @@ impl Dialect {
                 }
 
                 if let Some(start) = &effect.start {
-                    effect_builder.set_start_expression(start.clone());
+                    effect_builder.set_start(start.as_str());
                 }
 
                 if let Some(end) = &effect.end {
-                    effect_builder.set_end_expression(end.clone());
+                    effect_builder.set_end(end.as_str());
                 }
 
                 if let Some(limit) = effect.limit {
