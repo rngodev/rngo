@@ -5,10 +5,10 @@ pub mod simulation;
 mod trigger;
 
 use crate::build::{BuildError, EffectKey};
-use crate::effect::prototype::{Prototype, PrototypeBuilder};
+use crate::effect::prototype::{Bound, ResolvedPrototype, resolve_bound};
 use crate::log::{Metadata, RunLogReader, SimpleEventRunLog};
 use crate::moment::Moment;
-use chrono::{DateTime, FixedOffset, TimeDelta};
+use chrono::{DateTime, FixedOffset, TimeDelta, Utc};
 use clock::Clock;
 use generator::{
     Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext,
@@ -159,16 +159,14 @@ impl From<SkippedInput> for Metadata {
 #[derive(Debug)]
 pub struct EffectBuilder {
     key: String,
-    start: Option<Moment>,
-    end: Option<Moment>,
-    start_expression: Option<String>,
-    end_expression: Option<String>,
+    start: Option<Bound>,
+    end: Option<Bound>,
     limit: Option<NonZeroU64>,
     now: Option<DateTime<FixedOffset>>,
     prototype_key: Option<String>,
-    prototype: Option<Prototype>,
+    prototype: Option<ResolvedPrototype>,
     seed: Option<u64>,
-    default_prototype: Option<Prototype>,
+    default_prototype: Option<ResolvedPrototype>,
     event_run_log: Option<Rc<dyn RunLogReader>>,
     trigger: TriggerConfig,
     generator_builder: Option<Box<dyn GeneratorBuilder>>,
@@ -180,8 +178,6 @@ impl EffectBuilder {
             key,
             start: None,
             end: None,
-            start_expression: None,
-            end_expression: None,
             limit: None,
             now: None,
             prototype_key: None,
@@ -200,7 +196,7 @@ impl EffectBuilder {
     }
 
     pub fn set_start(&mut self, start: Moment) -> &mut Self {
-        self.start = Some(start);
+        self.start = Some(Bound::Moment(start));
         self
     }
 
@@ -210,19 +206,19 @@ impl EffectBuilder {
     }
 
     pub fn set_end(&mut self, end: Moment) -> &mut Self {
-        self.end = Some(end);
+        self.end = Some(Bound::Moment(end));
         self
     }
 
     /// Sets `start` from an expression, parsed when the effect builds so it can refer to the default prototype's bounds via `simulation`; overrides `start`.
     pub fn set_start_expression(&mut self, expression: String) -> &mut Self {
-        self.start_expression = Some(expression);
+        self.start = Some(Bound::Expression(expression));
         self
     }
 
     /// Sets `end` from an expression, parsed when the effect builds so it can refer to the default prototype's bounds via `simulation`; overrides `end`.
     pub fn set_end_expression(&mut self, expression: String) -> &mut Self {
-        self.end_expression = Some(expression);
+        self.end = Some(Bound::Expression(expression));
         self
     }
 
@@ -247,13 +243,13 @@ impl EffectBuilder {
         self
     }
 
-    pub fn prototype(mut self, prototype: &Prototype) -> Self {
+    pub fn prototype(mut self, prototype: &ResolvedPrototype) -> Self {
         self.set_prototype(prototype);
         self
     }
 
     /// Sets the prototype whose `start`, `end` and `limit` the effect takes where it sets none itself; without one the prototype is empty.
-    pub fn set_prototype(&mut self, prototype: &Prototype) -> &mut Self {
+    pub fn set_prototype(&mut self, prototype: &ResolvedPrototype) -> &mut Self {
         self.prototype = Some(prototype.clone());
         self
     }
@@ -270,7 +266,7 @@ impl EffectBuilder {
     }
 
     /// Sets the default prototype, whose `start` and `end` the effect's expressions and generators see as `simulation`; without them they default to the effect's own start and end.
-    pub fn set_default_prototype(&mut self, prototype: &Prototype) -> &mut Self {
+    pub fn set_default_prototype(&mut self, prototype: &ResolvedPrototype) -> &mut Self {
         self.default_prototype = Some(prototype.clone());
         self
     }
@@ -343,35 +339,33 @@ impl EffectBuilder {
 
     /// Lays the effect's own `start`, `end` and `limit` over its prototype's and builds it; errors unless the window has a `start` and an `end` or `limit`, and a `start` before any `end`.
     pub fn build(self) -> Result<Effect, Vec<BuildError>> {
-        let mut own = PrototypeBuilder::default().for_effect(self.key.clone());
-        if let Some(start) = self.start.clone() {
-            own.set_start(start);
-        }
-        if let Some(end) = self.end.clone() {
-            own.set_end(end);
-        }
-        if let Some(expression) = self.start_expression.clone() {
-            own.set_start_expression(expression);
-        }
-        if let Some(expression) = self.end_expression.clone() {
-            own.set_end_expression(expression);
-        }
-        if let Some(limit) = self.limit {
-            own.set_limit(limit);
-        }
-        if let Some(now) = self.now {
-            own.set_now(now);
-        }
-        if let Some(default_prototype) = &self.default_prototype {
-            own.set_default_prototype(default_prototype);
-        }
-        let own = own.build()?;
-        let prototype = self.prototype.clone().unwrap_or_default();
-        let start = own.start.or(prototype.start);
-        let end = own.end.or(prototype.end);
-        let limit = own.limit.or(prototype.limit).map(NonZeroU64::get);
-
+        let now = self.now.unwrap_or_else(|| Utc::now().fixed_offset());
+        let error = |field: &str, message: String| {
+            let key = if field == "start" {
+                EffectKey::Start
+            } else {
+                EffectKey::End
+            };
+            BuildError::effect(self.key.clone(), key, message)
+        };
+        let default = self.default_prototype.as_ref();
         let mut errors: Vec<BuildError> = vec![];
+        let own_start = resolve_bound("start", self.start.as_ref(), now, default, &error)
+            .map_err(|e| errors.extend(e))
+            .ok()
+            .flatten();
+        let own_end = resolve_bound("end", self.end.as_ref(), now, default, &error)
+            .map_err(|e| errors.extend(e))
+            .ok()
+            .flatten();
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+        let prototype = self.prototype.clone().unwrap_or_default();
+        let start = own_start.or(prototype.start);
+        let end = own_end.or(prototype.end);
+        let limit = self.limit.or(prototype.limit).map(NonZeroU64::get);
+
         if start.is_none() {
             errors.push(BuildError::effect(
                 self.key.clone(),
@@ -513,7 +507,7 @@ mod tests {
         Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
         Metadata,
     };
-    use crate::effect::prototype::Prototype;
+    use crate::effect::prototype::ResolvedPrototype;
     use chrono::{TimeDelta, Utc};
     use std::num::NonZeroU64;
 
@@ -558,10 +552,10 @@ mod tests {
     fn build(mut builder: EffectBuilder) -> Effect {
         let now = Utc::now().fixed_offset();
         let start = now - TimeDelta::days(30);
-        let prototype = Prototype {
+        let prototype = ResolvedPrototype {
             start: Some(start),
             end: Some(now),
-            ..Prototype::default()
+            limit: None,
         };
         builder
             .set_prototype(&prototype)
