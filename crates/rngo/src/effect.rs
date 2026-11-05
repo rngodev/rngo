@@ -159,7 +159,12 @@ impl From<SkippedInput> for Metadata {
 #[derive(Debug)]
 pub struct EffectBuilder {
     key: String,
-    custom_prototype: Option<PrototypeBuilder>,
+    start: Option<Moment>,
+    end: Option<Moment>,
+    start_expression: Option<String>,
+    end_expression: Option<String>,
+    limit: Option<NonZeroU64>,
+    now: Option<DateTime<FixedOffset>>,
     prototype_key: Option<String>,
     prototype: Option<Prototype>,
     seed: Option<u64>,
@@ -173,7 +178,12 @@ impl EffectBuilder {
     fn new(key: String) -> Self {
         EffectBuilder {
             key,
-            custom_prototype: None,
+            start: None,
+            end: None,
+            start_expression: None,
+            end_expression: None,
+            limit: None,
+            now: None,
             prototype_key: None,
             prototype: None,
             seed: None,
@@ -184,18 +194,13 @@ impl EffectBuilder {
         }
     }
 
-    fn custom_prototype_mut(&mut self) -> &mut PrototypeBuilder {
-        self.custom_prototype
-            .get_or_insert_with(PrototypeBuilder::default)
-    }
-
     pub fn start(mut self, start: Moment) -> Self {
         self.set_start(start);
         self
     }
 
     pub fn set_start(&mut self, start: Moment) -> &mut Self {
-        self.custom_prototype_mut().set_start(start);
+        self.start = Some(start);
         self
     }
 
@@ -205,19 +210,19 @@ impl EffectBuilder {
     }
 
     pub fn set_end(&mut self, end: Moment) -> &mut Self {
-        self.custom_prototype_mut().set_end(end);
+        self.end = Some(end);
         self
     }
 
     /// Sets `start` from an expression, parsed when the effect builds so it can refer to the default prototype's bounds via `simulation`; overrides `start`.
     pub fn set_start_expression(&mut self, expression: String) -> &mut Self {
-        self.custom_prototype_mut().set_start_expression(expression);
+        self.start_expression = Some(expression);
         self
     }
 
     /// Sets `end` from an expression, parsed when the effect builds so it can refer to the default prototype's bounds via `simulation`; overrides `end`.
     pub fn set_end_expression(&mut self, expression: String) -> &mut Self {
-        self.custom_prototype_mut().set_end_expression(expression);
+        self.end_expression = Some(expression);
         self
     }
 
@@ -227,7 +232,7 @@ impl EffectBuilder {
     }
 
     pub fn set_limit(&mut self, limit: NonZeroU64) -> &mut Self {
-        self.custom_prototype_mut().set_limit(limit);
+        self.limit = Some(limit);
         self
     }
 
@@ -260,14 +265,13 @@ impl EffectBuilder {
 
     /// Sets the instant relative moments resolve against; defaults to the current time at build.
     pub fn set_now(&mut self, now: DateTime<FixedOffset>) -> &mut Self {
-        self.custom_prototype_mut().set_now(now);
+        self.now = Some(now);
         self
     }
 
     /// Sets the default prototype, whose `start` and `end` the effect's expressions and generators see as `simulation`; without them they default to the effect's own start and end.
     pub fn set_default_prototype(&mut self, prototype: &Prototype) -> &mut Self {
         self.default_prototype = Some(prototype.clone());
-        self.custom_prototype_mut().set_default_prototype(prototype);
         self
     }
 
@@ -339,12 +343,29 @@ impl EffectBuilder {
 
     /// Lays the effect's own `start`, `end` and `limit` over its prototype's and builds it; errors unless the window has a `start` and an `end` or `limit`, and a `start` before any `end`.
     pub fn build(self) -> Result<Effect, Vec<BuildError>> {
-        let own = self
-            .custom_prototype
-            .clone()
-            .unwrap_or_default()
-            .for_effect(self.key.clone())
-            .build()?;
+        let mut own = PrototypeBuilder::default().for_effect(self.key.clone());
+        if let Some(start) = self.start.clone() {
+            own.set_start(start);
+        }
+        if let Some(end) = self.end.clone() {
+            own.set_end(end);
+        }
+        if let Some(expression) = self.start_expression.clone() {
+            own.set_start_expression(expression);
+        }
+        if let Some(expression) = self.end_expression.clone() {
+            own.set_end_expression(expression);
+        }
+        if let Some(limit) = self.limit {
+            own.set_limit(limit);
+        }
+        if let Some(now) = self.now {
+            own.set_now(now);
+        }
+        if let Some(default_prototype) = &self.default_prototype {
+            own.set_default_prototype(default_prototype);
+        }
+        let own = own.build()?;
         let prototype = self.prototype.clone().unwrap_or_default();
         let start = own.start.or(prototype.start);
         let end = own.end.or(prototype.end);
