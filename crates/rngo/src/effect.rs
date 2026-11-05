@@ -5,7 +5,7 @@ pub mod simulation;
 mod trigger;
 
 use crate::build::{BuildError, EffectKey};
-use crate::effect::prototype::{Bound, ResolvedPrototype, resolve_bound};
+use crate::effect::prototype::{Bound, Prototype, resolve_bound};
 use crate::log::{Metadata, RunLogReader, SimpleEventRunLog};
 use crate::moment::Moment;
 use chrono::{DateTime, FixedOffset, TimeDelta, Utc};
@@ -164,9 +164,9 @@ pub struct EffectBuilder {
     limit: Option<NonZeroU64>,
     now: Option<DateTime<FixedOffset>>,
     prototype_key: Option<String>,
-    prototype: Option<ResolvedPrototype>,
+    prototype: Option<Prototype>,
     seed: Option<u64>,
-    default_prototype: Option<ResolvedPrototype>,
+    default_prototype: Option<Prototype>,
     event_run_log: Option<Rc<dyn RunLogReader>>,
     trigger: TriggerConfig,
     generator_builder: Option<Box<dyn GeneratorBuilder>>,
@@ -243,13 +243,13 @@ impl EffectBuilder {
         self
     }
 
-    pub fn prototype(mut self, prototype: &ResolvedPrototype) -> Self {
+    pub fn prototype(mut self, prototype: &Prototype) -> Self {
         self.set_prototype(prototype);
         self
     }
 
     /// Sets the prototype whose `start`, `end` and `limit` the effect takes where it sets none itself; without one the prototype is empty.
-    pub fn set_prototype(&mut self, prototype: &ResolvedPrototype) -> &mut Self {
+    pub fn set_prototype(&mut self, prototype: &Prototype) -> &mut Self {
         self.prototype = Some(prototype.clone());
         self
     }
@@ -266,7 +266,7 @@ impl EffectBuilder {
     }
 
     /// Sets the default prototype, whose `start` and `end` the effect's expressions and generators see as `simulation`; without them they default to the effect's own start and end.
-    pub fn set_default_prototype(&mut self, prototype: &ResolvedPrototype) -> &mut Self {
+    pub fn set_default_prototype(&mut self, prototype: &Prototype) -> &mut Self {
         self.default_prototype = Some(prototype.clone());
         self
     }
@@ -507,7 +507,7 @@ mod tests {
         Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
         Metadata,
     };
-    use crate::effect::prototype::ResolvedPrototype;
+    use crate::effect::prototype::Prototype;
     use chrono::{TimeDelta, Utc};
     use std::num::NonZeroU64;
 
@@ -552,10 +552,10 @@ mod tests {
     fn build(mut builder: EffectBuilder) -> Effect {
         let now = Utc::now().fixed_offset();
         let start = now - TimeDelta::days(30);
-        let prototype = ResolvedPrototype {
+        let prototype = Prototype {
             start: Some(start),
             end: Some(now),
-            limit: None,
+            ..Prototype::default()
         };
         builder
             .set_prototype(&prototype)

@@ -1,6 +1,6 @@
 use crate::RunLogReader;
 use crate::build::{BuildError, SimulationKey};
-use crate::effect::prototype::{Prototype, ResolvedPrototype};
+use crate::effect::prototype::{Prototype, PrototypeBuilder};
 use crate::effect::{Effect, EffectBuilder, Input, SkippedInput};
 use crate::log::SimpleEventRunLog;
 use crate::moment::Moment;
@@ -72,8 +72,8 @@ pub struct SimulationBuilder {
     effect_builders: Vec<EffectBuilder>,
     seed: Option<u64>,
     now: Option<DateTime<FixedOffset>>,
-    default_prototype: Prototype,
-    prototypes: IndexMap<String, Prototype>,
+    default_prototype: PrototypeBuilder,
+    prototypes: IndexMap<String, PrototypeBuilder>,
     limit: Option<u64>,
 }
 
@@ -84,7 +84,7 @@ impl SimulationBuilder {
             effect_builders: vec![],
             seed: None,
             now: None,
-            default_prototype: Prototype::default()
+            default_prototype: PrototypeBuilder::default()
                 .start(Moment::Relative(TimeDelta::days(-30)))
                 .end(Moment::Relative(TimeDelta::zero())),
             prototypes: IndexMap::new(),
@@ -141,18 +141,23 @@ impl SimulationBuilder {
         self
     }
 
-    pub fn prototype(mut self, name: &str, f: impl FnOnce(Prototype) -> Prototype) -> Self {
+    pub fn prototype(
+        mut self,
+        name: &str,
+        f: impl FnOnce(PrototypeBuilder) -> PrototypeBuilder,
+    ) -> Self {
         self.with_prototype(name, f);
         self
     }
 
-    /// Defines a named prototype; `f` configures it.
+    /// Defines a named prototype; `f` configures its builder.
     pub fn with_prototype(
         &mut self,
         name: &str,
-        f: impl FnOnce(Prototype) -> Prototype,
+        f: impl FnOnce(PrototypeBuilder) -> PrototypeBuilder,
     ) -> &mut Self {
-        self.prototypes.insert(name.into(), f(Prototype::default()));
+        self.prototypes
+            .insert(name.into(), f(PrototypeBuilder::default().name(name)));
         self
     }
 
@@ -197,39 +202,24 @@ impl SimulationBuilder {
         };
 
         let now = self.now.unwrap_or_else(|| Utc::now().fixed_offset());
-        let default_prototype = self.default_prototype.resolve(now, None, |_, message| {
-            BuildError::simulation(SimulationKey::Start, message)
-        })?;
-        let (Some(start), Some(end)) = (default_prototype.start, default_prototype.end) else {
+        let default_prototype = self.default_prototype.clone().now(now).build()?;
+        let (Some(start), Some(_)) = (default_prototype.start, default_prototype.end) else {
             return Err(vec![BuildError::simulation(
                 SimulationKey::Start,
                 "the simulation must have a start and an end",
             )]);
         };
-        if start >= end {
-            return Err(vec![BuildError::simulation(
-                SimulationKey::Start,
-                "start must be before end",
-            )]);
-        }
 
         let mut prototypes = IndexMap::new();
-        for (name, declared) in &self.prototypes {
-            let error = |_: &str, message: String| {
-                BuildError::simulation(
-                    SimulationKey::Start,
-                    format!("prototype \"{name}\": {message}"),
-                )
-            };
-            match declared.resolve(now, Some(&default_prototype), error) {
+        for (name, builder) in &self.prototypes {
+            match builder
+                .clone()
+                .now(now)
+                .default_prototype(&default_prototype)
+                .build()
+            {
                 Ok(prototype) => {
-                    if let (Some(start), Some(end)) = (prototype.start, prototype.end)
-                        && start >= end
-                    {
-                        errors.push(error("start", "start must be before end".into()));
-                    } else {
-                        prototypes.insert(name.clone(), prototype);
-                    }
+                    prototypes.insert(name.clone(), prototype);
                 }
                 Err(mut e) => errors.append(&mut e),
             }
@@ -238,7 +228,7 @@ impl SimulationBuilder {
             return Err(errors);
         }
 
-        let empty_prototype = ResolvedPrototype::default();
+        let empty_prototype = Prototype::default();
 
         let mut effects = vec![];
         for mut effect_builder in self.effect_builders {

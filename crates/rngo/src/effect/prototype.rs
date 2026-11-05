@@ -1,6 +1,6 @@
-use crate::build::BuildError;
+use crate::build::{BuildError, SimulationKey};
 use crate::moment::Moment;
-use chrono::{DateTime, FixedOffset};
+use chrono::{DateTime, FixedOffset, Utc};
 use std::num::NonZeroU64;
 
 /// A start or end as declared: a fixed moment, or a CEL expression resolved when the simulation builds.
@@ -10,15 +10,39 @@ pub enum Bound {
     Expression(String),
 }
 
-/// A time window and an input cap as declared, each optional; an effect takes the parts it doesn't set itself from its prototype.
+/// A time window and an input cap, each optional; an effect takes the parts it doesn't set itself from its prototype.
 #[derive(Clone, Debug, Default)]
 pub struct Prototype {
-    pub start: Option<Bound>,
-    pub end: Option<Bound>,
+    /// The prototype's name; `None` for the default prototype and for an effect's own window.
+    pub name: Option<String>,
+    pub start: Option<DateTime<FixedOffset>>,
+    pub end: Option<DateTime<FixedOffset>>,
     pub limit: Option<NonZeroU64>,
 }
 
 impl Prototype {
+    pub fn builder() -> PrototypeBuilder {
+        PrototypeBuilder::default()
+    }
+}
+
+/// Builds a [`Prototype`]; whatever is left unset stays unset.
+#[derive(Clone, Debug, Default)]
+pub struct PrototypeBuilder {
+    name: Option<String>,
+    start: Option<Bound>,
+    end: Option<Bound>,
+    limit: Option<NonZeroU64>,
+    now: Option<DateTime<FixedOffset>>,
+    default_prototype: Option<Prototype>,
+}
+
+impl PrototypeBuilder {
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
     pub fn start(mut self, start: Moment) -> Self {
         self.set_start(start);
         self
@@ -29,7 +53,7 @@ impl Prototype {
         self
     }
 
-    /// Sets `start` from an expression, which can refer to the default prototype via `simulation`.
+    /// Sets `start` from an expression, parsed at build.
     pub fn set_start_expression(&mut self, expression: String) -> &mut Self {
         self.start = Some(Bound::Expression(expression));
         self
@@ -45,7 +69,7 @@ impl Prototype {
         self
     }
 
-    /// Sets `end` from an expression, which can refer to the default prototype via `simulation`.
+    /// Sets `end` from an expression, parsed at build.
     pub fn set_end_expression(&mut self, expression: String) -> &mut Self {
         self.end = Some(Bound::Expression(expression));
         self
@@ -61,43 +85,68 @@ impl Prototype {
         self
     }
 
-    /// Resolves the bounds at `now`; errors if an expression doesn't parse, with each error built by `error` from the field name and message.
-    pub fn resolve(
-        &self,
-        now: DateTime<FixedOffset>,
-        default: Option<&ResolvedPrototype>,
-        error: impl Fn(&str, String) -> BuildError,
-    ) -> Result<ResolvedPrototype, Vec<BuildError>> {
+    pub fn now(mut self, now: DateTime<FixedOffset>) -> Self {
+        self.set_now(now);
+        self
+    }
+
+    /// Sets the instant relative moments resolve against; defaults to the current time at build.
+    pub fn set_now(&mut self, now: DateTime<FixedOffset>) -> &mut Self {
+        self.now = Some(now);
+        self
+    }
+
+    pub fn default_prototype(mut self, prototype: &Prototype) -> Self {
+        self.set_default_prototype(prototype);
+        self
+    }
+
+    /// Sets the default prototype, whose `start` and `end` expressions see as `simulation`; without it, or if it lacks either, expressions can't refer to `simulation`.
+    pub fn set_default_prototype(&mut self, prototype: &Prototype) -> &mut Self {
+        self.default_prototype = Some(prototype.clone());
+        self
+    }
+
+    /// Resolves the prototype; errors if an expression doesn't parse or if `start` isn't before `end`.
+    pub fn build(&self) -> Result<Prototype, Vec<BuildError>> {
+        let now = self.now.unwrap_or_else(|| Utc::now().fixed_offset());
+        let default = self.default_prototype.as_ref();
+        let error =
+            |_: &str, message: String| BuildError::simulation(SimulationKey::Start, message);
         let mut errors = vec![];
         let start = resolve_bound("start", self.start.as_ref(), now, default, &error)
             .map_err(|e| errors.extend(e));
         let end = resolve_bound("end", self.end.as_ref(), now, default, &error)
             .map_err(|e| errors.extend(e));
-        match (start, end) {
-            (Ok(start), Ok(end)) => Ok(ResolvedPrototype {
-                start,
-                end,
-                limit: self.limit,
-            }),
-            _ => Err(errors),
+        let (Ok(start), Ok(end)) = (start, end) else {
+            return Err(errors);
+        };
+
+        if let (Some(start), Some(end)) = (start, end)
+            && start >= end
+        {
+            let message = match &self.name {
+                Some(name) => format!("prototype \"{name}\": start must be before end"),
+                None => "start must be before end".into(),
+            };
+            return Err(vec![error("start", message)]);
         }
+
+        Ok(Prototype {
+            name: self.name.clone(),
+            start,
+            end,
+            limit: self.limit,
+        })
     }
 }
 
-/// A [`Prototype`] with its bounds resolved to instants; whatever was unset stays unset.
-#[derive(Clone, Debug, Default)]
-pub struct ResolvedPrototype {
-    pub start: Option<DateTime<FixedOffset>>,
-    pub end: Option<DateTime<FixedOffset>>,
-    pub limit: Option<NonZeroU64>,
-}
-
-/// Resolves one declared bound at `now`; `default`'s start and end, when both are set, are what expressions see as `simulation`.
+/// Resolves one declared bound at `now`; `default`'s start and end, when both are set, are what expressions see as `simulation`. Errors are built by `error` from the field name and message.
 pub(crate) fn resolve_bound(
     field: &str,
     bound: Option<&Bound>,
     now: DateTime<FixedOffset>,
-    default: Option<&ResolvedPrototype>,
+    default: Option<&Prototype>,
     error: &impl Fn(&str, String) -> BuildError,
 ) -> Result<Option<DateTime<FixedOffset>>, Vec<BuildError>> {
     let moment = match bound {
@@ -124,8 +173,7 @@ pub(crate) fn resolve_bound(
 
 #[cfg(test)]
 mod tests {
-    use super::{Prototype, ResolvedPrototype};
-    use crate::build::{BuildError, SimulationKey};
+    use super::Prototype;
     use crate::moment::Moment;
     use chrono::{DateTime, FixedOffset, TimeDelta, Utc};
     use std::num::NonZeroU64;
@@ -135,29 +183,28 @@ mod tests {
         now - TimeDelta::nanoseconds(now.timestamp_subsec_nanos().into())
     }
 
-    fn error(_field: &str, message: String) -> BuildError {
-        BuildError::simulation(SimulationKey::Start, message)
-    }
-
     #[test]
     fn leaves_unset_parts_unset() {
-        let prototype = Prototype::default().resolve(now(), None, error).unwrap();
+        let prototype = Prototype::builder().build().unwrap();
         assert!(prototype.start.is_none() && prototype.end.is_none() && prototype.limit.is_none());
     }
 
     #[test]
     fn resolves_moments_expressions_and_limit() {
-        let mut declared = Prototype::default().limit(NonZeroU64::new(3).unwrap());
-        declared
+        let mut builder = Prototype::builder().limit(NonZeroU64::new(3).unwrap());
+        builder
             .set_start(Moment::Relative(TimeDelta::days(-2)))
             .set_end_expression("simulation.end - days(1)".into());
         let now = now();
-        let default = ResolvedPrototype {
-            start: Some(now - TimeDelta::days(30)),
-            end: Some(now),
-            limit: None,
-        };
-        let prototype = declared.resolve(now, Some(&default), error).unwrap();
+        let prototype = builder
+            .set_now(now)
+            .set_default_prototype(&Prototype {
+                start: Some(now - TimeDelta::days(30)),
+                end: Some(now),
+                ..Prototype::default()
+            })
+            .build()
+            .unwrap();
 
         assert_eq!(prototype.start, Some(now - TimeDelta::days(2)));
         assert_eq!(prototype.end, Some(now - TimeDelta::days(1)));
@@ -165,9 +212,13 @@ mod tests {
     }
 
     #[test]
-    fn an_expression_that_does_not_parse_is_an_error() {
-        let mut declared = Prototype::default();
-        declared.set_start_expression("nonsense(".into());
-        assert!(declared.resolve(now(), None, error).is_err());
+    fn a_prototype_ending_before_it_starts_is_an_error() {
+        let errors = Prototype::builder()
+            .name("backwards")
+            .start(Moment::Relative(TimeDelta::days(-1)))
+            .end(Moment::Relative(TimeDelta::days(-60)))
+            .build()
+            .unwrap_err();
+        assert!(errors[0].message().contains("backwards"));
     }
 }

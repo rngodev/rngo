@@ -105,20 +105,20 @@ impl Dialect {
         }
 
         for (name, prototype) in &spec.prototypes {
-            simulation_builder.with_prototype(name, |mut declared| {
+            simulation_builder.with_prototype(name, |mut prototype_builder| {
                 if let Some(start) = &prototype.start {
-                    declared.set_start_expression(start.clone());
+                    prototype_builder.set_start_expression(start.clone());
                 }
 
                 if let Some(end) = &prototype.end {
-                    declared.set_end_expression(end.clone());
+                    prototype_builder.set_end_expression(end.clone());
                 }
 
                 if let Some(limit) = prototype.limit {
-                    declared.set_limit(limit);
+                    prototype_builder.set_limit(limit);
                 }
 
-                declared
+                prototype_builder
             });
         }
 
