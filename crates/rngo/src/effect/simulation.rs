@@ -1,6 +1,6 @@
 use crate::RunLogReader;
 use crate::build::{BuildError, SimulationKey};
-use crate::effect::phase::{Phase, PhaseBuilder};
+use crate::effect::prototype::{Prototype, PrototypeBuilder};
 use crate::effect::{Effect, EffectBuilder, Input, SkippedInput};
 use crate::log::SimpleEventRunLog;
 use crate::moment::Moment;
@@ -72,8 +72,8 @@ pub struct SimulationBuilder {
     effect_builders: Vec<EffectBuilder>,
     seed: Option<u64>,
     now: Option<DateTime<FixedOffset>>,
-    default_phase: PhaseBuilder,
-    prototypes: IndexMap<String, PhaseBuilder>,
+    default_prototype: PrototypeBuilder,
+    prototypes: IndexMap<String, PrototypeBuilder>,
     limit: Option<u64>,
 }
 
@@ -84,7 +84,7 @@ impl SimulationBuilder {
             effect_builders: vec![],
             seed: None,
             now: None,
-            default_phase: PhaseBuilder::default()
+            default_prototype: PrototypeBuilder::default()
                 .start(Moment::Relative(TimeDelta::days(-30)))
                 .end(Moment::Relative(TimeDelta::zero())),
             prototypes: IndexMap::new(),
@@ -119,29 +119,33 @@ impl SimulationBuilder {
         self
     }
 
-    /// Sets the default phase's start; defaults to 30 days before now.
+    /// Sets the default prototype's start; defaults to 30 days before now.
     pub fn start(mut self, start: Moment) -> Self {
         self.set_start(start);
         self
     }
 
     pub fn set_start(&mut self, start: Moment) -> &mut Self {
-        self.default_phase.set_start(start);
+        self.default_prototype.set_start(start);
         self
     }
 
-    /// Sets the default phase's end; defaults to now.
+    /// Sets the default prototype's end; defaults to now.
     pub fn end(mut self, end: Moment) -> Self {
         self.set_end(end);
         self
     }
 
     pub fn set_end(&mut self, end: Moment) -> &mut Self {
-        self.default_phase.set_end(end);
+        self.default_prototype.set_end(end);
         self
     }
 
-    pub fn prototype(mut self, name: &str, f: impl FnOnce(PhaseBuilder) -> PhaseBuilder) -> Self {
+    pub fn prototype(
+        mut self,
+        name: &str,
+        f: impl FnOnce(PrototypeBuilder) -> PrototypeBuilder,
+    ) -> Self {
         self.with_prototype(name, f);
         self
     }
@@ -150,10 +154,10 @@ impl SimulationBuilder {
     pub fn with_prototype(
         &mut self,
         name: &str,
-        f: impl FnOnce(PhaseBuilder) -> PhaseBuilder,
+        f: impl FnOnce(PrototypeBuilder) -> PrototypeBuilder,
     ) -> &mut Self {
         self.prototypes
-            .insert(name.into(), f(PhaseBuilder::default().name(name)));
+            .insert(name.into(), f(PrototypeBuilder::default().name(name)));
         self
     }
 
@@ -198,24 +202,24 @@ impl SimulationBuilder {
         };
 
         let now = self.now.unwrap_or_else(|| Utc::now().fixed_offset());
-        let default_phase = self.default_phase.clone().now(now).build()?;
-        let (Some(start), Some(_)) = (default_phase.start, default_phase.end) else {
+        let default_prototype = self.default_prototype.clone().now(now).build()?;
+        let (Some(start), Some(_)) = (default_prototype.start, default_prototype.end) else {
             return Err(vec![BuildError::simulation(
                 SimulationKey::Start,
                 "the simulation must have a start and an end",
             )]);
         };
 
-        let mut phases = IndexMap::new();
+        let mut prototypes = IndexMap::new();
         for (name, builder) in &self.prototypes {
             match builder
                 .clone()
                 .now(now)
-                .default_phase(&default_phase)
+                .default_prototype(&default_prototype)
                 .build()
             {
-                Ok(phase) => {
-                    phases.insert(name.clone(), phase);
+                Ok(prototype) => {
+                    prototypes.insert(name.clone(), prototype);
                 }
                 Err(mut e) => errors.append(&mut e),
             }
@@ -224,18 +228,18 @@ impl SimulationBuilder {
             return Err(errors);
         }
 
-        let empty_phase = Phase::default();
+        let empty_prototype = Prototype::default();
 
         let mut effects = vec![];
         for mut effect_builder in self.effect_builders {
-            let phase = match effect_builder.get_prototype_key() {
-                Some(key) => phases.get(key).unwrap_or(&empty_phase),
-                None => &default_phase,
+            let prototype = match effect_builder.get_prototype_key() {
+                Some(key) => prototypes.get(key).unwrap_or(&empty_prototype),
+                None => &default_prototype,
             };
             effect_builder
-                .set_phase(phase)
+                .set_prototype(prototype)
                 .set_now(now)
-                .set_default_phase(&default_phase)
+                .set_default_prototype(&default_prototype)
                 .set_event_run_log(run_log_reader.clone())
                 .set_seed(self.seed.unwrap_or(1));
 

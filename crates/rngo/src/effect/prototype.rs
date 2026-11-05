@@ -3,25 +3,25 @@ use crate::moment::Moment;
 use chrono::{DateTime, FixedOffset, Utc};
 use std::num::NonZeroU64;
 
-/// A time window and an input cap, each optional; an effect takes the parts it doesn't set itself from its phase.
+/// A time window and an input cap, each optional; an effect takes the parts it doesn't set itself from its prototype.
 #[derive(Clone, Debug, Default)]
-pub struct Phase {
-    /// The phase's name; `None` for the default phase and for an effect's own window.
+pub struct Prototype {
+    /// The prototype's name; `None` for the default prototype and for an effect's own window.
     pub name: Option<String>,
     pub start: Option<DateTime<FixedOffset>>,
     pub end: Option<DateTime<FixedOffset>>,
     pub limit: Option<NonZeroU64>,
 }
 
-impl Phase {
-    pub fn builder() -> PhaseBuilder {
-        PhaseBuilder::default()
+impl Prototype {
+    pub fn builder() -> PrototypeBuilder {
+        PrototypeBuilder::default()
     }
 }
 
-/// Builds a [`Phase`]; whatever is left unset stays unset.
+/// Builds a [`Prototype`]; whatever is left unset stays unset.
 #[derive(Clone, Debug, Default)]
-pub struct PhaseBuilder {
+pub struct PrototypeBuilder {
     name: Option<String>,
     start: Option<Moment>,
     end: Option<Moment>,
@@ -29,11 +29,11 @@ pub struct PhaseBuilder {
     end_expression: Option<String>,
     limit: Option<NonZeroU64>,
     now: Option<DateTime<FixedOffset>>,
-    default_phase: Option<Phase>,
+    default_prototype: Option<Prototype>,
     effect: Option<String>,
 }
 
-impl PhaseBuilder {
+impl PrototypeBuilder {
     pub fn name(mut self, name: impl Into<String>) -> Self {
         self.name = Some(name.into());
         self
@@ -92,14 +92,14 @@ impl PhaseBuilder {
         self
     }
 
-    pub fn default_phase(mut self, phase: &Phase) -> Self {
-        self.set_default_phase(phase);
+    pub fn default_prototype(mut self, prototype: &Prototype) -> Self {
+        self.set_default_prototype(prototype);
         self
     }
 
-    /// Sets the default phase, whose `start` and `end` expressions see as `simulation`; without it, or if it lacks either, expressions can't refer to `simulation`.
-    pub fn set_default_phase(&mut self, phase: &Phase) -> &mut Self {
-        self.default_phase = Some(phase.clone());
+    /// Sets the default prototype, whose `start` and `end` expressions see as `simulation`; without it, or if it lacks either, expressions can't refer to `simulation`.
+    pub fn set_default_prototype(&mut self, prototype: &Prototype) -> &mut Self {
+        self.default_prototype = Some(prototype.clone());
         self
     }
 
@@ -109,13 +109,12 @@ impl PhaseBuilder {
         self
     }
 
-    /// Resolves the phase; errors if an expression doesn't parse or, outside an effect, if `start` isn't before `end`.
-    pub fn build(&self) -> Result<Phase, Vec<BuildError>> {
+    /// Resolves the prototype; errors if an expression doesn't parse or, outside an effect, if `start` isn't before `end`.
+    pub fn build(&self) -> Result<Prototype, Vec<BuildError>> {
         let now = self.now.unwrap_or_else(|| Utc::now().fixed_offset());
-        let simulation = self
-            .default_phase
-            .as_ref()
-            .and_then(|phase| Some((Moment::from(phase.start?), Moment::from(phase.end?))));
+        let simulation = self.default_prototype.as_ref().and_then(|prototype| {
+            Some((Moment::from(prototype.start?), Moment::from(prototype.end?)))
+        });
         let mut parser = Moment::parser();
         if let Some((start, end)) = &simulation {
             parser = parser.simulation(start, end);
@@ -156,7 +155,7 @@ impl PhaseBuilder {
             return Err(errors);
         }
 
-        Ok(Phase {
+        Ok(Prototype {
             name: self.name.clone(),
             start,
             end,
@@ -181,7 +180,7 @@ impl PhaseBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::Phase;
+    use super::Prototype;
     use crate::moment::Moment;
     use chrono::{DateTime, FixedOffset, TimeDelta, Utc};
     use std::num::NonZeroU64;
@@ -193,35 +192,35 @@ mod tests {
 
     #[test]
     fn leaves_unset_parts_unset() {
-        let phase = Phase::builder().build().unwrap();
-        assert!(phase.start.is_none() && phase.end.is_none() && phase.limit.is_none());
+        let prototype = Prototype::builder().build().unwrap();
+        assert!(prototype.start.is_none() && prototype.end.is_none() && prototype.limit.is_none());
     }
 
     #[test]
     fn resolves_moments_expressions_and_limit() {
-        let mut builder = Phase::builder().limit(NonZeroU64::new(3).unwrap());
+        let mut builder = Prototype::builder().limit(NonZeroU64::new(3).unwrap());
         builder
             .set_start(Moment::Relative(TimeDelta::days(-2)))
             .set_end_expression("simulation.end - days(1)".into());
         let now = now();
-        let phase = builder
+        let prototype = builder
             .set_now(now)
-            .set_default_phase(&Phase {
+            .set_default_prototype(&Prototype {
                 start: Some(now - TimeDelta::days(30)),
                 end: Some(now),
-                ..Phase::default()
+                ..Prototype::default()
             })
             .build()
             .unwrap();
 
-        assert_eq!(phase.start, Some(now - TimeDelta::days(2)));
-        assert_eq!(phase.end, Some(now - TimeDelta::days(1)));
-        assert_eq!(phase.limit, NonZeroU64::new(3));
+        assert_eq!(prototype.start, Some(now - TimeDelta::days(2)));
+        assert_eq!(prototype.end, Some(now - TimeDelta::days(1)));
+        assert_eq!(prototype.limit, NonZeroU64::new(3));
     }
 
     #[test]
-    fn a_phase_ending_before_it_starts_is_an_error() {
-        let errors = Phase::builder()
+    fn a_prototype_ending_before_it_starts_is_an_error() {
+        let errors = Prototype::builder()
             .name("backwards")
             .start(Moment::Relative(TimeDelta::days(-1)))
             .end(Moment::Relative(TimeDelta::days(-60)))

@@ -99,8 +99,9 @@ impl Dialect {
         };
 
         if spec.scenarios.is_some() {
-            errors
-                .push(ParseError::invalid("the default window has no scenarios").at(["scenarios"]));
+            errors.push(
+                ParseError::invalid("the default prototype has no scenarios").at(["scenarios"]),
+            );
         }
 
         for (name, prototype) in &spec.prototypes {
