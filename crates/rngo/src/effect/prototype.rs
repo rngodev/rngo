@@ -27,7 +27,7 @@ pub struct PrototypeBuilder {
     end: Option<Bound>,
     limit: Option<NonZeroU64>,
     now: Option<DateTime<FixedOffset>>,
-    default_prototype: Option<Prototype>,
+    prototype: Option<Prototype>,
 }
 
 impl PrototypeBuilder {
@@ -81,26 +81,26 @@ impl PrototypeBuilder {
         self
     }
 
-    pub fn default_prototype(mut self, prototype: &Prototype) -> Self {
-        self.set_default_prototype(prototype);
+    pub fn prototype(mut self, prototype: &Prototype) -> Self {
+        self.set_prototype(prototype);
         self
     }
 
     /// Sets the default prototype, whose `start` and `end` expressions see as `simulation`; without it, or if it lacks either, expressions can't refer to `simulation`.
-    pub fn set_default_prototype(&mut self, prototype: &Prototype) -> &mut Self {
-        self.default_prototype = Some(prototype.clone());
+    pub fn set_prototype(&mut self, prototype: &Prototype) -> &mut Self {
+        self.prototype = Some(prototype.clone());
         self
     }
 
     /// Resolves the prototype; errors if an expression doesn't parse or if `start` isn't before `end`.
     pub fn build(&self) -> Result<Prototype, Vec<BuildError>> {
         let now = self.now.unwrap_or_else(|| Utc::now().fixed_offset());
-        let default = self.default_prototype.as_ref();
+        let prototype = self.prototype.as_ref();
         let mut errors = vec![];
         let start = self
             .start
             .as_ref()
-            .map(|bound| bound.resolve(now, default))
+            .map(|bound| bound.resolve(now, prototype))
             .transpose()
             .map_err(|e| {
                 errors.extend(
@@ -111,7 +111,7 @@ impl PrototypeBuilder {
         let end = self
             .end
             .as_ref()
-            .map(|bound| bound.resolve(now, default))
+            .map(|bound| bound.resolve(now, prototype))
             .transpose()
             .map_err(|e| {
                 errors.extend(
@@ -165,11 +165,11 @@ mod tests {
         let mut builder = Prototype::builder().limit(NonZeroU64::new(3).unwrap());
         builder
             .set_start(Moment::Relative(TimeDelta::days(-2)))
-            .set_end("simulation.end - days(1)");
+            .set_end("prototype.end - days(1)");
         let now = now();
         let prototype = builder
             .set_now(now)
-            .set_default_prototype(&Prototype {
+            .set_prototype(&Prototype {
                 start: Some(now - TimeDelta::days(30)),
                 end: Some(now),
                 ..Prototype::default()

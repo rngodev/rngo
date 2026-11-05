@@ -73,7 +73,7 @@ fn effects_follow_their_prototype_bounds_and_stay_time_ordered() {
 }
 
 #[test]
-fn effect_without_prototype_uses_default_window() {
+fn effect_without_prototype_uses_default_prototype() {
     let value = spec(
         json!({ "late": { "start": "2024-01-06", "end": "2024-01-11" } }),
         json!({ "a": effect(None, json!({})) }),
@@ -93,7 +93,54 @@ fn an_effect_overrides_its_prototype() {
 }
 
 #[test]
-fn a_prototype_does_not_inherit_from_the_default_window() {
+fn an_effect_expression_can_refer_to_its_prototype() {
+    let value = spec(
+        json!({ "late": { "start": "2024-01-06", "end": "2024-01-11" } }),
+        json!({ "a": effect(Some("late"), json!({ "end": "prototype.end - days(2)" })) }),
+    );
+    let a = dates(value, "a");
+    assert_eq!(a.first().unwrap(), "2024-01-06");
+    assert_eq!(a.last().unwrap(), "2024-01-08");
+}
+
+#[test]
+fn an_effect_without_a_prototype_refers_to_the_default_prototype() {
+    let value = spec(
+        json!({}),
+        json!({ "a": effect(None, json!({ "start": "prototype.start + days(3)" })) }),
+    );
+    assert_eq!(dates(value, "a").first().unwrap(), "2024-01-04");
+}
+
+#[test]
+fn a_prototype_expression_refers_to_the_default_prototype_as_prototype() {
+    let value = spec(
+        json!({ "late": { "start": "prototype.start + days(5)", "end": "prototype.end" } }),
+        json!({ "a": effect(Some("late"), json!({})) }),
+    );
+    assert_eq!(dates(value, "a").first().unwrap(), "2024-01-06");
+}
+
+#[test]
+fn an_expression_cannot_refer_to_the_simulation() {
+    let value = spec(
+        json!({ "late": { "start": "simulation.start", "end": "2024-01-11" } }),
+        json!({ "a": effect(Some("late"), json!({})) }),
+    );
+    assert!(!errors(value).is_empty());
+}
+
+#[test]
+fn an_effect_expression_cannot_refer_to_the_simulation() {
+    let value = spec(
+        json!({}),
+        json!({ "a": effect(None, json!({ "end": "simulation.end" })) }),
+    );
+    assert!(!errors(value).is_empty());
+}
+
+#[test]
+fn a_prototype_does_not_inherit_from_the_default_prototype() {
     let value = spec(
         json!({ "late": { "start": "2024-01-06" } }),
         json!({ "a": effect(Some("late"), json!({})) }),

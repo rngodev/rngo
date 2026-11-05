@@ -78,12 +78,26 @@ pub trait CelContextExt {
     fn with_hertz(&mut self) -> &mut Self;
     fn with_strings(&mut self) -> &mut Self;
     fn with_now(&mut self, now: DateTime<FixedOffset>) -> &mut Self;
-    fn with_simulation(
+    fn with_prototype(
         &mut self,
         start: DateTime<FixedOffset>,
         end: DateTime<FixedOffset>,
     ) -> &mut Self;
     fn with_offset(&mut self, offset: f64) -> &mut Self;
+}
+
+fn add_window(
+    context: &mut Context<'static>,
+    name: &str,
+    start: DateTime<FixedOffset>,
+    end: DateTime<FixedOffset>,
+) {
+    let window: HashMap<String, Value> = [
+        ("start".to_string(), Value::Timestamp(start)),
+        ("end".to_string(), Value::Timestamp(end)),
+    ]
+    .into();
+    let _ = context.add_variable(name, Value::Map(Map::from(window)));
 }
 
 impl CelContextExt for Context<'static> {
@@ -129,17 +143,12 @@ impl CelContextExt for Context<'static> {
         self
     }
 
-    fn with_simulation(
+    fn with_prototype(
         &mut self,
         start: DateTime<FixedOffset>,
         end: DateTime<FixedOffset>,
     ) -> &mut Self {
-        let sim_map: HashMap<String, Value> = [
-            ("start".to_string(), Value::Timestamp(start)),
-            ("end".to_string(), Value::Timestamp(end)),
-        ]
-        .into();
-        let _ = self.add_variable("simulation", Value::Map(Map::from(sim_map)));
+        add_window(self, "prototype", start, end);
         self
     }
 
@@ -266,14 +275,14 @@ mod tests {
     }
 
     #[test]
-    fn with_simulation_sets_map() {
+    fn with_prototype_sets_map() {
         let start = DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap();
         let end = DateTime::parse_from_rfc3339("2024-12-31T00:00:00Z").unwrap();
         let mut ctx = Context::default();
-        ctx.with_simulation(start, end);
+        ctx.with_prototype(start, end);
 
-        assert_eq!(eval(&ctx, "simulation.start"), Value::Timestamp(start));
-        assert_eq!(eval(&ctx, "simulation.end"), Value::Timestamp(end));
+        assert_eq!(eval(&ctx, "prototype.start"), Value::Timestamp(start));
+        assert_eq!(eval(&ctx, "prototype.end"), Value::Timestamp(end));
     }
 
     #[test]

@@ -76,21 +76,21 @@ impl Bound {
         self
     }
 
-    /// Resolves the bound at `now`; `default`'s start and end, when both are set, are what an expression sees as `simulation`. Parse errors name the bound by its `kind`.
+    /// Resolves the bound at `now`; `prototype`'s start and end, when both are set, are what an expression sees as `prototype.start` and `prototype.end`. Parse errors name the bound by its `kind`.
     pub(crate) fn resolve(
         &self,
         now: DateTime<FixedOffset>,
-        default: Option<&Prototype>,
+        prototype: Option<&Prototype>,
     ) -> Result<DateTime<FixedOffset>, Vec<ParseError>> {
         let moment = match &self.value {
             BoundValue::Moment(moment) => moment.clone(),
             BoundValue::Expression(expression) => {
-                let simulation = default.and_then(|default| {
-                    Some((Moment::from(default.start?), Moment::from(default.end?)))
-                });
+                let range = prototype
+                    .and_then(|prototype| prototype.start.zip(prototype.end))
+                    .map(|(start, end)| (Moment::from(start), Moment::from(end)));
                 let mut parser = Moment::parser();
-                if let Some((start, end)) = &simulation {
-                    parser = parser.simulation(start, end);
+                if let Some((start, end)) = &range {
+                    parser = parser.prototype(start, end);
                 }
                 parser.parse(self.kind.map_or("bound", BoundKind::name), expression)?
             }

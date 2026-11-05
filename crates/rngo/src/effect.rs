@@ -167,7 +167,8 @@ pub struct EffectBuilder {
     prototype_key: Option<String>,
     prototype: Option<Prototype>,
     seed: Option<u64>,
-    default_prototype: Option<Prototype>,
+    // TODO: get rid of this --->
+    simulation_window: Option<(DateTime<FixedOffset>, DateTime<FixedOffset>)>,
     event_run_log: Option<Rc<dyn RunLogReader>>,
     trigger: TriggerConfig,
     generator_builder: Option<Box<dyn GeneratorBuilder>>,
@@ -184,7 +185,7 @@ impl EffectBuilder {
             prototype_key: None,
             prototype: None,
             seed: None,
-            default_prototype: None,
+            simulation_window: None,
             event_run_log: None,
             trigger: TriggerConfig::ClockExpression("hz(1, day)".into()),
             generator_builder: None,
@@ -258,9 +259,13 @@ impl EffectBuilder {
         self
     }
 
-    /// Sets the default prototype, whose `start` and `end` the effect's expressions and generators see as `simulation`; without them they default to the effect's own start and end.
-    pub fn set_default_prototype(&mut self, prototype: &Prototype) -> &mut Self {
-        self.default_prototype = Some(prototype.clone());
+    /// Sets the simulation's start and end, which generators see; without them they default to the effect's own start and end.
+    pub fn set_simulation_window(
+        &mut self,
+        start: DateTime<FixedOffset>,
+        end: DateTime<FixedOffset>,
+    ) -> &mut Self {
+        self.simulation_window = Some((start, end));
         self
     }
 
@@ -333,12 +338,12 @@ impl EffectBuilder {
     /// Lays the effect's own `start`, `end` and `limit` over its prototype's and builds it; errors unless the window has a `start` and an `end` or `limit`, and a `start` before any `end`.
     pub fn build(self) -> Result<Effect, Vec<BuildError>> {
         let now = self.now.unwrap_or_else(|| Utc::now().fixed_offset());
-        let default = self.default_prototype.as_ref();
+        let prototype = self.prototype.as_ref();
         let mut errors: Vec<BuildError> = vec![];
         let own_start =
             self.start
                 .as_ref()
-                .map(|bound| bound.resolve(now, default))
+                .map(|bound| bound.resolve(now, prototype))
                 .transpose()
                 .map_err(|e| {
                     errors.extend(e.iter().map(|e| {
@@ -350,7 +355,7 @@ impl EffectBuilder {
         let own_end = self
             .end
             .as_ref()
-            .map(|bound| bound.resolve(now, default))
+            .map(|bound| bound.resolve(now, prototype))
             .transpose()
             .map_err(|e| {
                 errors.extend(
@@ -363,10 +368,12 @@ impl EffectBuilder {
         if !errors.is_empty() {
             return Err(errors);
         }
-        let prototype = self.prototype.clone().unwrap_or_default();
-        let start = own_start.or(prototype.start);
-        let end = own_end.or(prototype.end);
-        let limit = self.limit.or(prototype.limit).map(NonZeroU64::get);
+        let start = own_start.or(prototype.and_then(|p| p.start));
+        let end = own_end.or(prototype.and_then(|p| p.end));
+        let limit = self
+            .limit
+            .or(prototype.and_then(|p| p.limit))
+            .map(NonZeroU64::get);
 
         if start.is_none() {
             errors.push(BuildError::effect(
@@ -398,9 +405,7 @@ impl EffectBuilder {
         let seed = self.seed.unwrap_or(1);
         let origin = start;
         let (simulation_start, simulation_end) = self
-            .default_prototype
-            .as_ref()
-            .and_then(|prototype| Some((prototype.start?, prototype.end?)))
+            .simulation_window
             .unwrap_or((start, end.unwrap_or(start)));
 
         let run_log_reader: Rc<dyn RunLogReader> = self
@@ -561,7 +566,7 @@ mod tests {
         };
         builder
             .set_prototype(&prototype)
-            .set_default_prototype(&prototype);
+            .set_simulation_window(start, now);
         builder.build().unwrap()
     }
 
