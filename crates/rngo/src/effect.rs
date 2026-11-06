@@ -40,6 +40,8 @@ pub struct Effect {
     pub end: Option<DateTime<FixedOffset>>,
     /// The name of the prototype the effect asked for; `None` for the default prototype.
     pub prototype: Option<String>,
+    /// The channel the effect writes to: its own, else its prototype's.
+    pub channel: Option<String>,
 }
 
 impl Effect {
@@ -160,6 +162,7 @@ pub struct EffectBuilder {
     start: Option<Bound>,
     end: Option<Bound>,
     limit: Option<NonZeroU64>,
+    channel: Option<String>,
     now: Option<DateTime<FixedOffset>>,
     prototype_key: Option<String>,
     prototype: Option<Prototype>,
@@ -177,6 +180,7 @@ impl EffectBuilder {
             start: None,
             end: None,
             limit: None,
+            channel: None,
             now: None,
             prototype_key: None,
             prototype: None,
@@ -218,6 +222,17 @@ impl EffectBuilder {
 
     pub fn set_limit(&mut self, limit: NonZeroU64) -> &mut Self {
         self.limit = Some(limit);
+        self
+    }
+
+    pub fn channel(mut self, channel: impl Into<String>) -> Self {
+        self.set_channel(channel);
+        self
+    }
+
+    /// Sets the channel the effect writes to, taking precedence over its prototype's.
+    pub fn set_channel(&mut self, channel: impl Into<String>) -> &mut Self {
+        self.channel = Some(channel.into());
         self
     }
 
@@ -438,6 +453,9 @@ impl EffectBuilder {
                 start,
                 end,
                 prototype: self.prototype_key,
+                channel: self
+                    .channel
+                    .or_else(|| prototype.and_then(|p| p.channel.clone())),
             }),
             Ok(_) => Err(errors),
             Err(mut e) => {
@@ -546,6 +564,28 @@ mod tests {
         };
         builder.set_prototype(&prototype);
         builder.build().unwrap()
+    }
+
+    #[test]
+    fn channel_comes_from_the_effect_else_its_prototype() {
+        let now = Utc::now().fixed_offset();
+        let prototype = Prototype {
+            start: Some(now - TimeDelta::days(1)),
+            end: Some(now),
+            channel: Some("db".into()),
+            ..Prototype::default()
+        };
+        let built = |channel: Option<&str>| {
+            let mut builder = Effect::builder("ping".into()).generator(constant().value(1));
+            if let Some(channel) = channel {
+                builder.set_channel(channel);
+            }
+            builder.set_prototype(&prototype);
+            builder.build().unwrap()
+        };
+
+        assert_eq!(built(None).channel.as_deref(), Some("db"));
+        assert_eq!(built(Some("api")).channel.as_deref(), Some("api"));
     }
 
     #[test]

@@ -118,6 +118,10 @@ impl Dialect {
                     prototype_builder.set_limit(limit);
                 }
 
+                if let Some(channel) = &prototype.channel {
+                    prototype_builder.set_channel(channel.clone());
+                }
+
                 prototype_builder
             });
         }
@@ -184,6 +188,10 @@ impl Dialect {
 
                 if let Some(limit) = effect.limit {
                     effect_builder.set_limit(limit);
+                }
+
+                if let Some(channel) = &effect.channel {
+                    effect_builder.set_channel(channel.clone());
                 }
 
                 if let Some(trigger_union) = &effect.trigger {
