@@ -80,24 +80,10 @@ pub trait CelContextExt {
     fn with_now(&mut self, now: DateTime<FixedOffset>) -> &mut Self;
     fn with_prototype(
         &mut self,
-        start: DateTime<FixedOffset>,
-        end: DateTime<FixedOffset>,
+        start: Option<DateTime<FixedOffset>>,
+        end: Option<DateTime<FixedOffset>>,
     ) -> &mut Self;
     fn with_offset(&mut self, offset: f64) -> &mut Self;
-}
-
-fn add_window(
-    context: &mut Context<'static>,
-    name: &str,
-    start: DateTime<FixedOffset>,
-    end: DateTime<FixedOffset>,
-) {
-    let window: HashMap<String, Value> = [
-        ("start".to_string(), Value::Timestamp(start)),
-        ("end".to_string(), Value::Timestamp(end)),
-    ]
-    .into();
-    let _ = context.add_variable(name, Value::Map(Map::from(window)));
 }
 
 impl CelContextExt for Context<'static> {
@@ -145,10 +131,14 @@ impl CelContextExt for Context<'static> {
 
     fn with_prototype(
         &mut self,
-        start: DateTime<FixedOffset>,
-        end: DateTime<FixedOffset>,
+        start: Option<DateTime<FixedOffset>>,
+        end: Option<DateTime<FixedOffset>>,
     ) -> &mut Self {
-        add_window(self, "prototype", start, end);
+        let prototype: HashMap<String, Value> = [("start", start), ("end", end)]
+            .into_iter()
+            .filter_map(|(key, timestamp)| Some((key.to_string(), Value::Timestamp(timestamp?))))
+            .collect();
+        let _ = self.add_variable("prototype", Value::Map(Map::from(prototype)));
         self
     }
 
@@ -279,10 +269,25 @@ mod tests {
         let start = DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap();
         let end = DateTime::parse_from_rfc3339("2024-12-31T00:00:00Z").unwrap();
         let mut ctx = Context::default();
-        ctx.with_prototype(start, end);
+        ctx.with_prototype(Some(start), Some(end));
 
         assert_eq!(eval(&ctx, "prototype.start"), Value::Timestamp(start));
         assert_eq!(eval(&ctx, "prototype.end"), Value::Timestamp(end));
+    }
+
+    #[test]
+    fn with_prototype_only_sets_the_bounds_it_has() {
+        let start = DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap();
+        let mut ctx = Context::default();
+        ctx.with_prototype(Some(start), None);
+
+        assert_eq!(eval(&ctx, "prototype.start"), Value::Timestamp(start));
+        assert!(
+            Program::compile("prototype.end")
+                .unwrap()
+                .execute(&ctx)
+                .is_err()
+        );
     }
 
     #[test]

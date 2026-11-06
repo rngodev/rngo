@@ -85,12 +85,9 @@ impl Bound {
         let moment = match &self.value {
             BoundValue::Moment(moment) => moment.clone(),
             BoundValue::Expression(expression) => {
-                let range = prototype
-                    .and_then(|prototype| prototype.start.zip(prototype.end))
-                    .map(|(start, end)| (Moment::from(start), Moment::from(end)));
                 let mut parser = Moment::parser();
-                if let Some((start, end)) = &range {
-                    parser = parser.prototype(start, end);
+                if let Some(prototype) = prototype {
+                    parser = parser.prototype(prototype);
                 }
                 parser.parse(self.kind.map_or("bound", BoundKind::name), expression)?
             }

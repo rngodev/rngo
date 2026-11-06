@@ -122,6 +122,26 @@ fn a_prototype_expression_refers_to_the_default_prototype_as_prototype() {
 }
 
 #[test]
+fn an_effect_can_refer_to_a_prototype_that_only_has_a_start() {
+    let value = spec(
+        json!({ "p": { "start": "2024-01-06" } }),
+        json!({ "a": effect(Some("p"), json!({ "end": "prototype.start + days(2)" })) }),
+    );
+    let a = dates(value, "a");
+    assert_eq!(a.first().unwrap(), "2024-01-06");
+    assert_eq!(a.last().unwrap(), "2024-01-07");
+}
+
+#[test]
+fn referring_to_a_missing_prototype_bound_is_an_error() {
+    let value = spec(
+        json!({ "p": { "start": "2024-01-06" } }),
+        json!({ "a": effect(Some("p"), json!({ "end": "prototype.end" })) }),
+    );
+    assert!(!errors(value).is_empty());
+}
+
+#[test]
 fn an_expression_cannot_refer_to_the_simulation() {
     let value = spec(
         json!({ "late": { "start": "simulation.start", "end": "2024-01-11" } }),
