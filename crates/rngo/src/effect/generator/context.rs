@@ -38,16 +38,12 @@ impl Generator for Context {
                 metadata: vec![],
             },
             ContextPath::SimStart => GeneratorResult {
-                value: Some(context.simulation_start.to_rfc3339().into()),
-                metadata: vec![],
-            },
-            ContextPath::SimEnd => GeneratorResult {
-                value: Some(context.simulation_end.to_rfc3339().into()),
+                value: Some(context.origin.to_rfc3339().into()),
                 metadata: vec![],
             },
             ContextPath::ClockNow => {
-                let now = context.simulation_start
-                    + chrono::Duration::milliseconds(context.trigger.sim_offset);
+                let now =
+                    context.origin + chrono::Duration::milliseconds(context.trigger.sim_offset);
                 GeneratorResult {
                     value: Some(now.to_rfc3339().into()),
                     metadata: vec![],
@@ -73,7 +69,6 @@ enum ContextPath {
     TriggerEvent,
     SimOffset,
     SimStart,
-    SimEnd,
     ClockNow,
 }
 
@@ -86,7 +81,6 @@ impl TryFrom<Vec<String>> for ContextPath {
             ["trigger", "event"] => Ok(ContextPath::TriggerEvent),
             ["sim", "offset"] => Ok(ContextPath::SimOffset),
             ["sim", "start"] => Ok(ContextPath::SimStart),
-            ["sim", "end"] => Ok(ContextPath::SimEnd),
             ["clock", "now"] => Ok(ContextPath::ClockNow),
             _ => Err(format!("unknown path: {:?}", value)),
         }

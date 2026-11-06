@@ -40,8 +40,6 @@ pub struct Effect {
     pub end: Option<DateTime<FixedOffset>>,
     /// The name of the prototype the effect asked for; `None` for the default prototype.
     pub prototype: Option<String>,
-    simulation_start: DateTime<FixedOffset>,
-    simulation_end: DateTime<FixedOffset>,
 }
 
 impl Effect {
@@ -94,8 +92,7 @@ impl Iterator for Effect {
         let trigger_event = self.trigger.pull()?;
         let context = GeneratorContext {
             trigger: &trigger_event,
-            simulation_start: self.simulation_start,
-            simulation_end: self.simulation_end,
+            origin: self.origin,
         };
         let timestamp = self.origin + TimeDelta::milliseconds(trigger_event.sim_offset);
 
@@ -168,7 +165,6 @@ pub struct EffectBuilder {
     prototype: Option<Prototype>,
     seed: Option<u64>,
     // TODO: get rid of this --->
-    simulation_window: Option<(DateTime<FixedOffset>, DateTime<FixedOffset>)>,
     event_run_log: Option<Rc<dyn RunLogReader>>,
     trigger: TriggerConfig,
     generator_builder: Option<Box<dyn GeneratorBuilder>>,
@@ -185,7 +181,6 @@ impl EffectBuilder {
             prototype_key: None,
             prototype: None,
             seed: None,
-            simulation_window: None,
             event_run_log: None,
             trigger: TriggerConfig::ClockExpression("hz(1, day)".into()),
             generator_builder: None,
@@ -256,16 +251,6 @@ impl EffectBuilder {
     /// Sets the instant relative moments resolve against; defaults to the current time at build.
     pub fn set_now(&mut self, now: DateTime<FixedOffset>) -> &mut Self {
         self.now = Some(now);
-        self
-    }
-
-    /// Sets the simulation's start and end, which generators see; without them they default to the effect's own start and end.
-    pub fn set_simulation_window(
-        &mut self,
-        start: DateTime<FixedOffset>,
-        end: DateTime<FixedOffset>,
-    ) -> &mut Self {
-        self.simulation_window = Some((start, end));
         self
     }
 
@@ -404,9 +389,6 @@ impl EffectBuilder {
 
         let seed = self.seed.unwrap_or(1);
         let origin = start;
-        let (simulation_start, simulation_end) = self
-            .simulation_window
-            .unwrap_or((start, end.unwrap_or(start)));
 
         let run_log_reader: Rc<dyn RunLogReader> = self
             .event_run_log
@@ -456,8 +438,6 @@ impl EffectBuilder {
                 start,
                 end,
                 prototype: self.prototype_key,
-                simulation_start,
-                simulation_end,
             }),
             Ok(_) => Err(errors),
             Err(mut e) => {
@@ -564,9 +544,7 @@ mod tests {
             end: Some(now),
             ..Prototype::default()
         };
-        builder
-            .set_prototype(&prototype)
-            .set_simulation_window(start, now);
+        builder.set_prototype(&prototype);
         builder.build().unwrap()
     }
 

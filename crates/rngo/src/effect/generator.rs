@@ -44,8 +44,8 @@ pub struct GeneratorEdge {
 
 pub struct GeneratorContext<'a> {
     pub trigger: &'a TriggerEvent,
-    pub simulation_start: DateTime<FixedOffset>,
-    pub simulation_end: DateTime<FixedOffset>,
+    /// The instant sim offsets are measured from.
+    pub origin: DateTime<FixedOffset>,
 }
 
 pub struct GeneratorResult {

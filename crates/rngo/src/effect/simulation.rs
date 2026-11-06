@@ -204,7 +204,7 @@ impl SimulationBuilder {
 
         let now = self.now.unwrap_or_else(|| Utc::now().fixed_offset());
         let default_prototype = self.default_prototype.clone().now(now).build()?;
-        let (Some(start), Some(end)) = (default_prototype.start, default_prototype.end) else {
+        let (Some(start), Some(_)) = (default_prototype.start, default_prototype.end) else {
             return Err(vec![BuildError::simulation(
                 SimulationKey::Start,
                 "the simulation must have a start and an end",
@@ -240,7 +240,6 @@ impl SimulationBuilder {
             effect_builder
                 .set_prototype(prototype)
                 .set_now(now)
-                .set_simulation_window(start, end)
                 .set_event_run_log(run_log_reader.clone())
                 .set_seed(self.seed.unwrap_or(1));
 
