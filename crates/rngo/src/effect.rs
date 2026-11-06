@@ -1,14 +1,15 @@
+pub mod bound;
 mod clock;
 pub mod generator;
-pub mod phase;
+pub mod prototype;
 pub mod simulation;
 mod trigger;
 
 use crate::build::{BuildError, EffectKey};
-use crate::effect::phase::{Phase, PhaseBuilder};
+use crate::effect::bound::{Bound, BoundKind};
+use crate::effect::prototype::Prototype;
 use crate::log::{Metadata, RunLogReader, SimpleEventRunLog};
-use crate::moment::Moment;
-use chrono::{DateTime, FixedOffset, TimeDelta};
+use chrono::{DateTime, FixedOffset, TimeDelta, Utc};
 use clock::Clock;
 use generator::{
     Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext,
@@ -37,10 +38,8 @@ pub struct Effect {
     origin: DateTime<FixedOffset>,
     pub start: DateTime<FixedOffset>,
     pub end: Option<DateTime<FixedOffset>>,
-    /// The name of the phase the effect asked for; `None` for the default phase.
-    pub phase: Option<String>,
-    simulation_start: DateTime<FixedOffset>,
-    simulation_end: DateTime<FixedOffset>,
+    /// The name of the prototype the effect asked for; `None` for the default prototype.
+    pub prototype: Option<String>,
 }
 
 impl Effect {
@@ -93,8 +92,7 @@ impl Iterator for Effect {
         let trigger_event = self.trigger.pull()?;
         let context = GeneratorContext {
             trigger: &trigger_event,
-            simulation_start: self.simulation_start,
-            simulation_end: self.simulation_end,
+            origin: self.origin,
         };
         let timestamp = self.origin + TimeDelta::milliseconds(trigger_event.sim_offset);
 
@@ -159,11 +157,14 @@ impl From<SkippedInput> for Metadata {
 #[derive(Debug)]
 pub struct EffectBuilder {
     key: String,
-    custom_phase: Option<PhaseBuilder>,
-    phase_key: Option<String>,
-    phase: Option<Phase>,
+    start: Option<Bound>,
+    end: Option<Bound>,
+    limit: Option<NonZeroU64>,
+    now: Option<DateTime<FixedOffset>>,
+    prototype_key: Option<String>,
+    prototype: Option<Prototype>,
     seed: Option<u64>,
-    default_phase: Option<Phase>,
+    // TODO: get rid of this --->
     event_run_log: Option<Rc<dyn RunLogReader>>,
     trigger: TriggerConfig,
     generator_builder: Option<Box<dyn GeneratorBuilder>>,
@@ -173,50 +174,40 @@ impl EffectBuilder {
     fn new(key: String) -> Self {
         EffectBuilder {
             key,
-            custom_phase: None,
-            phase_key: None,
-            phase: None,
+            start: None,
+            end: None,
+            limit: None,
+            now: None,
+            prototype_key: None,
+            prototype: None,
             seed: None,
-            default_phase: None,
             event_run_log: None,
             trigger: TriggerConfig::ClockExpression("hz(1, day)".into()),
             generator_builder: None,
         }
     }
 
-    fn custom_phase_mut(&mut self) -> &mut PhaseBuilder {
-        self.custom_phase.get_or_insert_with(PhaseBuilder::default)
-    }
-
-    pub fn start(mut self, start: Moment) -> Self {
+    pub fn start(mut self, start: impl Into<Bound>) -> Self {
         self.set_start(start);
         self
     }
 
-    pub fn set_start(&mut self, start: Moment) -> &mut Self {
-        self.custom_phase_mut().set_start(start);
+    /// Sets `start` to a [`Bound`]; a string is a CEL expression, parsed at build so it can refer to the default prototype via `simulation`.
+    pub fn set_start(&mut self, start: impl Into<Bound>) -> &mut Self {
+        let start: Bound = start.into();
+        self.start = Some(start.of_kind(BoundKind::Start));
         self
     }
 
-    pub fn end(mut self, end: Moment) -> Self {
+    pub fn end(mut self, end: impl Into<Bound>) -> Self {
         self.set_end(end);
         self
     }
 
-    pub fn set_end(&mut self, end: Moment) -> &mut Self {
-        self.custom_phase_mut().set_end(end);
-        self
-    }
-
-    /// Sets `start` from an expression, parsed when the effect builds so it can refer to the default phase's bounds via `simulation`; overrides `start`.
-    pub fn set_start_expression(&mut self, expression: String) -> &mut Self {
-        self.custom_phase_mut().set_start_expression(expression);
-        self
-    }
-
-    /// Sets `end` from an expression, parsed when the effect builds so it can refer to the default phase's bounds via `simulation`; overrides `end`.
-    pub fn set_end_expression(&mut self, expression: String) -> &mut Self {
-        self.custom_phase_mut().set_end_expression(expression);
+    /// Sets `end` to a [`Bound`]; a string is a CEL expression, parsed at build so it can refer to the default prototype via `simulation`.
+    pub fn set_end(&mut self, end: impl Into<Bound>) -> &mut Self {
+        let end: Bound = end.into();
+        self.end = Some(end.of_kind(BoundKind::End));
         self
     }
 
@@ -226,29 +217,29 @@ impl EffectBuilder {
     }
 
     pub fn set_limit(&mut self, limit: NonZeroU64) -> &mut Self {
-        self.custom_phase_mut().set_limit(limit);
+        self.limit = Some(limit);
         self
     }
 
-    pub fn phase_key(mut self, key: impl Into<String>) -> Self {
-        self.set_phase_key(key);
+    pub fn prototype_key(mut self, key: impl Into<String>) -> Self {
+        self.set_prototype_key(key);
         self
     }
 
-    /// Sets the key of the phase this effect belongs to; no key means the default phase and a key matching no phase an empty one.
-    pub fn set_phase_key(&mut self, key: impl Into<String>) -> &mut Self {
-        self.phase_key = Some(key.into());
+    /// Sets the key of the prototype this effect names; no key means the default prototype and a key matching no prototype an empty one.
+    pub fn set_prototype_key(&mut self, key: impl Into<String>) -> &mut Self {
+        self.prototype_key = Some(key.into());
         self
     }
 
-    pub fn phase(mut self, phase: &Phase) -> Self {
-        self.set_phase(phase);
+    pub fn prototype(mut self, prototype: &Prototype) -> Self {
+        self.set_prototype(prototype);
         self
     }
 
-    /// Sets the phase whose `start`, `end` and `limit` the effect takes where it sets none itself; without one the phase is empty.
-    pub fn set_phase(&mut self, phase: &Phase) -> &mut Self {
-        self.phase = Some(phase.clone());
+    /// Sets the prototype whose `start`, `end` and `limit` the effect takes where it sets none itself; without one the prototype is empty.
+    pub fn set_prototype(&mut self, prototype: &Prototype) -> &mut Self {
+        self.prototype = Some(prototype.clone());
         self
     }
 
@@ -259,14 +250,7 @@ impl EffectBuilder {
 
     /// Sets the instant relative moments resolve against; defaults to the current time at build.
     pub fn set_now(&mut self, now: DateTime<FixedOffset>) -> &mut Self {
-        self.custom_phase_mut().set_now(now);
-        self
-    }
-
-    /// Sets the default phase, whose `start` and `end` the effect's expressions and generators see as `simulation`; without them they default to the effect's own start and end.
-    pub fn set_default_phase(&mut self, phase: &Phase) -> &mut Self {
-        self.default_phase = Some(phase.clone());
-        self.custom_phase_mut().set_default_phase(phase);
+        self.now = Some(now);
         self
     }
 
@@ -281,9 +265,9 @@ impl EffectBuilder {
         self
     }
 
-    /// The key of the phase this effect asked for, if any.
-    pub fn get_phase_key(&self) -> Option<&str> {
-        self.phase_key.as_deref()
+    /// The key of the prototype this effect asked for, if any.
+    pub fn get_prototype_key(&self) -> Option<&str> {
+        self.prototype_key.as_deref()
     }
 
     pub fn event_run_log(mut self, event_run_log: Rc<dyn RunLogReader>) -> Self {
@@ -336,32 +320,58 @@ impl EffectBuilder {
         self
     }
 
-    /// Lays the effect's own `start`, `end` and `limit` over its phase's and builds it; errors unless the window has a `start` and an `end` or `limit`, and a `start` before any `end`.
+    /// Lays the effect's own `start`, `end` and `limit` over its prototype's and builds it; errors unless the window has a `start` and an `end` or `limit`, and a `start` before any `end`.
     pub fn build(self) -> Result<Effect, Vec<BuildError>> {
-        let own = self
-            .custom_phase
-            .clone()
-            .unwrap_or_default()
-            .for_effect(self.key.clone())
-            .build()?;
-        let phase = self.phase.clone().unwrap_or_default();
-        let start = own.start.or(phase.start);
-        let end = own.end.or(phase.end);
-        let limit = own.limit.or(phase.limit).map(NonZeroU64::get);
-
+        let now = self.now.unwrap_or_else(|| Utc::now().fixed_offset());
+        let prototype = self.prototype.as_ref();
         let mut errors: Vec<BuildError> = vec![];
+        let own_start =
+            self.start
+                .as_ref()
+                .map(|bound| bound.resolve(now, prototype))
+                .transpose()
+                .map_err(|e| {
+                    errors.extend(e.iter().map(|e| {
+                        BuildError::effect(self.key.clone(), EffectKey::Start, e.message())
+                    }))
+                })
+                .ok()
+                .flatten();
+        let own_end = self
+            .end
+            .as_ref()
+            .map(|bound| bound.resolve(now, prototype))
+            .transpose()
+            .map_err(|e| {
+                errors.extend(
+                    e.iter()
+                        .map(|e| BuildError::effect(self.key.clone(), EffectKey::End, e.message())),
+                )
+            })
+            .ok()
+            .flatten();
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+        let start = own_start.or(prototype.and_then(|p| p.start));
+        let end = own_end.or(prototype.and_then(|p| p.end));
+        let limit = self
+            .limit
+            .or(prototype.and_then(|p| p.limit))
+            .map(NonZeroU64::get);
+
         if start.is_none() {
             errors.push(BuildError::effect(
                 self.key.clone(),
                 EffectKey::Start,
-                "start must be set on the effect or its phase",
+                "start must be set on the effect or its prototype",
             ));
         }
         if end.is_none() && limit.is_none() {
             errors.push(BuildError::effect(
                 self.key.clone(),
                 EffectKey::End,
-                "end or limit must be set on the effect or its phase",
+                "end or limit must be set on the effect or its prototype",
             ));
         }
         if let (Some(start), Some(end)) = (start, end)
@@ -379,11 +389,6 @@ impl EffectBuilder {
 
         let seed = self.seed.unwrap_or(1);
         let origin = start;
-        let (simulation_start, simulation_end) = self
-            .default_phase
-            .as_ref()
-            .and_then(|phase| Some((phase.start?, phase.end?)))
-            .unwrap_or((start, end.unwrap_or(start)));
 
         let run_log_reader: Rc<dyn RunLogReader> = self
             .event_run_log
@@ -432,9 +437,7 @@ impl EffectBuilder {
                 origin,
                 start,
                 end,
-                phase: self.phase_key,
-                simulation_start,
-                simulation_end,
+                prototype: self.prototype_key,
             }),
             Ok(_) => Err(errors),
             Err(mut e) => {
@@ -491,7 +494,7 @@ mod tests {
         Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
         Metadata,
     };
-    use crate::effect::phase::Phase;
+    use crate::effect::prototype::Prototype;
     use chrono::{TimeDelta, Utc};
     use std::num::NonZeroU64;
 
@@ -536,12 +539,12 @@ mod tests {
     fn build(mut builder: EffectBuilder) -> Effect {
         let now = Utc::now().fixed_offset();
         let start = now - TimeDelta::days(30);
-        let phase = Phase {
+        let prototype = Prototype {
             start: Some(start),
             end: Some(now),
-            ..Phase::default()
+            ..Prototype::default()
         };
-        builder.set_phase(&phase).set_default_phase(&phase);
+        builder.set_prototype(&prototype);
         builder.build().unwrap()
     }
 

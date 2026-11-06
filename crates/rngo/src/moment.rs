@@ -1,4 +1,5 @@
 use crate::cel::CelContextExt;
+use crate::effect::prototype::Prototype;
 use crate::spec::ParseError;
 use cel::{Context, Program, Value};
 use chrono::{DateTime, FixedOffset, NaiveDate, TimeDelta, TimeZone, Utc};
@@ -11,9 +12,7 @@ pub enum Moment {
 
 impl Moment {
     pub fn parser<'a>() -> MomentParser<'a> {
-        MomentParser {
-            simulation_range: None,
-        }
+        MomentParser { prototype: None }
     }
 
     pub fn resolve(self, now: DateTime<FixedOffset>) -> DateTime<FixedOffset> {
@@ -37,12 +36,13 @@ impl From<TimeDelta> for Moment {
 }
 
 pub struct MomentParser<'a> {
-    simulation_range: Option<(&'a Moment, &'a Moment)>,
+    prototype: Option<&'a Prototype>,
 }
 
 impl<'a> MomentParser<'a> {
-    pub fn simulation(mut self, start: &'a Moment, end: &'a Moment) -> Self {
-        self.simulation_range = Some((start, end));
+    /// Lets expressions refer to `prototype.start` and `prototype.end`, whichever the prototype has.
+    pub fn prototype(mut self, prototype: &'a Prototype) -> Self {
+        self.prototype = Some(prototype);
         self
     }
 
@@ -62,11 +62,8 @@ impl<'a> MomentParser<'a> {
         let mut context = Context::default();
         context.with_time().with_now(now);
 
-        if let Some((simulation_start, simulation_end)) = self.simulation_range {
-            context.with_simulation(
-                simulation_start.clone().resolve(now),
-                simulation_end.clone().resolve(now),
-            );
+        if let Some(prototype) = self.prototype {
+            context.with_prototype(prototype.start, prototype.end);
         };
 
         let program = Program::compile(expr).map_err(|e| {
@@ -158,60 +155,58 @@ mod tests {
     }
 
     #[test]
-    fn parses_cel_with_simulation_range() {
+    fn parses_cel_with_prototype_range() {
         let start_dt = DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap();
         let end_dt = DateTime::parse_from_rfc3339("2024-12-31T00:00:00Z").unwrap();
-        let start = Moment::Absolute(start_dt);
-        let end = Moment::Absolute(end_dt);
-        let parser = Moment::parser().simulation(&start, &end);
+        let prototype = Prototype {
+            start: Some(start_dt),
+            end: Some(end_dt),
+            ..Prototype::default()
+        };
+        let parser = Moment::parser().prototype(&prototype);
 
         // bare start/end resolve to their respective datetimes
         assert!(matches!(
-            parser.parse("field", "simulation.start").unwrap(),
+            parser.parse("field", "prototype.start").unwrap(),
             Moment::Relative(_)
         ));
         assert!(matches!(
-            parser.parse("field", "simulation.end").unwrap(),
+            parser.parse("field", "prototype.end").unwrap(),
             Moment::Relative(_)
         ));
 
         // arithmetic with durations works naturally since they are timestamps
-        let moment = parser.parse("field", "simulation.end + days(20)").unwrap();
+        let moment = parser.parse("field", "prototype.end + days(20)").unwrap();
         assert!(
             matches!(moment, Moment::Relative(d) if d.num_seconds() == end_dt.timestamp() + 20 * 86_400 - Utc::now().fixed_offset().timestamp())
         );
 
-        // timestamp methods work on simulation bounds
+        // timestamp methods work on prototype bounds
         assert!(matches!(
             parser
-                .parse("field", "simulation.start.getFullYear()")
+                .parse("field", "prototype.start.getFullYear()")
                 .unwrap(),
             Moment::Relative(_)
         ));
         assert!(matches!(
             parser
-                .parse("field", "simulation.end.getDayOfYear()")
+                .parse("field", "prototype.end.getDayOfYear()")
                 .unwrap(),
             Moment::Relative(_)
         ));
     }
 
     #[test]
-    fn parses_cel_with_relative_simulation_range() {
-        // start = now - 2 years, end = now + 5 hours
-        let start = Moment::Relative(TimeDelta::seconds(-2 * 31_536_000));
-        let end = Moment::Relative(TimeDelta::seconds(5 * 3_600));
-        let parser = Moment::parser().simulation(&start, &end);
+    fn a_prototype_with_only_a_start_exposes_only_its_start() {
+        let start_dt = DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap();
+        let prototype = Prototype {
+            start: Some(start_dt),
+            ..Prototype::default()
+        };
+        let parser = Moment::parser().prototype(&prototype);
 
-        // simulation.start + years(1) = (now - 2yr) + 1yr = now - 1yr
-        let moment = parser
-            .parse("field", "simulation.start + years(1)")
-            .unwrap();
-        assert!(matches!(moment, Moment::Relative(d) if d.num_seconds() == -31_536_000));
-
-        // simulation.end - hours(2) = (now + 5hr) - 2hr = now + 3hr
-        let moment = parser.parse("field", "simulation.end - hours(2)").unwrap();
-        assert!(matches!(moment, Moment::Relative(d) if d.num_seconds() == 3 * 3_600));
+        assert!(parser.parse("field", "prototype.start + days(1)").is_ok());
+        assert!(parser.parse("field", "prototype.end").is_err());
     }
 
     #[test]

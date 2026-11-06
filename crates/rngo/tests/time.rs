@@ -214,7 +214,7 @@ fn an_effect_without_a_start_is_an_error() {
     });
     let mut builder = Dialect::primitive().parse_simulation_json(spec).unwrap();
     builder.with_effect("loose", |e| {
-        e.phase_key("nowhere")
+        e.prototype_key("nowhere")
             .end(Moment::Relative(TimeDelta::zero()))
             .generator(constant().value(Value::Null))
     });
@@ -234,7 +234,7 @@ fn an_effect_without_a_start_is_an_error() {
 fn an_effect_without_an_end_or_limit_is_an_error() {
     let mut builder = Simulation::builder();
     builder.with_effect("events", |e| {
-        e.phase_key("nowhere")
+        e.prototype_key("nowhere")
             .start(Moment::Relative(TimeDelta::days(-1)))
             .generator(constant().value(Value::Null))
     });
@@ -254,10 +254,10 @@ fn an_effect_without_an_end_or_limit_is_an_error() {
 }
 
 #[test]
-fn an_effect_in_an_unknown_phase_runs_on_its_own_values() {
+fn an_effect_in_an_unknown_prototype_runs_on_its_own_values() {
     let mut builder = Simulation::builder();
     builder.with_effect("events", |e| {
-        e.phase_key("nowhere")
+        e.prototype_key("nowhere")
             .start(Moment::Relative(TimeDelta::days(-1)))
             .limit(std::num::NonZeroU64::new(2).unwrap())
             .generator(constant().value(Value::Null))
@@ -271,4 +271,62 @@ fn an_effect_in_an_unknown_phase_runs_on_its_own_values() {
         .count();
 
     assert_eq!(inputs, 2);
+}
+
+fn context_spec(effects: serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
+        "seed": 1,
+        "start": "2024-01-05",
+        "end": "2024-01-08",
+        "effects": effects,
+    })
+}
+
+#[test]
+fn context_sim_start_is_the_origin_and_clock_now_is_the_timestamp() {
+    let spec = context_spec(serde_json::json!({
+        "early": {
+            "start": "2024-01-02",
+            "end": "2024-01-04",
+            "trigger": "hz(1, day)",
+            "generator": { "type": "object", "properties": {
+                "start": { "type": "context", "path": ["sim", "start"] },
+                "now": { "type": "context", "path": ["clock", "now"] }
+            } }
+        }
+    }));
+
+    let sim = Dialect::primitive()
+        .parse_simulation_json(spec)
+        .unwrap()
+        .run_log_reader(rngo::SimpleEventRunLog::new())
+        .build()
+        .unwrap();
+    let inputs: Vec<_> = sim.flatten().collect();
+
+    assert!(!inputs.is_empty());
+    for input in inputs {
+        assert_eq!(input.data["start"], "2024-01-02T00:00:00+00:00");
+        assert_eq!(
+            input.data["now"].as_str().unwrap(),
+            input.timestamp.to_rfc3339()
+        );
+    }
+}
+
+#[test]
+fn context_sim_end_is_no_longer_a_path() {
+    let spec = context_spec(serde_json::json!({
+        "a": {
+            "trigger": "hz(1, day)",
+            "generator": { "type": "context", "path": ["sim", "end"] }
+        }
+    }));
+
+    let result = Dialect::primitive()
+        .parse_simulation_json(spec)
+        .unwrap()
+        .run_log_reader(rngo::SimpleEventRunLog::new())
+        .build();
+    assert!(result.is_err());
 }

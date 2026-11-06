@@ -14,6 +14,7 @@ pub fn from_value(value: serde_json::Value) -> Result<Spec, Vec<ParseError>> {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Spec {
     pub seed: Option<u64>,
     pub start: Option<String>,
@@ -21,7 +22,7 @@ pub struct Spec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scenarios: Option<Value>,
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
-    pub phases: IndexMap<String, Phase>,
+    pub prototypes: IndexMap<String, Prototype>,
     pub effects: IndexMap<String, Effect>,
     #[serde(default)]
     pub channels: IndexMap<String, Channel>,
@@ -32,18 +33,18 @@ pub struct Spec {
 }
 
 impl Spec {
-    /// Returns the spec with scenario `name` patched into every phase that defines it; errors if no phase does.
+    /// Returns the spec with scenario `name` patched into every prototype that defines it; errors if no prototype does.
     pub fn with_scenario(&self, name: &str) -> Result<Spec, Vec<ParseError>> {
         let mut spec = self.clone();
         let mut found = false;
-        for phase in spec.phases.values_mut() {
-            if let Some(scenario) = phase.scenarios.get(name).cloned() {
+        for prototype in spec.prototypes.values_mut() {
+            if let Some(scenario) = prototype.scenarios.get(name).cloned() {
                 found = true;
                 if scenario.start.is_some() {
-                    phase.start = scenario.start;
+                    prototype.start = scenario.start;
                 }
                 if scenario.end.is_some() {
-                    phase.end = scenario.end;
+                    prototype.end = scenario.end;
                 }
             }
         }
@@ -51,29 +52,27 @@ impl Spec {
             Ok(spec)
         } else {
             Err(vec![
-                ParseError::invalid(format!("no phase defines scenario \"{name}\"")).at(["phases"]),
+                ParseError::invalid(format!("no prototype defines scenario \"{name}\""))
+                    .at(["prototypes"]),
             ])
         }
     }
 }
 
-/// A named time window and input cap for its member effects, which can each override them; a missing part stays unset.
+/// Named defaults for the effects that name it, which can each override them; a missing part stays unset.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
-pub struct Phase {
+#[serde(deny_unknown_fields)]
+pub struct Prototype {
     pub start: Option<String>,
     pub end: Option<String>,
     pub limit: Option<NonZeroU64>,
-    /// Effects writing to these channels belong to the phase, unless listed in some phase's `effects`.
-    #[serde(default)]
-    pub channels: Vec<String>,
-    #[serde(default)]
-    pub effects: Vec<String>,
+    pub channel: Option<String>,
     /// Named overrides of `start` and `end`, applied by `rngo eval --scenario`.
     #[serde(default)]
     pub scenarios: IndexMap<String, Scenario>,
 }
 
-/// Overrides of a phase's `start` and `end`.
+/// Overrides of a prototype's `start` and `end`.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Scenario {
     pub start: Option<String>,
@@ -97,6 +96,7 @@ pub enum TriggerUnion {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Effect {
+    pub prototype: Option<String>,
     pub channel: Option<String>,
     pub start: Option<String>,
     pub end: Option<String>,

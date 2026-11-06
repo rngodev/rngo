@@ -23,8 +23,8 @@ let mut simulation = rngo::Simulation::builder()
     .seed(41)
     .start(Moment::Relative(TimeDelta::days(-90)))
     .end(Moment::Relative(TimeDelta::zero()))
-    .phase("recent", |phase| {
-        phase
+    .prototype("recent", |prototype| {
+        prototype
             .start(Moment::Relative(TimeDelta::days(-7)))
             .end(Moment::Relative(TimeDelta::zero()))
     })
@@ -48,7 +48,7 @@ let mut simulation = rngo::Simulation::builder()
     })
     .effect("post", |effect| {
         effect
-            .phase_key("recent")
+            .prototype_key("recent")
             .trigger_expression("hz(100, hour) * (offset * 0.0001)")
             .schema(
                 object()
@@ -140,11 +140,10 @@ You can also define the above in JSON (or YAML) spec - it would look like this:
     "seed": 41,
     "start": "now - months(3)",
     "end": "now",
-    "phases": {
+    "prototypes": {
         "recent": {
             "start": "now - days(7)",
             "end": "now",
-            "effects": ["post"],
             "scenarios": { "backfill": { "start": "now - months(6)" } }
         }
     },
@@ -171,6 +170,7 @@ You can also define the above in JSON (or YAML) spec - it would look like this:
             }
         },
         "post": {
+            "prototype": "recent",
             "channel": "db",
             "metadata": { "table": "POSTS" },
             "trigger": "hz(100, hour) * (offset * 0.0001)",

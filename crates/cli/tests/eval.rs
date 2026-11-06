@@ -1347,7 +1347,7 @@ fn stream_channel_whose_command_dies_fails_the_run_with_status_and_stderr() {
     assert!(error.contains("connection refused"), "{error}");
 }
 
-fn write_phase_fixture(base: &Path) {
+fn write_prototype_fixture(base: &Path) {
     fs::create_dir_all(base.join(".rngo/effects")).unwrap();
     write_yaml(
         base.join(".rngo/spec.yml"),
@@ -1355,9 +1355,8 @@ fn write_phase_fixture(base: &Path) {
             "seed": 1,
             "start": "2024-01-01",
             "end": "2024-01-11",
-            "phases": {
+            "prototypes": {
                 "late": {
-                    "effects": ["ping"],
                     "end": "2024-01-11",
                     "start": "2024-01-06",
                     "scenarios": { "later": { "start": "2024-01-09" } }
@@ -1368,6 +1367,7 @@ fn write_phase_fixture(base: &Path) {
     write_yaml(
         base.join(".rngo/effects/ping.yml"),
         &json!({
+            "prototype": "late",
             "trigger": "hz(1, day)",
             "generator": { "type": "constant", "value": "x" }
         }),
@@ -1382,10 +1382,10 @@ fn first_input_timestamp(base: &Path) -> i64 {
 }
 
 #[test]
-fn scenario_patches_phases_and_records_the_rewritten_spec() {
+fn scenario_patches_prototypes_and_records_the_rewritten_spec() {
     let tmp = TempDir::new().unwrap();
     let base = tmp.path();
-    write_phase_fixture(base);
+    write_prototype_fixture(base);
 
     eval(Some(base), EvalOptions::default()).unwrap();
     let first = first_input_timestamp(base);
@@ -1405,9 +1405,12 @@ fn scenario_patches_phases_and_records_the_rewritten_spec() {
         serde_json::from_str(&fs::read_to_string(base.join(".rngo/evals/last").join(name)).unwrap())
             .unwrap()
     };
-    assert_eq!(read("spec.json")["phases"]["late"]["start"], "2024-01-06");
     assert_eq!(
-        read("spec.rewritten.json")["phases"]["late"]["start"],
+        read("spec.json")["prototypes"]["late"]["start"],
+        "2024-01-06"
+    );
+    assert_eq!(
+        read("spec.rewritten.json")["prototypes"]["late"]["start"],
         "2024-01-09"
     );
 }
@@ -1416,7 +1419,7 @@ fn scenario_patches_phases_and_records_the_rewritten_spec() {
 fn unknown_scenario_is_an_error() {
     let tmp = TempDir::new().unwrap();
     let base = tmp.path();
-    write_phase_fixture(base);
+    write_prototype_fixture(base);
 
     let error = eval(
         Some(base),
@@ -1427,5 +1430,5 @@ fn unknown_scenario_is_an_error() {
         },
     )
     .unwrap_err();
-    assert!(error.to_string().contains("no phase defines scenario"));
+    assert!(error.to_string().contains("no prototype defines scenario"));
 }

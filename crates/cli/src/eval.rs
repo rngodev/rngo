@@ -19,7 +19,7 @@ pub struct EvalOptions {
     pub dry_run: bool,
     /// Cap on the number of inputs produced.
     pub limit: Option<std::num::NonZeroU64>,
-    /// Name of a phase scenario to apply to the spec.
+    /// Name of a prototype scenario to apply to the spec.
     pub scenario: Option<String>,
     /// Wait for each input's timestamp before sending it instead of sending right away.
     pub realtime: bool,
