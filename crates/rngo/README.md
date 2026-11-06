@@ -89,7 +89,7 @@ let proxy = rngo::Proxy::builder()
                     .effect_table("post", "POSTS")
             )
     )
-    .channel_effects("db", &["user", "post"])
+    .effect_channels([("user", "db"), ("post", "db")])
     .channel("log", stream().command("tail -F logs/app.log"))
     .run_log(run_log.clone())
     .build()?
@@ -249,6 +249,7 @@ let mut simulation = dialect
 
 let mut proxy = dialect
     .parse_proxy(spec.clone())?
+    .effect_channels(simulation.effect_channels())
     .run_log_writer(run_log.clone())
     .build()?;
 

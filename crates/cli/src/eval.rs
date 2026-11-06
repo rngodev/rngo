@@ -91,7 +91,9 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
         .run_log_reader(reader.clone())
         .build()
         .map_err(join_errors)?;
-    let writer = StatusWriter::new(sqlite_run_log.clone(), simulation.effect_channels());
+    let effect_channels = simulation.effect_channels();
+    proxy_builder.set_effect_channels(effect_channels.clone());
+    let writer = StatusWriter::new(sqlite_run_log.clone(), effect_channels);
 
     let flush_failure = Rc::new(RefCell::new(None));
 
