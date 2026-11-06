@@ -12,7 +12,6 @@ use crate::parse::ChannelParser;
 use crate::proxy::channel::{self, ChannelBuilder};
 use crate::proxy::{Proxy, ProxyBuilder, format};
 use crate::spec::{self, ParseError, Spec};
-use std::collections::HashMap;
 use std::rc::Rc;
 
 pub struct Dialect {
@@ -118,6 +117,10 @@ impl Dialect {
                     prototype_builder.set_limit(limit);
                 }
 
+                if let Some(channel) = &prototype.channel {
+                    prototype_builder.set_channel(channel.clone());
+                }
+
                 prototype_builder
             });
         }
@@ -186,6 +189,10 @@ impl Dialect {
                     effect_builder.set_limit(limit);
                 }
 
+                if let Some(channel) = &effect.channel {
+                    effect_builder.set_channel(channel.clone());
+                }
+
                 if let Some(trigger_union) = &effect.trigger {
                     let trigger = match trigger_union {
                         spec::TriggerUnion::Shorthand(rate) => {
@@ -231,17 +238,10 @@ impl Dialect {
             }
         }
 
-        let mut effect_channels: HashMap<String, String> = HashMap::new();
         for (effect_key, effect) in &spec.effects {
-            let from_prototype = || {
-                let prototype = spec.prototypes.get(effect.prototype.as_ref()?)?;
-                prototype.channel.clone()
-            };
-            let Some(channel_key) = effect.channel.clone().or_else(from_prototype) else {
-                continue;
-            };
-
-            if effect.channel.is_some() && !spec.channels.contains_key(&channel_key) {
+            if let Some(channel_key) = &effect.channel
+                && !spec.channels.contains_key(channel_key)
+            {
                 errors.push(
                     ParseError::new(ParseErrorKind::UnknownChannel(channel_key.clone())).at([
                         "effects",
@@ -250,7 +250,6 @@ impl Dialect {
                     ]),
                 );
             }
-            effect_channels.insert(effect_key.clone(), channel_key);
         }
 
         let formats = FormatParseContext::new(&self.format_parsers, &spec);
@@ -272,14 +271,6 @@ impl Dialect {
                     Err(e) => errors.extend(e.into_iter().map(|e| e.prefixed(&["channels", key]))),
                 }
             }
-
-            let effects: Vec<_> = effect_channels
-                .iter()
-                .filter(|(_, channel_key)| *channel_key == key)
-                .map(|(effect_key, _)| effect_key.as_str())
-                .collect();
-
-            proxy_builder.set_channel_effects(key.clone(), &effects);
         }
 
         if !errors.is_empty() {

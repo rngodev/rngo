@@ -87,7 +87,13 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
 
     let sqlite_run_log = SqliteRunLog::new(eval_dir.clone())?;
     let reader = sqlite_run_log.clone();
-    let writer = StatusWriter::new(sqlite_run_log.clone(), &spec);
+    let simulation = simulation_builder
+        .run_log_reader(reader.clone())
+        .build()
+        .map_err(join_errors)?;
+    let effect_channels = simulation.effect_channels();
+    proxy_builder.set_effect_channels(effect_channels.clone());
+    let writer = StatusWriter::new(sqlite_run_log.clone(), effect_channels);
 
     let flush_failure = Rc::new(RefCell::new(None));
 
@@ -105,11 +111,6 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
     let mut proxy = proxy_builder
         .run_log_writer(writer.clone())
         .stop_handle(stop.clone())
-        .build()
-        .map_err(join_errors)?;
-
-    let simulation = simulation_builder
-        .run_log_reader(reader.clone())
         .build()
         .map_err(join_errors)?;
 

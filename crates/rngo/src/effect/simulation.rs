@@ -7,6 +7,7 @@ use crate::log::SimpleEventRunLog;
 use crate::moment::Moment;
 use chrono::{DateTime, FixedOffset, TimeDelta, Utc};
 use indexmap::IndexMap;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -19,6 +20,14 @@ pub struct Simulation {
 impl Simulation {
     pub fn builder() -> SimulationBuilder {
         SimulationBuilder::new()
+    }
+
+    /// Maps each effect key to the channel it writes to, for the effects that have one.
+    pub fn effect_channels(&self) -> HashMap<String, String> {
+        self.effects
+            .iter()
+            .filter_map(|e| Some((e.key.clone(), e.channel.clone()?)))
+            .collect()
     }
 }
 
