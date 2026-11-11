@@ -16,6 +16,8 @@ pub fn from_value(value: serde_json::Value) -> Result<Spec, Vec<ParseError>> {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Spec {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
     pub seed: Option<u64>,
     pub start: Option<String>,
     pub end: Option<String>,

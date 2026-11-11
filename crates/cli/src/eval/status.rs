@@ -1,6 +1,5 @@
 use chrono::{DateTime, FixedOffset, TimeDelta, Utc};
 use console::{Term, style};
-use rngo::spec::Spec;
 use rngo::{Input, Metadata, Output, RunLogError, RunLogWriter};
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
@@ -28,13 +27,11 @@ pub struct StatusWriter {
 }
 
 impl StatusWriter {
-    pub fn new<T: RunLogWriter + 'static>(child: Rc<T>, spec: &Spec) -> Rc<Self> {
-        let effect_channels = spec
-            .effects
-            .iter()
-            .filter_map(|(k, v)| v.channel.as_ref().map(|s| (k.clone(), s.clone())))
-            .collect();
-
+    /// `effect_channels` maps each effect key to the channel it writes to.
+    pub fn new<T: RunLogWriter + 'static>(
+        child: Rc<T>,
+        effect_channels: HashMap<String, String>,
+    ) -> Rc<Self> {
         Rc::new(StatusWriter {
             child: child as Rc<dyn RunLogWriter>,
             effect_channels: Rc::new(effect_channels),

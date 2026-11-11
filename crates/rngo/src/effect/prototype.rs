@@ -11,6 +11,8 @@ pub struct Prototype {
     pub start: Option<DateTime<FixedOffset>>,
     pub end: Option<DateTime<FixedOffset>>,
     pub limit: Option<NonZeroU64>,
+    /// The key of the channel effects on this prototype write to unless they set their own.
+    pub channel: Option<String>,
 }
 
 impl Prototype {
@@ -26,6 +28,7 @@ pub struct PrototypeBuilder {
     start: Option<Bound>,
     end: Option<Bound>,
     limit: Option<NonZeroU64>,
+    channel: Option<String>,
     now: Option<DateTime<FixedOffset>>,
     prototype: Option<Prototype>,
 }
@@ -67,6 +70,16 @@ impl PrototypeBuilder {
 
     pub fn set_limit(&mut self, limit: NonZeroU64) -> &mut Self {
         self.limit = Some(limit);
+        self
+    }
+
+    pub fn channel(mut self, channel: impl Into<String>) -> Self {
+        self.set_channel(channel);
+        self
+    }
+
+    pub fn set_channel(&mut self, channel: impl Into<String>) -> &mut Self {
+        self.channel = Some(channel.into());
         self
     }
 
@@ -138,6 +151,7 @@ impl PrototypeBuilder {
             start,
             end,
             limit: self.limit,
+            channel: self.channel.clone(),
         })
     }
 }

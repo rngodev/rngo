@@ -207,27 +207,25 @@ impl ProxyBuilder {
         self
     }
 
-    /// Sends the inputs of `effects` to `channel`; an effect assigned twice goes to the last
-    /// channel it was assigned to. `build` fails if `channel` was never added.
-    pub fn channel_effects(
+    /// Sends each effect's inputs to its channel, as (effect, channel) pairs such as `Simulation::effect_channels`;
+    /// an effect assigned twice goes to the last channel it was assigned to. `build` fails if a channel was never added.
+    pub fn effect_channels<E: Into<String>, C: Into<String>>(
         mut self,
-        channel: impl Into<String>,
-        effects: &[impl AsRef<str>],
+        effect_channels: impl IntoIterator<Item = (E, C)>,
     ) -> Self {
-        self.set_channel_effects(channel, effects);
+        self.set_effect_channels(effect_channels);
         self
     }
 
-    pub fn set_channel_effects(
+    pub fn set_effect_channels<E: Into<String>, C: Into<String>>(
         &mut self,
-        channel: impl Into<String>,
-        effects: &[impl AsRef<str>],
+        effect_channels: impl IntoIterator<Item = (E, C)>,
     ) -> &mut Self {
-        let channel = channel.into();
-        for effect in effects {
-            self.effect_channels
-                .insert(effect.as_ref().to_string(), channel.clone());
-        }
+        self.effect_channels.extend(
+            effect_channels
+                .into_iter()
+                .map(|(effect, channel)| (effect.into(), channel.into())),
+        );
         self
     }
 
@@ -400,7 +398,7 @@ mod tests {
         let mut proxy = Proxy::builder()
             .run_log_writer(log.clone())
             .channel("logger", channel)
-            .channel_effects("logger", &["ping"])
+            .effect_channels([("ping", "logger")])
             .build()
             .unwrap();
 
@@ -422,7 +420,7 @@ mod tests {
         let sent = Rc::new(RefCell::new(vec![]));
         let mut proxy = Proxy::builder()
             .channel("logger", RecordingSinkBuilder::new(&sent))
-            .channel_effects("logger", &["ping"])
+            .effect_channels([("ping", "logger")])
             .build()
             .unwrap();
 
@@ -439,7 +437,7 @@ mod tests {
         let mut proxy = Proxy::builder()
             .run_log_writer(log.clone())
             .channel("logger", channel::Exec::builder())
-            .channel_effects("logger", &["ping"])
+            .effect_channels([("ping", "logger")])
             .build()
             .unwrap();
 
@@ -456,7 +454,7 @@ mod tests {
     fn recording_proxy(builder: ProxyBuilder, sent: &Rc<RefCell<Vec<Value>>>) -> Proxy {
         builder
             .channel("logger", RecordingSinkBuilder::new(sent))
-            .channel_effects("logger", &["ping"])
+            .effect_channels([("ping", "logger")])
             .build()
             .unwrap()
     }
@@ -490,7 +488,7 @@ mod tests {
 
     #[test]
     fn effects_assigned_to_an_unknown_channel_fail_the_build() {
-        let result = Proxy::builder().channel_effects("nope", &["ping"]).build();
+        let result = Proxy::builder().effect_channels([("ping", "nope")]).build();
 
         assert!(matches!(
             result.err().as_deref(),
