@@ -1,9 +1,44 @@
+// Some tests rely on POSIX shell features and are unix-only, leaving their helpers unused on Windows.
+#![cfg_attr(windows, allow(dead_code))]
+
 use rngo::StopHandle;
 use rngo_cli::eval::{EvalOptions, eval};
 use serde_json::json;
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
+
+/// A shell command appending its stdin to `path`.
+fn append_stdin_to(path: &Path) -> String {
+    if cfg!(windows) {
+        format!("findstr \"^\" >> \"{}\"", path.display())
+    } else {
+        format!("cat >> {}", path.display())
+    }
+}
+
+/// A shell command appending `text` plus a newline to `path`.
+fn echo_to(text: &str, path: &Path) -> String {
+    format!("echo {text} >> {}", path.display())
+}
+
+/// A shell command copying its stdin to its stdout.
+/// A shell command printing the lines `one` and `two`.
+fn two_lines_command() -> &'static str {
+    if cfg!(windows) {
+        "(echo one& echo two)"
+    } else {
+        "printf 'one\\ntwo\\n'"
+    }
+}
+
+fn stdin_passthrough() -> &'static str {
+    if cfg!(windows) {
+        "findstr \"^\""
+    } else {
+        "cat"
+    }
+}
 
 fn write_yaml(path: impl AsRef<Path>, value: &serde_json::Value) {
     fs::write(path, serde_yaml::to_string(value).unwrap()).unwrap();
@@ -133,7 +168,7 @@ fn exec_channel_runs_command_per_event() {
         }),
     );
 
-    let command = "echo {{data.id}} >> ".to_string() + output.to_str().unwrap();
+    let command = echo_to("{{data.id}}", &output);
     write_yaml(
         base.join(".rngo/channels/logger.yml"),
         &json!({
@@ -169,7 +204,7 @@ fn exec_channel_runs_string_data_without_a_format() {
         }),
     );
 
-    let command = "echo hi >> ".to_string() + output.to_str().unwrap();
+    let command = echo_to("hi", &output);
     write_yaml(
         base.join(".rngo/effects/ping.yml"),
         &json!({
@@ -294,7 +329,7 @@ fn stream_channel_does_not_drop_trailing_output() {
         base.join(".rngo/channels/logger.yml"),
         &json!({
             "format": {},
-            "type": "stream", "command": "cat"
+            "type": "stream", "command": stdin_passthrough()
         }),
     );
 
@@ -339,7 +374,7 @@ fn stream_channel_pipes_events_to_subprocess() {
         }),
     );
 
-    let command = "cat >> ".to_string() + output.to_str().unwrap();
+    let command = append_stdin_to(&output);
     write_yaml(
         base.join(".rngo/channels/logger.yml"),
         &json!({
@@ -387,7 +422,7 @@ fn template_format_is_written_to_a_stream_channel() {
         }),
     );
 
-    let command = "cat >> ".to_string() + output.to_str().unwrap();
+    let command = append_stdin_to(&output);
     write_yaml(
         base.join(".rngo/channels/logger.yml"),
         &json!({
@@ -439,7 +474,7 @@ fn sql_format_uses_table_from_effect_metadata() {
         }),
     );
 
-    let command = "cat >> ".to_string() + output.to_str().unwrap();
+    let command = append_stdin_to(&output);
     write_yaml(
         base.join(".rngo/channels/db.yml"),
         &json!({
@@ -508,7 +543,7 @@ fn path_to_file_uses_only_that_file() {
     fs::write(base.join(".rngo/spec.yml"), "not: [valid").unwrap();
     fs::write(base.join(".rngo/effects/other.yml"), "not: [valid").unwrap();
 
-    let command = format!("cat >> {}", output.display());
+    let command = append_stdin_to(&output);
     let spec_path = base.join("external_spec.yml");
     write_yaml(&spec_path, &ping_spec(&command));
 
@@ -533,7 +568,7 @@ fn path_to_rngo_dir_merges_its_files() {
     let effect = spec["effects"]["ping"].take();
     write_yaml(rngo_dir.join("effects/ping.yml"), &effect);
     let mut channel = spec["channels"]["logger"].take();
-    channel["command"] = json!(format!("cat >> {}", output.display()));
+    channel["command"] = json!(append_stdin_to(&output));
     write_yaml(rngo_dir.join("channels/logger.yml"), &channel);
     write_yaml(
         rngo_dir.join("spec.yml"),
@@ -553,7 +588,7 @@ fn path_to_project_dir_uses_the_rngo_dir_inside() {
     let output = base.join("project_output.txt");
 
     fs::create_dir_all(base.join(".rngo")).unwrap();
-    let command = format!("cat >> {}", output.display());
+    let command = append_stdin_to(&output);
     write_yaml(base.join(".rngo/spec.yml"), &ping_spec(&command));
 
     eval(Some(base), EvalOptions::default()).unwrap();
@@ -630,7 +665,7 @@ fn generators_dir_yml_files_are_referenceable_by_type_name() {
         }),
     );
 
-    let command = "cat >> ".to_string() + output.to_str().unwrap();
+    let command = append_stdin_to(&output);
     write_yaml(
         base.join(".rngo/channels/logger.yml"),
         &json!({
@@ -868,7 +903,7 @@ fn channel_with_no_effects_is_an_output_source() {
     write_yaml(
         base.join(".rngo/channels/tail.yml"),
         &json!({
-            "type": "stream", "command": "printf 'one\\ntwo\\n'"
+            "type": "stream", "command": two_lines_command()
         }),
     );
 
@@ -922,7 +957,7 @@ fn dry_run_does_not_persist_or_run_channels() {
         }),
     );
 
-    let command = "echo {{data.id}} >> ".to_string() + output.to_str().unwrap();
+    let command = echo_to("{{data.id}}", &output);
     write_yaml(
         base.join(".rngo/channels/logger.yml"),
         &json!({
@@ -1070,7 +1105,7 @@ fn limit_caps_total_effects_produced() {
         }),
     );
 
-    let command = "echo {{data.id}} >> ".to_string() + output.to_str().unwrap();
+    let command = echo_to("{{data.id}}", &output);
     write_yaml(
         base.join(".rngo/channels/logger.yml"),
         &json!({
@@ -1202,6 +1237,7 @@ fn input_count(base: &Path) -> i64 {
 }
 
 #[test]
+#[cfg(unix)]
 fn future_inputs_are_sent_once_their_time_arrives() {
     let tmp = TempDir::new().unwrap();
     let base = tmp.path();
@@ -1229,6 +1265,7 @@ fn future_inputs_are_sent_once_their_time_arrives() {
 }
 
 #[test]
+#[cfg(unix)]
 fn future_inputs_are_sent_right_away_by_default() {
     let tmp = TempDir::new().unwrap();
     let base = tmp.path();
@@ -1256,6 +1293,7 @@ fn future_inputs_are_sent_right_away_by_default() {
 }
 
 #[test]
+#[cfg(unix)]
 fn stopping_a_waiting_run_still_audits_it() {
     let tmp = TempDir::new().unwrap();
     let base = tmp.path();
@@ -1314,6 +1352,7 @@ fn non_mapping_spec_file_is_an_error_naming_the_file() {
 }
 
 #[test]
+#[cfg(unix)]
 fn stream_channel_whose_command_dies_fails_the_run_with_status_and_stderr() {
     let tmp = TempDir::new().unwrap();
     let base = tmp.path();

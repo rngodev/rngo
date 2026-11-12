@@ -45,12 +45,25 @@ pub(crate) fn render(format: Option<&dyn Format>, input: &Input) -> Result<Value
     }
 }
 
-/// Builds an `sh -c <command>` process in its own process group, so a terminal Ctrl-C
-/// reaches rngo but not its channel subprocesses.
+/// Builds a process that runs `command` through the platform shell: `sh -c` on Unix, `cmd /C` on
+/// Windows (so on Windows, commands are `cmd` syntax). It is placed in its own process group, so a
+/// terminal Ctrl-C reaches rngo but not its channel subprocesses.
 fn shell(command: &str) -> Command {
-    let mut cmd = Command::new("sh");
-    cmd.arg("-c").arg(command);
     #[cfg(unix)]
-    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
-    cmd
+    {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg(command);
+        std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+        cmd
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        let mut cmd = Command::new("cmd");
+        // `raw_arg` so std doesn't re-quote the command; `cmd` parses its own command line.
+        cmd.arg("/C").raw_arg(command);
+        cmd.creation_flags(CREATE_NEW_PROCESS_GROUP);
+        cmd
+    }
 }
