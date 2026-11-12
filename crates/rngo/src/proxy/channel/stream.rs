@@ -301,6 +301,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn drop_abandons_a_reader_thread_stuck_on_an_orphaned_grandchild() {
         let stream = StreamBuilder::default()
             // Backgrounds `sleep 5` without redirecting it, so it inherits this shell's stdout
@@ -322,6 +323,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn write_to_a_command_that_exited_reports_its_status_and_stderr() {
         let mut stream = StreamBuilder::default()
             .command("echo 'connection refused' >&2; exit 2".to_string())

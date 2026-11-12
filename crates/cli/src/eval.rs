@@ -342,7 +342,8 @@ fn new_eval_dir(rngo_dir: &Path) -> Result<PathBuf, Box<dyn Error>> {
 fn update_last_symlink(rngo_dir: &Path, eval_dir: &Path) -> Result<(), Box<dyn Error>> {
     let link = rngo_dir.join("evals/last");
     if link.exists() || link.is_symlink() {
-        fs::remove_file(&link)?;
+        // A directory symlink on Windows is removed with `remove_dir`, not `remove_file`.
+        fs::remove_file(&link).or_else(|_| fs::remove_dir(&link))?;
     }
     let target = eval_dir.strip_prefix(rngo_dir.join("evals"))?;
     #[cfg(unix)]

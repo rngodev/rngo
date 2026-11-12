@@ -163,6 +163,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn runs_string_data_as_its_command() {
         let outputs = exec().send(&input(json!("echo '<a> & \"b\"'"))).unwrap();
         assert_eq!(
