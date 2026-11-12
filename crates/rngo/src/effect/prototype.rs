@@ -21,7 +21,7 @@ impl Prototype {
     }
 }
 
-/// Builds a [`Prototype`]; whatever is left unset stays unset.
+/// Builds a prototype; whatever is left unset stays unset.
 #[derive(Clone, Debug, Default)]
 pub struct PrototypeBuilder {
     name: Option<String>,

@@ -3,6 +3,8 @@ pub(crate) mod sql;
 use cel::Program;
 pub(crate) use sql::SqlSignal;
 
+pub use crate::parse::SignalParser;
+
 use crate::RunLogReader;
 use crate::build::BuildError;
 use serde::Serialize;

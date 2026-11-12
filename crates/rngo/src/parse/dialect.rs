@@ -22,7 +22,7 @@ pub struct Dialect {
 }
 
 impl Dialect {
-    pub fn new(
+    pub(crate) fn new(
         generator_parsers: Vec<Box<dyn GeneratorParser>>,
         format_parsers: Vec<Box<dyn FormatParser>>,
         channel_parsers: Vec<Box<dyn ChannelParser>>,
@@ -36,6 +36,23 @@ impl Dialect {
         }
     }
 
+    /// Adds a parser for a generator `type`, alongside the dialect's existing ones.
+    pub fn with_generator_parser(mut self, parser: impl GeneratorParser + 'static) -> Self {
+        Rc::get_mut(&mut self.generator_parsers)
+            .expect("generator parsers are only shared during a parse")
+            .push(Box::new(parser));
+        self
+    }
+
+    /// Adds a parser for a signal `type`, alongside the dialect's existing ones.
+    pub fn with_signal_parser(mut self, parser: impl SignalParser + 'static) -> Self {
+        Rc::get_mut(&mut self.signal_parsers)
+            .expect("signal parsers are only shared during a parse")
+            .push(Box::new(parser));
+        self
+    }
+
+    /// The built-in generator, format, channel and signal parsers.
     pub fn primitive() -> Self {
         Dialect::new(
             vec![

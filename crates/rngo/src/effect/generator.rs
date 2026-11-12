@@ -25,6 +25,7 @@ pub(crate) use string::Str;
 use crate::build::BuildError;
 pub use crate::effect::TriggerEvent;
 use crate::log::RunLogReader;
+pub use crate::parse::{GeneratorParseVisitor, GeneratorParser};
 use rand_pcg::Pcg32;
 use rand_seeder::Seeder;
 use serde::{Deserialize, Serialize};

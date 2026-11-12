@@ -1,6 +1,6 @@
 use crate::build::BuildError;
 use crate::log::Metadata;
-pub(crate) mod signal;
+pub mod signal;
 
 use crate::{RunLogError, RunLogReader, RunLogWriter};
 use indexmap::IndexMap;

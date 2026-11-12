@@ -1,8 +1,9 @@
 use rngo::build::*;
 use rngo::generator::{
-    Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
+    Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorParseVisitor,
+    GeneratorParser, GeneratorResult,
 };
-use rngo::{BuildError, Input, Simulation};
+use rngo::{BuildError, Dialect, Input, ParseError, Simulation};
 use serde_json::{Value, json};
 use std::num::NonZeroU64;
 
@@ -67,5 +68,77 @@ fn a_generator_defined_outside_the_crate_reports_build_errors() {
         errors
             .iter()
             .any(|e| e.to_string().contains("step must be positive"))
+    );
+}
+
+struct CounterParser;
+
+impl GeneratorParser for CounterParser {
+    fn key(&self) -> &str {
+        "counter"
+    }
+
+    fn parse(
+        &self,
+        visitor: GeneratorParseVisitor,
+    ) -> Result<Box<dyn GeneratorBuilder>, Vec<ParseError>> {
+        match visitor.spec().fields.get("step").and_then(Value::as_u64) {
+            Some(step) => Ok(Box::new(CounterBuilder { step })),
+            None => Err(vec![visitor.input_error("step", "step must be a number")]),
+        }
+    }
+}
+
+fn counter_spec(counter: Value) -> Value {
+    json!({
+        "effects": {
+            "counter": {
+                "trigger": "hz(1, hour)",
+                "limit": 3,
+                "generator": {
+                    "type": "object",
+                    "properties": { "counter": counter }
+                }
+            }
+        }
+    })
+}
+
+#[test]
+fn a_registered_generator_parser_handles_its_type_in_a_spec() {
+    let inputs: Vec<Input> = Dialect::primitive()
+        .with_generator_parser(CounterParser)
+        .parse_simulation_json(counter_spec(json!({ "type": "counter", "step": 5 })))
+        .unwrap()
+        .run_log_reader(rngo::SimpleEventRunLog::new())
+        .build()
+        .unwrap()
+        .filter_map(|step| step.unwrap().into_input())
+        .collect();
+    let counts: Vec<&Value> = inputs.iter().map(|i| &i.data["counter"]["count"]).collect();
+
+    assert_eq!(counts, [&json!(0), &json!(5), &json!(10)]);
+}
+
+#[test]
+fn a_registered_generator_parser_reports_errors_at_its_field() {
+    let errors = Dialect::primitive()
+        .with_generator_parser(CounterParser)
+        .parse_simulation_json(counter_spec(json!({ "type": "counter" })))
+        .unwrap_err();
+
+    assert!(errors.iter().any(|e| {
+        e.path()
+            .ends_with(&["counter".to_string(), "step".to_string()])
+            && e.to_string().contains("step must be a number")
+    }));
+}
+
+#[test]
+fn a_generator_type_is_unknown_without_its_parser() {
+    assert!(
+        Dialect::primitive()
+            .parse_simulation_json(counter_spec(json!({ "type": "counter", "step": 5 })))
+            .is_err()
     );
 }
