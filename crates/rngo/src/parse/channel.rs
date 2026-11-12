@@ -2,7 +2,7 @@ use crate::parse::FormatParseContext;
 use crate::proxy::channel::ChannelBuilder;
 use crate::{ParseError, spec};
 
-pub(crate) trait ChannelParser {
+pub trait ChannelParser {
     fn key(&self) -> &str;
 
     /// Parses `channel` into a channel builder; `formats` parses its `format` field for channels that

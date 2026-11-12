@@ -3,7 +3,7 @@ use crate::spec::{self, ParseError};
 use serde_json::Value;
 use std::rc::Rc;
 
-pub(crate) trait FormatParser {
+pub trait FormatParser {
     fn key(&self) -> &str;
     fn parse(
         &self,
@@ -13,7 +13,7 @@ pub(crate) trait FormatParser {
 }
 
 /// Lets a channel parser build the optional `format` of its channel with the dialect's format parsers.
-pub(crate) struct FormatParseContext<'a> {
+pub struct FormatParseContext<'a> {
     parsers: &'a [Box<dyn FormatParser>],
     spec: &'a spec::Spec,
 }
@@ -25,7 +25,7 @@ impl<'a> FormatParseContext<'a> {
 
     /// Parses `value` as a format; `None` if it has no `type`. Error paths are prefixed with
     /// `path`, where `value` sits relative to the caller's own node.
-    pub(crate) fn parse(
+    pub fn parse(
         &self,
         path: &[&str],
         value: &Value,

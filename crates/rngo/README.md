@@ -16,7 +16,10 @@ These items are the supported public API; everything else is private and may cha
 - `generator`: the extension API for writing your own generators in Rust: implement `Generator` and `GeneratorBuilder`, then pass the builder to `EffectBuilder::generator` or nest it in another builder. It also holds the types those traits use: `GeneratorContext`, `GeneratorResult`, `GeneratorBuildVisitor`, `GeneratorEdge`, `Metadata`, `TriggerEvent` and `JsonPointer`. The built-in generators themselves are private; use their builders in `build`. To give a generator its own `type` in specs, implement `GeneratorParser` (it gets a `GeneratorParseVisitor` for the spec fields and error paths) and register it with `Dialect::primitive().with_generator_parser(...)`.
 - `signal`: the extension API for custom signals: implement `Signal` (and `SignalParser` to give it a `type` in specs, registered with `Dialect::with_signal_parser`), returning a `SignalOutcome` and optional `SignalEval`. `SignalBuilder` lets the `AuditBuilder` take a built signal directly.
 - `spec`: `Spec` and `from_value`, for JSON or YAML specs
-- `Dialect`: parses a `Spec` into the builders below. Start from `Dialect::primitive()` and add custom generator or signal parsers with `with_generator_parser` / `with_signal_parser`
+- `Dialect`: parses a `Spec` into the builders below. `Dialect::primitive()` has every built-in parser, and `with_generator_parser`, `with_format_parser`, `with_channel_parser` and `with_signal_parser` add custom ones. For full control, `Dialect::new` takes exactly the parsers you list.
+- `parsers`: one function per built-in parser (`parsers::number()`, `parsers::stream()`, `parsers::sql_signal()`, ...), for building a dialect with `Dialect::new`
+- `channel`: the extension API for custom channels: `Channel`, `ChannelBuilder`, `ChannelParser`, `ChannelOutput` and `OutputSender`
+- `format`: the extension API for custom formats: `Format`, `FormatParser` and `FormatParseContext` (which a channel parser uses to parse its `format` field), plus the built-in `SqlFormat` and `TemplateFormat`
 - `SimulationBuilder`, `Simulation`, `StandaloneSimulation`, `ProxyBuilder`, `Proxy`, `StopHandle`, `AuditBuilder`, `Audit`, `AuditReport`
 - `SqliteRunLog`, `SimpleEventRunLog`, `RunLogReader`, `RunLogWriter`
 - `Input`, `SkippedInput`, `Step`, `Metadata`, `Output`, `Level`, `SignalOutcome`

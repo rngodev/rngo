@@ -6,9 +6,11 @@ pub(crate) use exec::Exec;
 pub(crate) use stdout::Stdout;
 pub(crate) use stream::Stream;
 
+pub use crate::parse::ChannelParser;
+pub use crate::proxy::output::{ChannelOutput, OutputSender};
+
 use crate::effect::Input;
 use crate::proxy::format::Format;
-use crate::proxy::output::{ChannelOutput, OutputSender};
 use crate::{BuildError, ChannelError, Level};
 use serde_json::Value;
 use std::process::Command;

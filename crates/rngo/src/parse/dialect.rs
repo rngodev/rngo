@@ -3,14 +3,13 @@ use super::generator::{GeneratorParseVisitor, GeneratorParser};
 use super::signal::SignalParser;
 use crate::ParseErrorKind;
 use crate::audit::signal::Signal;
-use crate::audit::{Audit, AuditBuilder, signal};
-use crate::effect::generator;
+use crate::audit::{Audit, AuditBuilder};
 use crate::effect::generator::custom::CustomParser;
 use crate::effect::simulation::{Simulation, SimulationBuilder};
 use crate::moment::Moment;
 use crate::parse::ChannelParser;
-use crate::proxy::channel::{self, ChannelBuilder};
-use crate::proxy::{Proxy, ProxyBuilder, format};
+use crate::proxy::channel::ChannelBuilder;
+use crate::proxy::{Proxy, ProxyBuilder};
 use crate::spec::{self, ParseError, Spec};
 use std::rc::Rc;
 
@@ -22,7 +21,8 @@ pub struct Dialect {
 }
 
 impl Dialect {
-    pub(crate) fn new(
+    /// A dialect with exactly these parsers; see [`crate::parsers`] for the built-in ones.
+    pub fn new(
         generator_parsers: Vec<Box<dyn GeneratorParser>>,
         format_parsers: Vec<Box<dyn FormatParser>>,
         channel_parsers: Vec<Box<dyn ChannelParser>>,
@@ -44,6 +44,22 @@ impl Dialect {
         self
     }
 
+    /// Adds a parser for a format `type`, alongside the dialect's existing ones.
+    pub fn with_format_parser(mut self, parser: impl FormatParser + 'static) -> Self {
+        Rc::get_mut(&mut self.format_parsers)
+            .expect("format parsers are only shared during a parse")
+            .push(Box::new(parser));
+        self
+    }
+
+    /// Adds a parser for a channel `type`, alongside the dialect's existing ones.
+    pub fn with_channel_parser(mut self, parser: impl ChannelParser + 'static) -> Self {
+        Rc::get_mut(&mut self.channel_parsers)
+            .expect("channel parsers are only shared during a parse")
+            .push(Box::new(parser));
+        self
+    }
+
     /// Adds a parser for a signal `type`, alongside the dialect's existing ones.
     pub fn with_signal_parser(mut self, parser: impl SignalParser + 'static) -> Self {
         Rc::get_mut(&mut self.signal_parsers)
@@ -54,28 +70,22 @@ impl Dialect {
 
     /// The built-in generator, format, channel and signal parsers.
     pub fn primitive() -> Self {
+        use crate::parsers::*;
         Dialect::new(
             vec![
-                Box::new(generator::Array::parser()),
-                Box::new(generator::Constant::parser()),
-                Box::new(generator::Context::parser()),
-                Box::new(generator::Function::parser()),
-                Box::new(generator::Number::parser()),
-                Box::new(generator::Object::parser()),
-                Box::new(generator::Reference::parser()),
-                Box::new(generator::Select::parser()),
-                Box::new(generator::Str::parser()),
+                Box::new(array()),
+                Box::new(constant()),
+                Box::new(context()),
+                Box::new(function()),
+                Box::new(number()),
+                Box::new(object()),
+                Box::new(reference()),
+                Box::new(select()),
+                Box::new(string()),
             ],
-            vec![
-                Box::new(format::SqlFormat::parser()),
-                Box::new(format::TemplateFormat::parser()),
-            ],
-            vec![
-                Box::new(channel::Exec::parser()),
-                Box::new(channel::Stdout::parser()),
-                Box::new(channel::Stream::parser()),
-            ],
-            vec![Box::new(signal::SqlSignal::parser())],
+            vec![Box::new(sql_format()), Box::new(template_format())],
+            vec![Box::new(exec()), Box::new(stdout()), Box::new(stream())],
+            vec![Box::new(sql_signal())],
         )
     }
 

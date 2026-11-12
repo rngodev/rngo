@@ -1,5 +1,5 @@
-pub(crate) mod channel;
-pub(crate) mod format;
+pub mod channel;
+pub mod format;
 pub(crate) mod output;
 mod stop;
 

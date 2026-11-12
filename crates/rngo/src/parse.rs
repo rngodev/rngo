@@ -4,8 +4,8 @@ mod format;
 mod generator;
 mod signal;
 
-pub(crate) use channel::ChannelParser;
+pub use channel::ChannelParser;
 pub use dialect::Dialect;
-pub(crate) use format::{FormatParseContext, FormatParser};
+pub use format::{FormatParseContext, FormatParser};
 pub use generator::{GeneratorParseVisitor, GeneratorParser};
 pub use signal::SignalParser;

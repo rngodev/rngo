@@ -20,7 +20,7 @@ pub struct TemplateFormat {
 }
 
 impl TemplateFormat {
-    pub fn parser() -> TemplateFormatParser {
+    pub(crate) fn parser() -> TemplateFormatParser {
         TemplateFormatParser {}
     }
 
@@ -66,7 +66,7 @@ impl Format for TemplateFormat {
     }
 }
 
-pub struct TemplateFormatParser;
+pub(crate) struct TemplateFormatParser;
 
 impl FormatParser for TemplateFormatParser {
     fn key(&self) -> &str {
