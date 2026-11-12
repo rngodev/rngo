@@ -17,9 +17,10 @@ fn append_stdin_to(path: &Path) -> String {
     }
 }
 
-/// A shell command appending `text` plus a newline to `path`.
+/// A shell command appending `text` plus a newline to `path`. The parentheses keep `cmd` from
+/// treating a trailing digit as a file descriptor, and from writing a space before the `>>`.
 fn echo_to(text: &str, path: &Path) -> String {
-    format!("echo {text} >> {}", path.display())
+    format!("(echo {text})>> {}", path.display())
 }
 
 /// A shell command copying its stdin to its stdout.
