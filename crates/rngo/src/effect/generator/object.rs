@@ -53,12 +53,12 @@ impl Generator for Object {
 }
 
 #[derive(Debug)]
-pub(crate) struct ObjectBuilder {
+pub struct ObjectBuilder {
     property_builders: IndexMap<String, Box<dyn GeneratorBuilder>>,
 }
 
 impl ObjectBuilder {
-    pub(crate) fn set_property(
+    pub fn set_property(
         &mut self,
         key: &str,
         builder: impl GeneratorBuilder + 'static,
@@ -67,8 +67,7 @@ impl ObjectBuilder {
         self
     }
 
-    #[cfg(test)]
-    pub(crate) fn property(mut self, key: &str, builder: impl GeneratorBuilder + 'static) -> Self {
+    pub fn property(mut self, key: &str, builder: impl GeneratorBuilder + 'static) -> Self {
         self.set_property(key, builder);
         self
     }

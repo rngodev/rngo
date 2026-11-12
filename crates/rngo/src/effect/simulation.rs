@@ -131,31 +131,38 @@ impl SimulationBuilder {
     }
 
     /// Sets the default prototype's start; defaults to 30 days before now.
-    #[cfg(test)]
-    pub(crate) fn start(mut self, start: impl Into<Bound>) -> Self {
+    pub fn start(mut self, start: impl Into<Bound>) -> Self {
         self.set_start(start);
         self
     }
 
-    pub(crate) fn set_start(&mut self, start: impl Into<Bound>) -> &mut Self {
+    pub fn set_start(&mut self, start: impl Into<Bound>) -> &mut Self {
         self.default_prototype.set_start(start);
         self
     }
 
     /// Sets the default prototype's end; defaults to now.
-    #[cfg(test)]
-    pub(crate) fn end(mut self, end: impl Into<Bound>) -> Self {
+    pub fn end(mut self, end: impl Into<Bound>) -> Self {
         self.set_end(end);
         self
     }
 
-    pub(crate) fn set_end(&mut self, end: impl Into<Bound>) -> &mut Self {
+    pub fn set_end(&mut self, end: impl Into<Bound>) -> &mut Self {
         self.default_prototype.set_end(end);
         self
     }
 
+    pub fn prototype(
+        mut self,
+        name: &str,
+        f: impl FnOnce(PrototypeBuilder) -> PrototypeBuilder,
+    ) -> Self {
+        self.with_prototype(name, f);
+        self
+    }
+
     /// Defines a named prototype; `f` configures its builder.
-    pub(crate) fn with_prototype(
+    pub fn with_prototype(
         &mut self,
         name: &str,
         f: impl FnOnce(PrototypeBuilder) -> PrototypeBuilder,
@@ -171,7 +178,7 @@ impl SimulationBuilder {
     }
 
     /// Adds an effect; `f` configures its builder.
-    pub(crate) fn with_effect(
+    pub fn with_effect(
         &mut self,
         key: &str,
         f: impl FnOnce(EffectBuilder) -> EffectBuilder,
@@ -179,6 +186,11 @@ impl SimulationBuilder {
         let builder = Effect::builder(key.into());
         let builder = f(builder);
         self.effect_builders.push(builder);
+        self
+    }
+
+    pub fn effect(mut self, key: &str, f: impl FnOnce(EffectBuilder) -> EffectBuilder) -> Self {
+        self.with_effect(key, f);
         self
     }
 

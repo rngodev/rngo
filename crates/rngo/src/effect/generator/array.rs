@@ -32,39 +32,39 @@ impl Array {
 }
 
 #[derive(Debug)]
-pub(crate) struct ArrayBuilder {
+pub struct ArrayBuilder {
     min_items: usize,
     max_items: usize,
     items_builder: Option<Box<dyn GeneratorBuilder>>,
 }
 
 impl ArrayBuilder {
-    pub(crate) fn min_items(mut self, value: usize) -> Self {
+    pub fn min_items(mut self, value: usize) -> Self {
         self.set_min_items(value);
         self
     }
 
-    pub(crate) fn set_min_items(&mut self, value: usize) -> &mut Self {
+    pub fn set_min_items(&mut self, value: usize) -> &mut Self {
         self.min_items = value;
         self
     }
 
-    pub(crate) fn max_items(mut self, value: usize) -> Self {
+    pub fn max_items(mut self, value: usize) -> Self {
         self.set_max_items(value);
         self
     }
 
-    pub(crate) fn set_max_items(&mut self, value: usize) -> &mut Self {
+    pub fn set_max_items(&mut self, value: usize) -> &mut Self {
         self.max_items = value;
         self
     }
 
-    pub(crate) fn items(mut self, builder: impl GeneratorBuilder + 'static) -> Self {
+    pub fn items(mut self, builder: impl GeneratorBuilder + 'static) -> Self {
         self.set_items(builder);
         self
     }
 
-    pub(crate) fn set_items(&mut self, builder: impl GeneratorBuilder + 'static) -> &mut Self {
+    pub fn set_items(&mut self, builder: impl GeneratorBuilder + 'static) -> &mut Self {
         self.items_builder = Some(Box::new(builder));
         self
     }

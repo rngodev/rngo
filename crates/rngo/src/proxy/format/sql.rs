@@ -7,28 +7,22 @@ use crate::proxy::format::Format;
 use crate::{FormatError, ParseError, spec};
 
 #[derive(Debug)]
-pub(crate) struct SqlFormat {
+pub struct SqlFormat {
     effect_tables: HashMap<String, String>,
 }
 
 impl SqlFormat {
-    pub(crate) fn parser() -> SqlFormatParser {
+    pub fn parser() -> SqlFormatParser {
         SqlFormatParser {}
     }
 
-    #[cfg(test)]
-    pub(crate) fn builder() -> SqlFormat {
+    pub fn builder() -> SqlFormat {
         SqlFormat {
             effect_tables: HashMap::new(),
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn effect_table(
-        mut self,
-        effect_key: impl Into<String>,
-        table: impl Into<String>,
-    ) -> Self {
+    pub fn effect_table(mut self, effect_key: impl Into<String>, table: impl Into<String>) -> Self {
         self.effect_tables.insert(effect_key.into(), table.into());
         self
     }
@@ -90,7 +84,7 @@ impl Format for SqlFormat {
     }
 }
 
-pub(crate) struct SqlFormatParser;
+pub struct SqlFormatParser;
 
 impl FormatParser for SqlFormatParser {
     fn key(&self) -> &str {

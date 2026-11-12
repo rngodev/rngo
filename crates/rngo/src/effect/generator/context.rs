@@ -87,18 +87,17 @@ impl TryFrom<Vec<String>> for ContextPath {
 }
 
 #[derive(Debug)]
-pub(crate) struct ContextBuilder {
+pub struct ContextBuilder {
     path: Option<Vec<String>>,
 }
 
 impl ContextBuilder {
-    #[cfg(test)]
-    pub(crate) fn path(mut self, path: impl IntoIterator<Item: Into<String>>) -> Self {
+    pub fn path(mut self, path: impl IntoIterator<Item: Into<String>>) -> Self {
         self.set_path(path);
         self
     }
 
-    pub(crate) fn set_path(&mut self, path: impl IntoIterator<Item: Into<String>>) -> &mut Self {
+    pub fn set_path(&mut self, path: impl IntoIterator<Item: Into<String>>) -> &mut Self {
         self.path = Some(path.into_iter().map(Into::into).collect());
         self
     }

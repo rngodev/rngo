@@ -16,6 +16,10 @@ impl Stdout {
     pub(crate) fn parser() -> StdoutParser {
         StdoutParser {}
     }
+
+    pub(crate) fn builder() -> StdoutBuilder {
+        StdoutBuilder::default()
+    }
 }
 
 impl Channel for Stdout {
@@ -36,12 +40,17 @@ impl Channel for Stdout {
 }
 
 #[derive(Default)]
-pub(crate) struct StdoutBuilder {
+pub struct StdoutBuilder {
     format: Option<Rc<dyn Format>>,
 }
 
 impl StdoutBuilder {
-    pub(crate) fn set_format(&mut self, format: Rc<dyn Format>) -> &mut Self {
+    pub fn format(mut self, format: impl Format + 'static) -> Self {
+        self.set_format(Rc::new(format));
+        self
+    }
+
+    pub fn set_format(&mut self, format: Rc<dyn Format>) -> &mut Self {
         self.format = Some(format);
         self
     }

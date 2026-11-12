@@ -80,25 +80,23 @@ impl Generator for Function {
 }
 
 #[derive(Debug)]
-pub(crate) struct FunctionBuilder {
+pub struct FunctionBuilder {
     expression: Option<String>,
     variable_builders: IndexMap<String, Box<dyn GeneratorBuilder>>,
 }
 
 impl FunctionBuilder {
-    #[cfg(test)]
-    pub(crate) fn expression(mut self, expression: impl Into<String>) -> Self {
+    pub fn expression(mut self, expression: impl Into<String>) -> Self {
         self.set_expression(expression);
         self
     }
 
-    pub(crate) fn set_expression(&mut self, expression: impl Into<String>) -> &mut Self {
+    pub fn set_expression(&mut self, expression: impl Into<String>) -> &mut Self {
         self.expression = Some(expression.into());
         self
     }
 
-    #[cfg(test)]
-    pub(crate) fn variable(
+    pub fn variable(
         mut self,
         key: impl Into<String>,
         builder: impl GeneratorBuilder + 'static,
@@ -107,7 +105,7 @@ impl FunctionBuilder {
         self
     }
 
-    pub(crate) fn set_variable(
+    pub fn set_variable(
         &mut self,
         key: impl Into<String>,
         builder: impl GeneratorBuilder + 'static,

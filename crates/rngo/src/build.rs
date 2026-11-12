@@ -1,63 +1,83 @@
-pub(crate) use crate::error::{BuildError, EffectKey, SimulationKey};
+use crate::audit::signal::SqlSignal;
+pub use crate::audit::signal::sql::SqlSignalBuilder;
+pub use crate::effect::generator::array::ArrayBuilder;
+pub use crate::effect::generator::constant::ConstantBuilder;
+pub use crate::effect::generator::context::ContextBuilder;
+pub use crate::effect::generator::function::FunctionBuilder;
+pub use crate::effect::generator::number::NumberBuilder;
+pub use crate::effect::generator::object::ObjectBuilder;
+pub use crate::effect::generator::reference::ReferenceBuilder;
+pub use crate::effect::generator::select::SelectBuilder;
+pub use crate::effect::generator::string::StrBuilder;
+use crate::effect::generator::{
+    Array, Constant, Context, Function, Number, Object, Reference, Select, Str,
+};
+pub use crate::proxy::channel::exec::ExecBuilder;
+pub use crate::proxy::channel::stdout::StdoutBuilder;
+pub use crate::proxy::channel::stream::StreamBuilder;
+use crate::proxy::channel::{Exec, Stdout, Stream};
+pub use crate::proxy::format::{SqlFormat, TemplateFormat};
 
-#[cfg(test)]
-pub(crate) use test_dsl::*;
-
-/// Builder-style constructors for specs in tests; the public API takes specs through `Dialect`.
-#[cfg(test)]
-mod test_dsl {
-    use crate::audit::signal::SqlSignal;
-    pub(crate) use crate::audit::signal::sql::SqlSignalBuilder;
-    pub(crate) use crate::effect::generator::array::ArrayBuilder;
-    pub(crate) use crate::effect::generator::constant::ConstantBuilder;
-    pub(crate) use crate::effect::generator::context::ContextBuilder;
-    pub(crate) use crate::effect::generator::function::FunctionBuilder;
-    pub(crate) use crate::effect::generator::number::NumberBuilder;
-    pub(crate) use crate::effect::generator::object::ObjectBuilder;
-    pub(crate) use crate::effect::generator::reference::ReferenceBuilder;
-    pub(crate) use crate::effect::generator::select::SelectBuilder;
-    pub(crate) use crate::effect::generator::string::StrBuilder;
-    use crate::effect::generator::{
-        Array, Constant, Context, Function, Number, Object, Reference, Select, Str,
-    };
-
-    pub(crate) fn array() -> ArrayBuilder {
-        Array::builder()
-    }
-
-    pub(crate) fn constant() -> ConstantBuilder {
-        Constant::builder()
-    }
-
-    pub(crate) fn context() -> ContextBuilder {
-        Context::builder()
-    }
-
-    pub(crate) fn function() -> FunctionBuilder {
-        Function::builder()
-    }
-
-    pub(crate) fn number() -> NumberBuilder {
-        Number::builder()
-    }
-
-    pub(crate) fn object() -> ObjectBuilder {
-        Object::builder()
-    }
-
-    pub(crate) fn reference() -> ReferenceBuilder {
-        Reference::builder()
-    }
-
-    pub(crate) fn select() -> SelectBuilder {
-        Select::builder()
-    }
-
-    pub(crate) fn string() -> StrBuilder {
-        Str::builder()
-    }
-
-    pub(crate) fn sql_signal() -> SqlSignalBuilder {
-        SqlSignal::builder()
-    }
+pub fn array() -> ArrayBuilder {
+    Array::builder()
 }
+
+pub fn constant() -> ConstantBuilder {
+    Constant::builder()
+}
+
+pub fn context() -> ContextBuilder {
+    Context::builder()
+}
+
+pub fn function() -> FunctionBuilder {
+    Function::builder()
+}
+
+pub fn number() -> NumberBuilder {
+    Number::builder()
+}
+
+pub fn object() -> ObjectBuilder {
+    Object::builder()
+}
+
+pub fn reference() -> ReferenceBuilder {
+    Reference::builder()
+}
+
+pub fn select() -> SelectBuilder {
+    Select::builder()
+}
+
+pub fn string() -> StrBuilder {
+    Str::builder()
+}
+
+pub fn sql_signal() -> SqlSignalBuilder {
+    SqlSignal::builder()
+}
+
+pub fn sql_format() -> SqlFormat {
+    SqlFormat::builder()
+}
+
+pub fn stream() -> StreamBuilder {
+    Stream::builder()
+}
+
+pub fn exec() -> ExecBuilder {
+    Exec::builder()
+}
+
+pub fn stdout() -> StdoutBuilder {
+    Stdout::builder()
+}
+
+pub use crate::audit::signal::SignalBuilder;
+pub use crate::effect::EffectBuilder;
+pub use crate::effect::bound::{Bound, BoundKind, BoundValue};
+pub use crate::effect::generator::GeneratorEdge;
+pub use crate::effect::prototype::PrototypeBuilder;
+pub use crate::error::{BuildError, EffectKey, SimulationKey};
+pub use crate::moment::Moment;

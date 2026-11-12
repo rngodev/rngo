@@ -27,18 +27,17 @@ impl Generator for Constant {
 }
 
 #[derive(Debug)]
-pub(crate) struct ConstantBuilder {
+pub struct ConstantBuilder {
     value: Option<Value>,
 }
 
 impl ConstantBuilder {
-    #[cfg(test)]
-    pub(crate) fn value(mut self, value: impl Into<Value>) -> Self {
+    pub fn value(mut self, value: impl Into<Value>) -> Self {
         self.set_value(value);
         self
     }
 
-    pub(crate) fn set_value(&mut self, value: impl Into<Value>) -> &mut Self {
+    pub fn set_value(&mut self, value: impl Into<Value>) -> &mut Self {
         self.value = Some(value.into());
         self
     }

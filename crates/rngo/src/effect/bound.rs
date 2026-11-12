@@ -5,7 +5,7 @@ use chrono::{DateTime, FixedOffset};
 
 /// Which end of a window a [`Bound`] sets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum BoundKind {
+pub enum BoundKind {
     Start,
     End,
 }
@@ -21,14 +21,14 @@ impl BoundKind {
 
 /// What a [`Bound`] holds: a fixed moment, or a CEL expression resolved when the simulation builds.
 #[derive(Clone, Debug)]
-pub(crate) enum BoundValue {
+pub enum BoundValue {
     Moment(Moment),
     Expression(String),
 }
 
 /// A start or end as declared. `kind` is `None` until a builder's `set_start` or `set_end` fills it in.
 #[derive(Clone, Debug)]
-pub(crate) struct Bound {
+pub struct Bound {
     pub kind: Option<BoundKind>,
     pub value: BoundValue,
 }

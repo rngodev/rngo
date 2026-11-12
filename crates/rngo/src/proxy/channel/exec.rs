@@ -20,7 +20,6 @@ impl Exec {
         ExecParser {}
     }
 
-    #[cfg(test)]
     pub(crate) fn builder() -> ExecBuilder {
         ExecBuilder::default()
     }
@@ -77,12 +76,17 @@ impl Channel for Exec {
 }
 
 #[derive(Default)]
-pub(crate) struct ExecBuilder {
+pub struct ExecBuilder {
     format: Option<Rc<dyn Format>>,
 }
 
 impl ExecBuilder {
-    pub(crate) fn set_format(&mut self, format: Rc<dyn Format>) -> &mut Self {
+    pub fn format(mut self, format: impl Format + 'static) -> Self {
+        self.set_format(Rc::new(format));
+        self
+    }
+
+    pub fn set_format(&mut self, format: Rc<dyn Format>) -> &mut Self {
         self.format = Some(format);
         self
     }

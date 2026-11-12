@@ -1,8 +1,5 @@
-#[cfg(test)]
-use super::SignalBuilder;
-use super::{Signal, SignalOutcome};
+use super::{Signal, SignalBuilder, SignalOutcome};
 use crate::audit::signal::{CelExpectation, SignalEval};
-#[cfg(test)]
 use crate::build::BuildError;
 use crate::cel::json_to_cel;
 use crate::parse::SignalParser;
@@ -22,7 +19,6 @@ impl SqlSignal {
         SqlSignalParser {}
     }
 
-    #[cfg(test)]
     pub(crate) fn builder() -> SqlSignalBuilder {
         SqlSignalBuilder::default()
     }
@@ -134,41 +130,34 @@ impl SignalParser for SqlSignalParser {
     }
 }
 
-#[cfg(test)]
 #[derive(Debug, Default)]
-pub(crate) struct SqlSignalBuilder {
+pub struct SqlSignalBuilder {
     query: Option<String>,
     expect: Option<String>,
 }
 
-#[cfg(test)]
 impl SqlSignalBuilder {
-    #[cfg(test)]
-    pub(crate) fn query(mut self, query: impl Into<String>) -> Self {
+    pub fn query(mut self, query: impl Into<String>) -> Self {
         self.set_query(query);
         self
     }
 
-    #[cfg(test)]
-    pub(crate) fn set_query(&mut self, query: impl Into<String>) -> &mut Self {
+    pub fn set_query(&mut self, query: impl Into<String>) -> &mut Self {
         self.query = Some(query.into());
         self
     }
 
-    #[cfg(test)]
-    pub(crate) fn expect(mut self, expect: impl Into<String>) -> Self {
+    pub fn expect(mut self, expect: impl Into<String>) -> Self {
         self.set_expect(expect);
         self
     }
 
-    #[cfg(test)]
-    pub(crate) fn set_expect(&mut self, expect: impl Into<String>) -> &mut Self {
+    pub fn set_expect(&mut self, expect: impl Into<String>) -> &mut Self {
         self.expect = Some(expect.into());
         self
     }
 }
 
-#[cfg(test)]
 impl SignalBuilder for SqlSignalBuilder {
     fn build(self: Box<Self>, key: &str) -> Result<Box<dyn Signal>, Vec<BuildError>> {
         let Some(query) = self.query else {

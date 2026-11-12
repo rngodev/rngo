@@ -10,7 +10,7 @@ use rand_pcg::Pcg32;
 use std::rc::Rc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Cursor {
+pub enum Cursor {
     Random,
     Unique,
 }
@@ -71,24 +71,28 @@ impl Generator for Reference {
 }
 
 #[derive(Debug)]
-pub(crate) struct ReferenceBuilder {
+pub struct ReferenceBuilder {
     effect: Option<String>,
     cursor: Cursor,
 }
 
 impl ReferenceBuilder {
-    #[cfg(test)]
-    pub(crate) fn effect(mut self, effect: impl Into<String>) -> Self {
+    pub fn effect(mut self, effect: impl Into<String>) -> Self {
         self.set_effect(effect);
         self
     }
 
-    pub(crate) fn set_effect(&mut self, effect: impl Into<String>) -> &mut Self {
+    pub fn set_effect(&mut self, effect: impl Into<String>) -> &mut Self {
         self.effect = Some(effect.into());
         self
     }
 
-    pub(crate) fn set_cursor(&mut self, cursor: Cursor) -> &mut Self {
+    pub fn cursor(mut self, cursor: Cursor) -> Self {
+        self.set_cursor(cursor);
+        self
+    }
+
+    pub fn set_cursor(&mut self, cursor: Cursor) -> &mut Self {
         self.cursor = cursor;
         self
     }

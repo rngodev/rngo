@@ -1,5 +1,5 @@
-use crate::build::*;
-use crate::{Dialect, Simulation, SimulationBuilder};
+use rngo::build::*;
+use rngo::{Dialect, Simulation, SimulationBuilder};
 use serde_json::Value;
 
 /// A standalone simulation logs the inputs it yields, so "post" - which references "user" - sees

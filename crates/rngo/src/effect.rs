@@ -26,7 +26,7 @@ use trigger::{Trigger, TriggerConfig};
 pub(crate) use trigger::TriggerEvent;
 
 #[derive(Debug)]
-pub(crate) struct Effect {
+pub struct Effect {
     pub key: String,
     run_log_reader: Rc<dyn RunLogReader>,
     trigger: Trigger,
@@ -39,17 +39,19 @@ pub(crate) struct Effect {
     origin: DateTime<FixedOffset>,
     pub start: DateTime<FixedOffset>,
     pub end: Option<DateTime<FixedOffset>>,
+    /// The name of the prototype the effect asked for; `None` for the default prototype.
+    pub prototype: Option<String>,
     /// The channel the effect writes to: its own, else its prototype's.
     pub channel: Option<String>,
 }
 
 impl Effect {
-    pub(crate) fn builder(key: String) -> EffectBuilder {
+    pub fn builder(key: String) -> EffectBuilder {
         EffectBuilder::new(key)
     }
 
     /// Moves the instant offsets are measured from, rebuilding the trigger around it; call before iterating, once every effect of the simulation is built and the earliest start is known.
-    pub(crate) fn set_origin(
+    pub fn set_origin(
         &mut self,
         origin: DateTime<FixedOffset>,
     ) -> Result<&mut Self, Vec<BuildError>> {
@@ -67,7 +69,7 @@ impl Effect {
     }
 
     /// Milliseconds since the simulation origin at which this effect next fires.
-    pub(crate) fn next_offset(&self) -> Option<i64> {
+    pub fn next_offset(&self) -> Option<i64> {
         if self.limit.is_some_and(|limit| self.produced >= limit) {
             return None;
         }
@@ -179,7 +181,7 @@ impl From<SkippedInput> for Metadata {
 }
 
 #[derive(Debug)]
-pub(crate) struct EffectBuilder {
+pub struct EffectBuilder {
     key: String,
     start: Option<Bound>,
     end: Option<Bound>,
@@ -213,136 +215,152 @@ impl EffectBuilder {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn start(mut self, start: impl Into<Bound>) -> Self {
+    pub fn start(mut self, start: impl Into<Bound>) -> Self {
         self.set_start(start);
         self
     }
 
     /// Sets `start` to a [`Bound`]; a string is a CEL expression, parsed at build so it can refer to the default prototype via `simulation`.
-    pub(crate) fn set_start(&mut self, start: impl Into<Bound>) -> &mut Self {
+    pub fn set_start(&mut self, start: impl Into<Bound>) -> &mut Self {
         let start: Bound = start.into();
         self.start = Some(start.of_kind(BoundKind::Start));
         self
     }
 
-    #[cfg(test)]
-    pub(crate) fn end(mut self, end: impl Into<Bound>) -> Self {
+    pub fn end(mut self, end: impl Into<Bound>) -> Self {
         self.set_end(end);
         self
     }
 
     /// Sets `end` to a [`Bound`]; a string is a CEL expression, parsed at build so it can refer to the default prototype via `simulation`.
-    pub(crate) fn set_end(&mut self, end: impl Into<Bound>) -> &mut Self {
+    pub fn set_end(&mut self, end: impl Into<Bound>) -> &mut Self {
         let end: Bound = end.into();
         self.end = Some(end.of_kind(BoundKind::End));
         self
     }
 
-    #[cfg(test)]
-    pub(crate) fn limit(mut self, limit: NonZeroU64) -> Self {
+    pub fn limit(mut self, limit: NonZeroU64) -> Self {
         self.set_limit(limit);
         self
     }
 
-    pub(crate) fn set_limit(&mut self, limit: NonZeroU64) -> &mut Self {
+    pub fn set_limit(&mut self, limit: NonZeroU64) -> &mut Self {
         self.limit = Some(limit);
         self
     }
 
+    pub fn channel(mut self, channel: impl Into<String>) -> Self {
+        self.set_channel(channel);
+        self
+    }
+
     /// Sets the channel the effect writes to, taking precedence over its prototype's.
-    pub(crate) fn set_channel(&mut self, channel: impl Into<String>) -> &mut Self {
+    pub fn set_channel(&mut self, channel: impl Into<String>) -> &mut Self {
         self.channel = Some(channel.into());
         self
     }
 
-    #[cfg(test)]
-    pub(crate) fn prototype_key(mut self, key: impl Into<String>) -> Self {
+    pub fn prototype_key(mut self, key: impl Into<String>) -> Self {
         self.set_prototype_key(key);
         self
     }
 
     /// Sets the key of the prototype this effect names; no key means the default prototype and a key matching no prototype an empty one.
-    pub(crate) fn set_prototype_key(&mut self, key: impl Into<String>) -> &mut Self {
+    pub fn set_prototype_key(&mut self, key: impl Into<String>) -> &mut Self {
         self.prototype_key = Some(key.into());
         self
     }
 
+    pub fn prototype(mut self, prototype: &Prototype) -> Self {
+        self.set_prototype(prototype);
+        self
+    }
+
     /// Sets the prototype whose `start`, `end` and `limit` the effect takes where it sets none itself; without one the prototype is empty.
-    pub(crate) fn set_prototype(&mut self, prototype: &Prototype) -> &mut Self {
+    pub fn set_prototype(&mut self, prototype: &Prototype) -> &mut Self {
         self.prototype = Some(prototype.clone());
         self
     }
 
+    pub fn now(mut self, now: DateTime<FixedOffset>) -> Self {
+        self.set_now(now);
+        self
+    }
+
     /// Sets the instant relative moments resolve against; defaults to the current time at build.
-    pub(crate) fn set_now(&mut self, now: DateTime<FixedOffset>) -> &mut Self {
+    pub fn set_now(&mut self, now: DateTime<FixedOffset>) -> &mut Self {
         self.now = Some(now);
         self
     }
 
+    pub fn seed(mut self, seed: u64) -> Self {
+        self.set_seed(seed);
+        self
+    }
+
     /// Sets the simulation's seed; defaults to 1.
-    pub(crate) fn set_seed(&mut self, seed: u64) -> &mut Self {
+    pub fn set_seed(&mut self, seed: u64) -> &mut Self {
         self.seed = Some(seed);
         self
     }
 
     /// The key of the prototype this effect asked for, if any.
-    pub(crate) fn get_prototype_key(&self) -> Option<&str> {
+    pub fn get_prototype_key(&self) -> Option<&str> {
         self.prototype_key.as_deref()
     }
 
-    pub(crate) fn set_event_run_log(&mut self, event_run_log: Rc<dyn RunLogReader>) -> &mut Self {
+    pub fn event_run_log(mut self, event_run_log: Rc<dyn RunLogReader>) -> Self {
+        self.set_event_run_log(event_run_log);
+        self
+    }
+
+    pub fn set_event_run_log(&mut self, event_run_log: Rc<dyn RunLogReader>) -> &mut Self {
         self.event_run_log = Some(event_run_log);
         self
     }
 
-    #[cfg(test)]
-    pub(crate) fn trigger_effect(mut self, key: String) -> Self {
+    pub fn trigger_effect(mut self, key: String) -> Self {
         self.set_trigger_effect(key);
         self
     }
 
-    pub(crate) fn set_trigger_effect(&mut self, key: String) -> &mut Self {
+    pub fn set_trigger_effect(&mut self, key: String) -> &mut Self {
         self.trigger = TriggerConfig::Effect { key };
         self
     }
 
-    #[cfg(test)]
-    pub(crate) fn set_trigger_hertz(&mut self, hertz: f64) -> &mut Self {
-        self.trigger = TriggerConfig::ClockHertz(hertz);
-        self
-    }
-
-    #[cfg(test)]
-    pub(crate) fn trigger_hertz(mut self, hertz: f64) -> Self {
+    pub fn trigger_hertz(mut self, hertz: f64) -> Self {
         self.set_trigger_hertz(hertz);
         self
     }
 
-    #[cfg(test)]
-    pub(crate) fn trigger_expression(mut self, expression: String) -> Self {
+    pub fn set_trigger_hertz(&mut self, hertz: f64) -> &mut Self {
+        self.trigger = TriggerConfig::ClockHertz(hertz);
+        self
+    }
+
+    pub fn trigger_expression(mut self, expression: String) -> Self {
         self.set_trigger_expression(expression);
         self
     }
 
-    pub(crate) fn set_trigger_expression(&mut self, expression: String) -> &mut Self {
+    pub fn set_trigger_expression(&mut self, expression: String) -> &mut Self {
         self.trigger = TriggerConfig::ClockExpression(expression);
         self
     }
 
-    #[cfg(test)]
-    pub(crate) fn generator(mut self, builder: impl GeneratorBuilder + 'static) -> Self {
+    pub fn generator(mut self, builder: impl GeneratorBuilder + 'static) -> Self {
         self.set_generator(builder);
         self
     }
 
-    pub(crate) fn set_generator(&mut self, builder: impl GeneratorBuilder + 'static) -> &mut Self {
+    pub fn set_generator(&mut self, builder: impl GeneratorBuilder + 'static) -> &mut Self {
         self.generator_builder = Some(Box::new(builder));
         self
     }
 
     /// Lays the effect's own `start`, `end` and `limit` over its prototype's and builds it; errors unless the window has a `start` and an `end` or `limit`, and a `start` before any `end`.
-    pub(crate) fn build(self) -> Result<Effect, Vec<BuildError>> {
+    pub fn build(self) -> Result<Effect, Vec<BuildError>> {
         let now = self.now.unwrap_or_else(|| Utc::now().fixed_offset());
         let prototype = self.prototype.as_ref();
         let mut errors: Vec<BuildError> = vec![];
@@ -458,6 +476,7 @@ impl EffectBuilder {
                 origin,
                 start,
                 end,
+                prototype: self.prototype_key,
                 channel: self
                     .channel
                     .or_else(|| prototype.and_then(|p| p.channel.clone())),
@@ -502,7 +521,6 @@ fn build_trigger(
             sim_start: origin,
             last_offset: 0,
         }),
-        #[cfg(test)]
         TriggerConfig::ClockHertz(hertz) => clock(Clock::builder().hertz(hertz)),
         TriggerConfig::ClockExpression(expression) => {
             clock(Clock::builder().expression(expression))

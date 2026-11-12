@@ -57,18 +57,17 @@ impl Generator for Select {
 }
 
 #[derive(Debug)]
-pub(crate) struct SelectBuilder {
+pub struct SelectBuilder {
     option_builders: Vec<(u32, Box<dyn GeneratorBuilder>)>,
 }
 
 impl SelectBuilder {
-    #[cfg(test)]
-    pub(crate) fn option(mut self, weight: u32, builder: impl GeneratorBuilder + 'static) -> Self {
+    pub fn option(mut self, weight: u32, builder: impl GeneratorBuilder + 'static) -> Self {
         self.set_option(weight, builder);
         self
     }
 
-    pub(crate) fn set_option(
+    pub fn set_option(
         &mut self,
         weight: u32,
         builder: impl GeneratorBuilder + 'static,

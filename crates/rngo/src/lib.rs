@@ -1,11 +1,10 @@
 //! Core simulation library for rngo.
 //!
-//! The supported public API is the set of re-exports below plus the `spec` and `error` modules;
+//! The supported public API is the re-exports below plus the `build`, `spec` and `error` modules;
 //! see the README for the list. Everything else is private.
 #![warn(unreachable_pub)]
-
 mod audit;
-pub(crate) mod build;
+pub mod build;
 mod cel;
 mod effect;
 pub mod error;
@@ -27,6 +26,3 @@ pub use log::{Metadata, RunLogReader, RunLogWriter, SimpleEventRunLog, SqliteRun
 pub use parse::Dialect;
 pub use proxy::output::{Level, Output};
 pub use proxy::{Proxy, ProxyBuilder, StopHandle};
-
-#[cfg(test)]
-mod tests;

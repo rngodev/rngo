@@ -1,5 +1,5 @@
-use crate::build::*;
-use crate::{BuildError, Dialect, EffectKey, ParseError, Simulation};
+use rngo::build::*;
+use rngo::{BuildError, Dialect, EffectKey, ParseError, Simulation};
 
 #[test]
 fn builder() {
@@ -27,7 +27,7 @@ fn builder() {
         });
 
     let errors = simulation_builder
-        .run_log_reader(crate::SimpleEventRunLog::new())
+        .run_log_reader(rngo::SimpleEventRunLog::new())
         .build()
         .unwrap_err();
 
@@ -195,7 +195,7 @@ fn number_bounds() {
         .with_effect("equal", |e| e.generator(number().minimum(1).maximum(1)))
         .with_effect("stepped", |e| e.generator(number().maximum(1).step(1)));
     let errors = simulation_builder
-        .run_log_reader(crate::SimpleEventRunLog::new())
+        .run_log_reader(rngo::SimpleEventRunLog::new())
         .build()
         .unwrap_err();
     let messages: Vec<_> = errors.iter().map(|e| e.message()).collect();

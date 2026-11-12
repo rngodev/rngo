@@ -40,18 +40,17 @@ impl Generator for Str {
 }
 
 #[derive(Debug)]
-pub(crate) struct StrBuilder {
+pub struct StrBuilder {
     pattern: String,
 }
 
 impl StrBuilder {
-    #[cfg(test)]
-    pub(crate) fn pattern(mut self, pattern: impl Into<String>) -> Self {
+    pub fn pattern(mut self, pattern: impl Into<String>) -> Self {
         self.set_pattern(pattern);
         self
     }
 
-    pub(crate) fn set_pattern(&mut self, pattern: impl Into<String>) -> &mut Self {
+    pub fn set_pattern(&mut self, pattern: impl Into<String>) -> &mut Self {
         self.pattern = pattern.into();
         self
     }

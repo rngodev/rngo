@@ -1,7 +1,6 @@
-use crate::build::*;
-use crate::moment::Moment;
-use crate::{Input, Metadata, RunLogWriter, Simulation, SimulationBuilder, SqliteRunLog, Step};
 use chrono::TimeDelta;
+use rngo::build::*;
+use rngo::{Input, Metadata, RunLogWriter, Simulation, SimulationBuilder, SqliteRunLog, Step};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
@@ -18,6 +17,7 @@ fn log_all(simulation: Simulation, log: &impl RunLogWriter) -> Vec<Input> {
                 inputs.push(input);
             }
             Ok(Step::Skipped(skipped)) => log.push_metadata(Metadata::from(skipped)).unwrap(),
+            Ok(_) => {}
             Err(error) => panic!("{error}"),
         }
     }

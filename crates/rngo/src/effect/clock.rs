@@ -64,7 +64,6 @@ pub(super) struct ClockBuilder {
 }
 
 enum ClockRate {
-    #[cfg(test)]
     Hertz(f64),
     Expression(String),
 }
@@ -89,7 +88,6 @@ impl ClockBuilder {
         self
     }
 
-    #[cfg(test)]
     pub(super) fn hertz(mut self, hertz: f64) -> Self {
         self.rate = ClockRate::Hertz(hertz);
         self
@@ -110,7 +108,6 @@ impl ClockBuilder {
         let rng: Pcg32 = Seeder::from(&format!("{}-{}", self.seed, self.key)).into_rng();
 
         let rate_function = match self.rate {
-            #[cfg(test)]
             ClockRate::Hertz(hertz) => RateFunction::Fixed(hertz),
             ClockRate::Expression(expression) => {
                 let program = Program::compile(&expression).map_err(|e| {

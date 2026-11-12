@@ -58,7 +58,6 @@ impl Stream {
         StreamParser {}
     }
 
-    #[cfg(test)]
     pub(crate) fn builder() -> StreamBuilder {
         StreamBuilder::default()
     }
@@ -134,23 +133,28 @@ impl Drop for Stream {
 }
 
 #[derive(Default)]
-pub(crate) struct StreamBuilder {
+pub struct StreamBuilder {
     command: Option<String>,
     format: Option<Rc<dyn Format>>,
 }
 
 impl StreamBuilder {
-    pub(crate) fn set_format(&mut self, format: Rc<dyn Format>) -> &mut Self {
+    pub fn format(mut self, format: impl Format + 'static) -> Self {
+        self.set_format(Rc::new(format));
+        self
+    }
+
+    pub fn set_format(&mut self, format: Rc<dyn Format>) -> &mut Self {
         self.format = Some(format);
         self
     }
 
-    pub(crate) fn command(mut self, value: impl Into<String>) -> Self {
+    pub fn command(mut self, value: impl Into<String>) -> Self {
         self.set_command(value);
         self
     }
 
-    pub(crate) fn set_command(&mut self, value: impl Into<String>) -> &mut Self {
+    pub fn set_command(&mut self, value: impl Into<String>) -> &mut Self {
         self.command = Some(value.into());
         self
     }
