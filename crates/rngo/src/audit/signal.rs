@@ -1,7 +1,7 @@
 pub(crate) mod sql;
 
 use cel::Program;
-pub use sql::SqlSignal;
+pub(crate) use sql::SqlSignal;
 
 use crate::RunLogReader;
 use crate::build::BuildError;
@@ -23,6 +23,7 @@ impl SignalBuilder for Box<dyn Signal> {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum SignalOutcome {
     Success {
         value: serde_json::Value,
@@ -40,7 +41,7 @@ pub struct SignalEval {
 }
 
 #[derive(Debug)]
-pub struct CelExpectation {
+pub(crate) struct CelExpectation {
     source: String,
     program: Program,
 }

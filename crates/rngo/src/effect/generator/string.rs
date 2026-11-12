@@ -6,7 +6,7 @@ use crate::spec::ParseError as Error;
 use rand::distr::Distribution;
 use rand_pcg::Pcg32;
 
-pub struct Str {
+pub(crate) struct Str {
     rng: Pcg32,
     regex: rand_regex::Regex,
 }
@@ -18,13 +18,13 @@ impl std::fmt::Debug for Str {
 }
 
 impl Str {
-    pub fn builder() -> StrBuilder {
+    pub(crate) fn builder() -> StrBuilder {
         StrBuilder {
             pattern: ".{0,64}".into(),
         }
     }
 
-    pub fn parser() -> StrParser {
+    pub(crate) fn parser() -> StrParser {
         StrParser {}
     }
 }
@@ -40,17 +40,18 @@ impl Generator for Str {
 }
 
 #[derive(Debug)]
-pub struct StrBuilder {
+pub(crate) struct StrBuilder {
     pattern: String,
 }
 
 impl StrBuilder {
-    pub fn pattern(mut self, pattern: impl Into<String>) -> Self {
+    #[cfg(test)]
+    pub(crate) fn pattern(mut self, pattern: impl Into<String>) -> Self {
         self.set_pattern(pattern);
         self
     }
 
-    pub fn set_pattern(&mut self, pattern: impl Into<String>) -> &mut Self {
+    pub(crate) fn set_pattern(&mut self, pattern: impl Into<String>) -> &mut Self {
         self.pattern = pattern.into();
         self
     }
@@ -68,7 +69,7 @@ impl GeneratorBuilder for StrBuilder {
     }
 }
 
-pub struct StrParser {}
+pub(crate) struct StrParser {}
 
 impl GeneratorParser for StrParser {
     fn key(&self) -> &str {

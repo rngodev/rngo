@@ -1,6 +1,6 @@
 # rngo
 
-The `rngo` library lets you build a **spec** in Rust and evaluate it.
+The `rngo` library lets you evaluate a **spec** in Rust.
 
 A **spec** describes the behavior of a system using the following components:
 - a `RunLog` records inputs, outputs and metadata
@@ -8,132 +8,22 @@ A **spec** describes the behavior of a system using the following components:
 - a `Proxy` routes inputs to the appropriate system interfaces and captures outputs
 - an `Audit` surfaces pattern in logged inputs and outputs and may set expectations
 
-## DSL
+## Public API
 
-You can define a spec using a builder DSL. First we'll define a `SqliteRunLog`:
+Specs are defined as JSON or YAML and parsed with `spec::from_value`. These items are the supported public API; everything else is private and may change in any release:
 
-```rust
-let run_log = rngo::SqliteRunLog::new(".".into())?;
-```
+- `spec`: `Spec` and `from_value`
+- `Dialect`: parses a `Spec` into the builders below
+- `SimulationBuilder`, `Simulation`, `StandaloneSimulation`, `ProxyBuilder`, `Proxy`, `StopHandle`, `AuditBuilder`, `Audit`, `AuditReport`
+- `SqliteRunLog`, `SimpleEventRunLog`, `RunLogReader`, `RunLogWriter`
+- `Input`, `SkippedInput`, `Step`, `Metadata`, `Output`, `Level`, `SignalOutcome`
+- `error` types: `ParseError`, `ParseErrorKind`, `BuildError`, `RunError`, `RunLogError`, `FormatError`, `ChannelError`, `ProxyError`, `SignalError`, `EffectKey`, `SimulationKey`
 
-Next a `Simulation`:
-
-```rust
-let mut simulation = rngo::Simulation::builder()
-    .seed(41)
-    .start(Moment::Relative(TimeDelta::days(-90)))
-    .end(Moment::Relative(TimeDelta::zero()))
-    .prototype("recent", |prototype| {
-        prototype
-            .start(Moment::Relative(TimeDelta::days(-7)))
-            .end(Moment::Relative(TimeDelta::zero()))
-    })
-    .effect("user", |effect| {
-        effect
-            .trigger_expression("hz(10, hour) * (offset * 0.0001)")
-            .limit(NonZeroU64::new(1000).unwrap())
-            .schema(
-                object()
-                    .property("id", number().minimum(1).scale(0).step(1))
-                    .property("name", string().pattern(".{10,50}"))
-                    .property(
-                        "age",
-                        select()
-                            .option(3, number().minimum(18).maximum(65))
-                            .option(1, constant().value(Value::Null)),
-                    )
-                    .property("created_at", context().path(["clock", "now"])),
-            )
-          
-    })
-    .effect("post", |effect| {
-        effect
-            .prototype_key("recent")
-            .trigger_expression("hz(100, hour) * (offset * 0.0001)")
-            .schema(
-                object()
-                    .property("id", number().minimum(1).scale(0).step(1))
-                    .property(
-                        "user_id",
-                        function()
-                            .expression("user.id")
-                            .variable("user", reference().effect("user")),
-                    )
-                    .property("title", string().pattern("Post: .{10,20}"))
-                    .property(
-                        "tags",
-                        array().min_items(0).max_items(10).items(
-                            select()
-                                .option(1, constant().value("a"))
-                                .option(1, constant().value("b")),
-                        ),
-                    )
-                    .property("created_at", context().path(["clock", "now"])),
-            )
-    })
-    .run_log_reader(run_log.clone())
-    .build()?;
-```
-
-And then the `Proxy`:
-
-```rust
-let proxy = rngo::Proxy::builder()
-    .channel(
-        "db",
-        stream()
-            .command("psql -q $DATABASE_URL")
-            .format(
-                sql_format()
-                    .effect_table("user", "USERS")
-                    .effect_table("post", "POSTS")
-            )
-    )
-    .effect_channels([("user", "db"), ("post", "db")])
-    .channel("log", stream().command("tail -F logs/app.log"))
-    .run_log(run_log.clone())
-    .build()?
-```
-
-To evaluate the spec, first run the `Simulation` against the `Proxy`: 
-
-```rust
-for input in &mut simulation {
-    proxy.send(&input)?;
-}
-
-proxy.finish()?;
-```
-
-Then build an `Audit` and run it against the `RunLog`:
-
-```rust
-let audit = rngo::Audit::builder()
-    .with_signal("some-inputs",
-        sql_signal()
-            .query("SELECT count(*) FROM inputs;")
-            .expect("result > 0")
-    )
-    .with_signal("no-psql-errors",
-        sql_signal()
-            .query("SELECT count(*) FROM outputs WHERE channel = 'db'")
-            .expect("result == 0")
-    )
-    .with_signal("minimal-log-errors",
-        sql_signal()
-            .query("SELECT count(*) FROM outputs WHERE channel = 'log' AND data LIKE 'ERROR%'")
-            .expect("result < 20")
-    )
-    .run_log(run_log)
-    .build()?;
-
-let audit_report = audit.run()?;
-assert!(audit_report.passed())
-```
+Public enums and spec structs are `#[non_exhaustive]`, so they can gain variants and fields without a breaking change.
 
 ## Spec
 
-You can also define the above in JSON (or YAML) spec - it would look like this:
+A spec looks like this:
 
 ```json
 {

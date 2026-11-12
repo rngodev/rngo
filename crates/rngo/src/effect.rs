@@ -1,8 +1,8 @@
-pub mod bound;
+pub(crate) mod bound;
 mod clock;
-pub mod generator;
-pub mod prototype;
-pub mod simulation;
+pub(crate) mod generator;
+pub(crate) mod prototype;
+pub(crate) mod simulation;
 mod trigger;
 
 use crate::RunError;
@@ -23,7 +23,7 @@ use std::num::NonZeroU64;
 use std::rc::Rc;
 use trigger::{Trigger, TriggerConfig};
 
-pub use trigger::TriggerEvent;
+pub(crate) use trigger::TriggerEvent;
 
 #[derive(Debug)]
 pub struct Effect {
@@ -127,6 +127,7 @@ impl Iterator for Effect {
 
 /// What an effect did each time it fired.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum Step {
     /// It produced an input.
     Input(Input),

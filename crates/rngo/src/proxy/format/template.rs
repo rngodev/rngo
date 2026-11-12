@@ -15,17 +15,17 @@ const TEMPLATE_NAME: &str = "template";
 /// Formats each event by rendering a Handlebars template against the whole `Input` (with the
 /// effect exposed as `effect.key`), without HTML escaping and with a `json` helper that serializes its one argument.
 #[derive(Debug)]
-pub struct TemplateFormat {
+pub(crate) struct TemplateFormat {
     hbs: Handlebars<'static>,
 }
 
 impl TemplateFormat {
-    pub fn parser() -> TemplateFormatParser {
+    pub(crate) fn parser() -> TemplateFormatParser {
         TemplateFormatParser {}
     }
 
     /// Compiles `template`, failing if it is invalid.
-    pub fn new(template: &str) -> Result<Self, FormatError> {
+    pub(crate) fn new(template: &str) -> Result<Self, FormatError> {
         let mut hbs = Handlebars::new();
         hbs.register_escape_fn(handlebars::no_escape);
         hbs.register_helper("json", Box::new(json_helper));
@@ -66,7 +66,7 @@ impl Format for TemplateFormat {
     }
 }
 
-pub struct TemplateFormatParser;
+pub(crate) struct TemplateFormatParser;
 
 impl FormatParser for TemplateFormatParser {
     fn key(&self) -> &str {

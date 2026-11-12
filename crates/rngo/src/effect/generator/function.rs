@@ -11,20 +11,20 @@ use indexmap::IndexMap;
 use std::collections::HashMap;
 
 #[derive(Debug)]
-pub struct Function {
+pub(crate) struct Function {
     program: Program,
     variables: HashMap<String, Box<dyn Generator>>,
 }
 
 impl Function {
-    pub fn builder() -> FunctionBuilder {
+    pub(crate) fn builder() -> FunctionBuilder {
         FunctionBuilder {
             expression: None,
             variable_builders: IndexMap::new(),
         }
     }
 
-    pub fn parser() -> FunctionParser {
+    pub(crate) fn parser() -> FunctionParser {
         FunctionParser {}
     }
 }
@@ -80,23 +80,25 @@ impl Generator for Function {
 }
 
 #[derive(Debug)]
-pub struct FunctionBuilder {
+pub(crate) struct FunctionBuilder {
     expression: Option<String>,
     variable_builders: IndexMap<String, Box<dyn GeneratorBuilder>>,
 }
 
 impl FunctionBuilder {
-    pub fn expression(mut self, expression: impl Into<String>) -> Self {
+    #[cfg(test)]
+    pub(crate) fn expression(mut self, expression: impl Into<String>) -> Self {
         self.set_expression(expression);
         self
     }
 
-    pub fn set_expression(&mut self, expression: impl Into<String>) -> &mut Self {
+    pub(crate) fn set_expression(&mut self, expression: impl Into<String>) -> &mut Self {
         self.expression = Some(expression.into());
         self
     }
 
-    pub fn variable(
+    #[cfg(test)]
+    pub(crate) fn variable(
         mut self,
         key: impl Into<String>,
         builder: impl GeneratorBuilder + 'static,
@@ -105,7 +107,7 @@ impl FunctionBuilder {
         self
     }
 
-    pub fn set_variable(
+    pub(crate) fn set_variable(
         &mut self,
         key: impl Into<String>,
         builder: impl GeneratorBuilder + 'static,
@@ -149,7 +151,7 @@ impl GeneratorBuilder for FunctionBuilder {
     }
 }
 
-pub struct FunctionParser {}
+pub(crate) struct FunctionParser {}
 
 impl GeneratorParser for FunctionParser {
     fn key(&self) -> &str {

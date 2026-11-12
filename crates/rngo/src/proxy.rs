@@ -1,6 +1,6 @@
-pub mod channel;
-pub mod format;
-pub mod output;
+pub(crate) mod channel;
+pub(crate) mod format;
+pub(crate) mod output;
 mod stop;
 
 use crate::{

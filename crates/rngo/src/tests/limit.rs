@@ -1,5 +1,5 @@
-use rngo::build::*;
-use rngo::{Dialect, Input, Simulation};
+use crate::build::*;
+use crate::{Dialect, Input, Simulation};
 use std::num::NonZeroU64;
 
 fn count_for(inputs: &[Input], effect: &str) -> usize {
@@ -25,7 +25,7 @@ fn unlimited_effect_keeps_running_after_limited_effect_stops() {
         });
 
     let inputs: Vec<_> = simulation_builder
-        .run_log_reader(rngo::SimpleEventRunLog::new())
+        .run_log_reader(crate::SimpleEventRunLog::new())
         .build()
         .unwrap()
         .filter_map(|step| step.unwrap().into_input())
@@ -78,7 +78,7 @@ fn run_limit_lower_than_effect_limit_wins() {
 
     let inputs: Vec<_> = simulation_builder
         .limit(4)
-        .run_log_reader(rngo::SimpleEventRunLog::new())
+        .run_log_reader(crate::SimpleEventRunLog::new())
         .build()
         .unwrap()
         .filter_map(|step| step.unwrap().into_input())
@@ -98,7 +98,7 @@ fn effect_limit_lower_than_run_limit_wins() {
 
     let inputs: Vec<_> = simulation_builder
         .limit(10)
-        .run_log_reader(rngo::SimpleEventRunLog::new())
+        .run_log_reader(crate::SimpleEventRunLog::new())
         .build()
         .unwrap()
         .filter_map(|step| step.unwrap().into_input())
@@ -125,7 +125,7 @@ fn spec_limit_is_applied() {
     let inputs: Vec<_> = Dialect::primitive()
         .parse_simulation_json(value)
         .unwrap()
-        .run_log_reader(rngo::SimpleEventRunLog::new())
+        .run_log_reader(crate::SimpleEventRunLog::new())
         .build()
         .unwrap()
         .filter_map(|step| step.unwrap().into_input())

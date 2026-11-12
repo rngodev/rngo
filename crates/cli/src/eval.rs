@@ -120,6 +120,7 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
         match item {
             Ok(Step::Input(input)) => proxy.send(&input)?,
             Ok(Step::Skipped(skipped)) => writer.push_metadata(skipped.into())?,
+            Ok(_) => {}
             Err(error) => failure = Some(error.into()),
         }
         if let Some(error) = flush_failure.borrow_mut().take() {
@@ -166,6 +167,7 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
                     }
                     None => println!("{key}: {value}"),
                 },
+                _ => {}
             }
         }
 

@@ -5,6 +5,7 @@ use std::sync::mpsc::Sender;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Level {
     Error,
     Warning,

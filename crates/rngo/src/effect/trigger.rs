@@ -6,7 +6,7 @@ use chrono::{DateTime, FixedOffset};
 use std::rc::Rc;
 
 #[derive(Clone, Debug)]
-pub enum TriggerConfig {
+pub(super) enum TriggerConfig {
     Effect { key: String },
     ClockHertz(f64),
     ClockExpression(String),
@@ -19,7 +19,7 @@ pub struct TriggerEvent {
 }
 
 #[derive(Debug)]
-pub enum Trigger {
+pub(super) enum Trigger {
     Effect {
         run_log_reader: Rc<dyn RunLogReader>,
         key: String,
@@ -34,7 +34,7 @@ pub enum Trigger {
 }
 
 impl Trigger {
-    pub fn next_offset(&self) -> Option<i64> {
+    pub(super) fn next_offset(&self) -> Option<i64> {
         match &self {
             Trigger::Clock { clock, next } => match next.as_ref()? {
                 Ok(offset) => Some(*offset),
@@ -54,7 +54,7 @@ impl Trigger {
     }
 
     /// Takes the next trigger event, or the error that stops this trigger for good.
-    pub fn pull(&mut self) -> Option<Result<TriggerEvent, RunError>> {
+    pub(super) fn pull(&mut self) -> Option<Result<TriggerEvent, RunError>> {
         match self {
             Trigger::Effect {
                 run_log_reader: event_run_log,

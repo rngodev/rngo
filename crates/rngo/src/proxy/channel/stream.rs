@@ -21,7 +21,7 @@ const READER_JOIN_GRACE: Duration = Duration::from_millis(200);
 const STDERR_TAIL_LINES: usize = 5;
 
 #[derive(Debug)]
-pub struct Stream {
+pub(crate) struct Stream {
     channel_key: String,
     format: Option<Rc<dyn Format>>,
     child: Child,
@@ -54,11 +54,12 @@ impl Stream {
         })
     }
 
-    pub fn parser() -> StreamParser {
+    pub(crate) fn parser() -> StreamParser {
         StreamParser {}
     }
 
-    pub fn builder() -> StreamBuilder {
+    #[cfg(test)]
+    pub(crate) fn builder() -> StreamBuilder {
         StreamBuilder::default()
     }
 }
@@ -133,28 +134,23 @@ impl Drop for Stream {
 }
 
 #[derive(Default)]
-pub struct StreamBuilder {
+pub(crate) struct StreamBuilder {
     command: Option<String>,
     format: Option<Rc<dyn Format>>,
 }
 
 impl StreamBuilder {
-    pub fn format(mut self, format: impl Format + 'static) -> Self {
-        self.set_format(Rc::new(format));
-        self
-    }
-
-    pub fn set_format(&mut self, format: Rc<dyn Format>) -> &mut Self {
+    pub(crate) fn set_format(&mut self, format: Rc<dyn Format>) -> &mut Self {
         self.format = Some(format);
         self
     }
 
-    pub fn command(mut self, value: impl Into<String>) -> Self {
+    pub(crate) fn command(mut self, value: impl Into<String>) -> Self {
         self.set_command(value);
         self
     }
 
-    pub fn set_command(&mut self, value: impl Into<String>) -> &mut Self {
+    pub(crate) fn set_command(&mut self, value: impl Into<String>) -> &mut Self {
         self.command = Some(value.into());
         self
     }
@@ -238,7 +234,7 @@ fn spawn_reader(
     })
 }
 
-pub struct StreamParser {}
+pub(crate) struct StreamParser {}
 
 impl ChannelParser for StreamParser {
     fn key(&self) -> &str {

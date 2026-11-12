@@ -10,17 +10,17 @@ pub(crate) mod reference;
 pub(crate) mod select;
 pub(crate) mod string;
 
-pub use array::Array;
+pub(crate) use array::Array;
 use chrono::{DateTime, FixedOffset};
-pub use constant::Constant;
-pub use context::Context;
-pub use function::Function;
-pub use json_pointer::{JsonPointer, JsonPointerPart};
-pub use number::Number;
-pub use object::Object;
-pub use reference::Reference;
-pub use select::Select;
-pub use string::Str;
+pub(crate) use constant::Constant;
+pub(crate) use context::Context;
+pub(crate) use function::Function;
+pub(crate) use json_pointer::{JsonPointer, JsonPointerPart};
+pub(crate) use number::Number;
+pub(crate) use object::Object;
+pub(crate) use reference::Reference;
+pub(crate) use select::Select;
+pub(crate) use string::Str;
 
 use crate::build::BuildError;
 use crate::effect::TriggerEvent;

@@ -2,9 +2,9 @@ pub(crate) mod exec;
 pub(crate) mod stdout;
 pub(crate) mod stream;
 
-pub use exec::Exec;
-pub use stdout::Stdout;
-pub use stream::Stream;
+pub(crate) use exec::Exec;
+pub(crate) use stdout::Stdout;
+pub(crate) use stream::Stream;
 
 use crate::effect::Input;
 use crate::proxy::format::Format;

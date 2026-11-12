@@ -10,13 +10,13 @@ use rand_pcg::Pcg32;
 use std::rc::Rc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Cursor {
+pub(crate) enum Cursor {
     Random,
     Unique,
 }
 
 #[derive(Debug)]
-pub struct Reference {
+pub(crate) struct Reference {
     event_run_log: Rc<dyn RunLogReader>,
     key: String,
     cursor: Cursor,
@@ -25,14 +25,14 @@ pub struct Reference {
 }
 
 impl Reference {
-    pub fn builder() -> ReferenceBuilder {
+    pub(crate) fn builder() -> ReferenceBuilder {
         ReferenceBuilder {
             effect: None,
             cursor: Cursor::Random,
         }
     }
 
-    pub fn parser() -> ReferenceParser {
+    pub(crate) fn parser() -> ReferenceParser {
         ReferenceParser {}
     }
 }
@@ -71,28 +71,24 @@ impl Generator for Reference {
 }
 
 #[derive(Debug)]
-pub struct ReferenceBuilder {
+pub(crate) struct ReferenceBuilder {
     effect: Option<String>,
     cursor: Cursor,
 }
 
 impl ReferenceBuilder {
-    pub fn effect(mut self, effect: impl Into<String>) -> Self {
+    #[cfg(test)]
+    pub(crate) fn effect(mut self, effect: impl Into<String>) -> Self {
         self.set_effect(effect);
         self
     }
 
-    pub fn set_effect(&mut self, effect: impl Into<String>) -> &mut Self {
+    pub(crate) fn set_effect(&mut self, effect: impl Into<String>) -> &mut Self {
         self.effect = Some(effect.into());
         self
     }
 
-    pub fn cursor(mut self, cursor: Cursor) -> Self {
-        self.set_cursor(cursor);
-        self
-    }
-
-    pub fn set_cursor(&mut self, cursor: Cursor) -> &mut Self {
+    pub(crate) fn set_cursor(&mut self, cursor: Cursor) -> &mut Self {
         self.cursor = cursor;
         self
     }
@@ -116,7 +112,7 @@ impl GeneratorBuilder for ReferenceBuilder {
     }
 }
 
-pub struct ReferenceParser {}
+pub(crate) struct ReferenceParser {}
 
 impl GeneratorParser for ReferenceParser {
     fn key(&self) -> &str {

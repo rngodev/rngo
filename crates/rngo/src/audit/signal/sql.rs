@@ -1,5 +1,8 @@
-use super::{Signal, SignalBuilder, SignalOutcome};
+#[cfg(test)]
+use super::SignalBuilder;
+use super::{Signal, SignalOutcome};
 use crate::audit::signal::{CelExpectation, SignalEval};
+#[cfg(test)]
 use crate::build::BuildError;
 use crate::cel::json_to_cel;
 use crate::parse::SignalParser;
@@ -8,18 +11,19 @@ use crate::{RunLogReader, SignalError};
 use cel::{Context, Program};
 
 #[derive(Debug)]
-pub struct SqlSignal {
+pub(crate) struct SqlSignal {
     key: String,
     query: String,
     expectation: Option<super::CelExpectation>,
 }
 
 impl SqlSignal {
-    pub fn parser() -> SqlSignalParser {
+    pub(crate) fn parser() -> SqlSignalParser {
         SqlSignalParser {}
     }
 
-    pub fn builder() -> SqlSignalBuilder {
+    #[cfg(test)]
+    pub(crate) fn builder() -> SqlSignalBuilder {
         SqlSignalBuilder::default()
     }
 }
@@ -80,7 +84,7 @@ fn evaluate_expect(
     })
 }
 
-pub struct SqlSignalParser;
+pub(crate) struct SqlSignalParser;
 
 impl SignalParser for SqlSignalParser {
     fn key(&self) -> &str {
@@ -130,34 +134,41 @@ impl SignalParser for SqlSignalParser {
     }
 }
 
+#[cfg(test)]
 #[derive(Debug, Default)]
-pub struct SqlSignalBuilder {
+pub(crate) struct SqlSignalBuilder {
     query: Option<String>,
     expect: Option<String>,
 }
 
+#[cfg(test)]
 impl SqlSignalBuilder {
-    pub fn query(mut self, query: impl Into<String>) -> Self {
+    #[cfg(test)]
+    pub(crate) fn query(mut self, query: impl Into<String>) -> Self {
         self.set_query(query);
         self
     }
 
-    pub fn set_query(&mut self, query: impl Into<String>) -> &mut Self {
+    #[cfg(test)]
+    pub(crate) fn set_query(&mut self, query: impl Into<String>) -> &mut Self {
         self.query = Some(query.into());
         self
     }
 
-    pub fn expect(mut self, expect: impl Into<String>) -> Self {
+    #[cfg(test)]
+    pub(crate) fn expect(mut self, expect: impl Into<String>) -> Self {
         self.set_expect(expect);
         self
     }
 
-    pub fn set_expect(&mut self, expect: impl Into<String>) -> &mut Self {
+    #[cfg(test)]
+    pub(crate) fn set_expect(&mut self, expect: impl Into<String>) -> &mut Self {
         self.expect = Some(expect.into());
         self
     }
 }
 
+#[cfg(test)]
 impl SignalBuilder for SqlSignalBuilder {
     fn build(self: Box<Self>, key: &str) -> Result<Box<dyn Signal>, Vec<BuildError>> {
         let Some(query) = self.query else {

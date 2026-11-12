@@ -40,6 +40,8 @@ The workspace has two crates:
 - `crates/rngo` (`rngo`) — core simulation library, published as the public library crate
 - `crates/cli` (`rngo-cli`) — CLI binary that wires the library to the filesystem and subprocesses
 
+The public API of `rngo` is the set of `pub use` re-exports in `crates/rngo/src/lib.rs` plus the `spec` and `error` modules, listed in `crates/rngo/README.md`; keep the two in sync. Everything else is `pub(crate)` (`#![warn(unreachable_pub)]` flags leaks). Public enums and `spec` structs are `#[non_exhaustive]`, so match them with a wildcard arm. CI runs `cargo-semver-checks` on `rngo`. `build.rs` is crate-private: its factory functions (and the builder setters only they use) are `#[cfg(test)]`, so tests that use the builder DSL live in `crates/rngo/src/tests/` rather than `crates/rngo/tests/`, which can only reach the public API.
+
 `rngo-cli` is a library (`src/lib.rs`: `eval`, `init`, `skills`) plus a thin `main.rs` that only parses arguments and handles signals, so `crates/cli/tests/` can call `eval()` directly with custom `EvalOptions`. End-to-end `eval` tests live in `tests/eval.rs`; unit tests of private code stay in their modules.
 
 ### Data flow

@@ -10,7 +10,7 @@ use rand::RngExt;
 use rand_pcg::Pcg32;
 
 #[derive(Debug)]
-pub struct Array {
+pub(crate) struct Array {
     rng: Pcg32,
     min_items: usize,
     max_items: usize,
@@ -18,7 +18,7 @@ pub struct Array {
 }
 
 impl Array {
-    pub fn builder() -> ArrayBuilder {
+    pub(crate) fn builder() -> ArrayBuilder {
         ArrayBuilder {
             min_items: 0,
             max_items: usize::MAX,
@@ -26,45 +26,45 @@ impl Array {
         }
     }
 
-    pub fn parser() -> ArrayParser {
+    pub(crate) fn parser() -> ArrayParser {
         ArrayParser {}
     }
 }
 
 #[derive(Debug)]
-pub struct ArrayBuilder {
+pub(crate) struct ArrayBuilder {
     min_items: usize,
     max_items: usize,
     items_builder: Option<Box<dyn GeneratorBuilder>>,
 }
 
 impl ArrayBuilder {
-    pub fn min_items(mut self, value: usize) -> Self {
+    pub(crate) fn min_items(mut self, value: usize) -> Self {
         self.set_min_items(value);
         self
     }
 
-    pub fn set_min_items(&mut self, value: usize) -> &mut Self {
+    pub(crate) fn set_min_items(&mut self, value: usize) -> &mut Self {
         self.min_items = value;
         self
     }
 
-    pub fn max_items(mut self, value: usize) -> Self {
+    pub(crate) fn max_items(mut self, value: usize) -> Self {
         self.set_max_items(value);
         self
     }
 
-    pub fn set_max_items(&mut self, value: usize) -> &mut Self {
+    pub(crate) fn set_max_items(&mut self, value: usize) -> &mut Self {
         self.max_items = value;
         self
     }
 
-    pub fn items(mut self, builder: impl GeneratorBuilder + 'static) -> Self {
+    pub(crate) fn items(mut self, builder: impl GeneratorBuilder + 'static) -> Self {
         self.set_items(builder);
         self
     }
 
-    pub fn set_items(&mut self, builder: impl GeneratorBuilder + 'static) -> &mut Self {
+    pub(crate) fn set_items(&mut self, builder: impl GeneratorBuilder + 'static) -> &mut Self {
         self.items_builder = Some(Box::new(builder));
         self
     }
@@ -121,7 +121,7 @@ impl Generator for Array {
     }
 }
 
-pub struct ArrayParser {}
+pub(crate) struct ArrayParser {}
 
 impl GeneratorParser for ArrayParser {
     fn key(&self) -> &str {

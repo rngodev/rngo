@@ -10,25 +10,25 @@ use rand_pcg::Pcg32;
 use serde::Deserialize;
 
 #[derive(Debug)]
-pub struct Select {
+pub(crate) struct Select {
     rng: Pcg32,
     properties: Vec<SelectProperty>,
 }
 
 impl Select {
-    pub fn builder() -> SelectBuilder {
+    pub(crate) fn builder() -> SelectBuilder {
         SelectBuilder {
             option_builders: vec![],
         }
     }
 
-    pub fn parser() -> SelectParser {
+    pub(crate) fn parser() -> SelectParser {
         SelectParser {}
     }
 }
 
 #[derive(Debug)]
-pub struct SelectProperty {
+pub(crate) struct SelectProperty {
     pub generator: Box<dyn Generator>,
     pub weight: u32,
 }
@@ -57,17 +57,18 @@ impl Generator for Select {
 }
 
 #[derive(Debug)]
-pub struct SelectBuilder {
+pub(crate) struct SelectBuilder {
     option_builders: Vec<(u32, Box<dyn GeneratorBuilder>)>,
 }
 
 impl SelectBuilder {
-    pub fn option(mut self, weight: u32, builder: impl GeneratorBuilder + 'static) -> Self {
+    #[cfg(test)]
+    pub(crate) fn option(mut self, weight: u32, builder: impl GeneratorBuilder + 'static) -> Self {
         self.set_option(weight, builder);
         self
     }
 
-    pub fn set_option(
+    pub(crate) fn set_option(
         &mut self,
         weight: u32,
         builder: impl GeneratorBuilder + 'static,
@@ -117,7 +118,7 @@ struct OptionSpec {
     generator: spec::Generator,
 }
 
-pub struct SelectParser {}
+pub(crate) struct SelectParser {}
 
 impl GeneratorParser for SelectParser {
     fn key(&self) -> &str {

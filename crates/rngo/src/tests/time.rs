@@ -1,6 +1,7 @@
+use crate::build::*;
+use crate::moment::Moment;
+use crate::{BuildError, Dialect, EffectKey, Simulation, SimulationBuilder};
 use chrono::{DateTime, FixedOffset, TimeDelta};
-use rngo::build::*;
-use rngo::{BuildError, Dialect, EffectKey, Moment, Simulation, SimulationBuilder};
 use serde_json::Value;
 
 fn start() -> DateTime<FixedOffset> {
@@ -33,7 +34,7 @@ fn simulation_respects_end_time() {
 
     let offsets = offsets_in_seconds(
         builder
-            .run_log_reader(rngo::SimpleEventRunLog::new())
+            .run_log_reader(crate::SimpleEventRunLog::new())
             .build()
             .unwrap(),
         60,
@@ -65,7 +66,7 @@ fn effect_respects_start_time() {
 
     let offsets = offsets_in_seconds(
         builder
-            .run_log_reader(rngo::SimpleEventRunLog::new())
+            .run_log_reader(crate::SimpleEventRunLog::new())
             .build()
             .unwrap(),
         60,
@@ -109,7 +110,7 @@ fn effect_respects_end_time_via_spec() {
     let sim = Dialect::primitive()
         .parse_simulation_json(spec)
         .unwrap()
-        .run_log_reader(rngo::SimpleEventRunLog::new())
+        .run_log_reader(crate::SimpleEventRunLog::new())
         .build()
         .unwrap();
 
@@ -160,7 +161,7 @@ fn effect_respects_both_start_and_end() {
     let sim = Dialect::primitive()
         .parse_simulation_json(spec)
         .unwrap()
-        .run_log_reader(rngo::SimpleEventRunLog::new())
+        .run_log_reader(crate::SimpleEventRunLog::new())
         .build()
         .unwrap();
 
@@ -220,7 +221,7 @@ fn an_effect_without_a_start_is_an_error() {
     });
 
     let errors = builder
-        .run_log_reader(rngo::SimpleEventRunLog::new())
+        .run_log_reader(crate::SimpleEventRunLog::new())
         .build()
         .unwrap_err();
 
@@ -240,7 +241,7 @@ fn an_effect_without_an_end_or_limit_is_an_error() {
     });
 
     let errors = builder
-        .run_log_reader(rngo::SimpleEventRunLog::new())
+        .run_log_reader(crate::SimpleEventRunLog::new())
         .build()
         .unwrap_err();
 
@@ -264,7 +265,7 @@ fn an_effect_in_an_unknown_prototype_runs_on_its_own_values() {
     });
 
     let inputs = builder
-        .run_log_reader(rngo::SimpleEventRunLog::new())
+        .run_log_reader(crate::SimpleEventRunLog::new())
         .build()
         .unwrap()
         .filter_map(|step| step.unwrap().into_input())
@@ -299,7 +300,7 @@ fn context_sim_start_is_the_origin_and_clock_now_is_the_timestamp() {
     let sim = Dialect::primitive()
         .parse_simulation_json(spec)
         .unwrap()
-        .run_log_reader(rngo::SimpleEventRunLog::new())
+        .run_log_reader(crate::SimpleEventRunLog::new())
         .build()
         .unwrap();
     let inputs: Vec<_> = sim.filter_map(|step| step.unwrap().into_input()).collect();
@@ -326,7 +327,7 @@ fn context_sim_end_is_no_longer_a_path() {
     let result = Dialect::primitive()
         .parse_simulation_json(spec)
         .unwrap()
-        .run_log_reader(rngo::SimpleEventRunLog::new())
+        .run_log_reader(crate::SimpleEventRunLog::new())
         .build();
     assert!(result.is_err());
 }

@@ -22,24 +22,24 @@ impl<T> Default for InputPool<T> {
 
 impl<T: Clone> InputPool<T> {
     /// Whether `track` has been called for `effect`.
-    pub fn is_tracked(&self, effect: &str) -> bool {
+    pub(super) fn is_tracked(&self, effect: &str) -> bool {
         self.effects.contains_key(effect)
     }
 
     /// Starts tracking `effect`, seeded with its existing `items` in push order.
-    pub fn track(&mut self, effect: &str, items: Vec<T>) {
+    pub(super) fn track(&mut self, effect: &str, items: Vec<T>) {
         self.effects.insert(effect.to_string(), items);
     }
 
     /// Appends `item` to `effect`'s inputs; ignored if `effect` isn't tracked.
-    pub fn push(&mut self, effect: &str, item: T) {
+    pub(super) fn push(&mut self, effect: &str, item: T) {
         if let Some(items) = self.effects.get_mut(effect) {
             items.push(item);
         }
     }
 
     /// `effect`'s most recently pushed input.
-    pub fn last(&self, effect: &str) -> Option<T> {
+    pub(super) fn last(&self, effect: &str) -> Option<T> {
         self.items(effect).last().cloned()
     }
 
@@ -49,7 +49,7 @@ impl<T: Clone> InputPool<T> {
     }
 
     /// A uniformly random input of `effect`, or `None` if it has none.
-    pub fn random(&self, effect: &str, rng: &mut Pcg32) -> Option<T> {
+    pub(super) fn random(&self, effect: &str, rng: &mut Pcg32) -> Option<T> {
         let items = self.items(effect);
         if items.is_empty() {
             return None;
@@ -60,7 +60,7 @@ impl<T: Clone> InputPool<T> {
 
     /// Consumes and returns a uniformly random input of `effect` that `cursor` hasn't consumed
     /// yet, or `None` if none remain.
-    pub fn take(&mut self, effect: &str, cursor: &str, rng: &mut Pcg32) -> Option<T> {
+    pub(super) fn take(&mut self, effect: &str, cursor: &str, rng: &mut Pcg32) -> Option<T> {
         let remaining = self.remaining(effect, cursor);
         if remaining == 0 {
             return None;
@@ -105,7 +105,7 @@ impl<T: Clone + Ord> InputPool<T> {
     /// Records `item` as consumed by `cursor` without returning it; ignored if `item` isn't one of
     /// `effect`'s inputs. Used to replay prior draws when reopening a log. Assumes `effect`'s
     /// inputs were pushed in increasing order, and must not be called twice for the same item.
-    pub fn mark(&mut self, effect: &str, cursor: &str, item: &T) {
+    pub(super) fn mark(&mut self, effect: &str, cursor: &str, item: &T) {
         if let Ok(position) = self.items(effect).binary_search(item) {
             self.consumed(effect, cursor).mark(position);
         }

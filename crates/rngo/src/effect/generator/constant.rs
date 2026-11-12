@@ -6,16 +6,16 @@ use crate::spec::ParseError;
 use serde_json::Value;
 
 #[derive(Debug)]
-pub struct Constant {
+pub(crate) struct Constant {
     value: Value,
 }
 
 impl Constant {
-    pub fn builder() -> ConstantBuilder {
+    pub(crate) fn builder() -> ConstantBuilder {
         ConstantBuilder { value: None }
     }
 
-    pub fn parser() -> ConstantParser {
+    pub(crate) fn parser() -> ConstantParser {
         ConstantParser {}
     }
 }
@@ -27,17 +27,18 @@ impl Generator for Constant {
 }
 
 #[derive(Debug)]
-pub struct ConstantBuilder {
+pub(crate) struct ConstantBuilder {
     value: Option<Value>,
 }
 
 impl ConstantBuilder {
-    pub fn value(mut self, value: impl Into<Value>) -> Self {
+    #[cfg(test)]
+    pub(crate) fn value(mut self, value: impl Into<Value>) -> Self {
         self.set_value(value);
         self
     }
 
-    pub fn set_value(&mut self, value: impl Into<Value>) -> &mut Self {
+    pub(crate) fn set_value(&mut self, value: impl Into<Value>) -> &mut Self {
         self.value = Some(value.into());
         self
     }
@@ -55,7 +56,7 @@ impl GeneratorBuilder for ConstantBuilder {
     }
 }
 
-pub struct ConstantParser {}
+pub(crate) struct ConstantParser {}
 
 impl GeneratorParser for ConstantParser {
     fn key(&self) -> &str {

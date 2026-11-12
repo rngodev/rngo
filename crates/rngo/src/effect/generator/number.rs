@@ -7,7 +7,7 @@ use rand::RngExt;
 use rand_pcg::Pcg32;
 
 #[derive(Debug)]
-pub struct Number {
+pub(crate) struct Number {
     rng: Pcg32,
     sampling: Sampling,
     scale: Option<u32>,
@@ -29,7 +29,7 @@ enum Sampling {
 }
 
 impl Number {
-    pub fn builder() -> NumberBuilder {
+    pub(crate) fn builder() -> NumberBuilder {
         NumberBuilder {
             minimum: None,
             maximum: None,
@@ -38,7 +38,7 @@ impl Number {
         }
     }
 
-    pub fn parser() -> NumberParser {
+    pub(crate) fn parser() -> NumberParser {
         NumberParser {}
     }
 }
@@ -95,7 +95,7 @@ fn finite(mut draw: impl FnMut() -> f64) -> f64 {
 }
 
 #[derive(Debug)]
-pub struct NumberBuilder {
+pub(crate) struct NumberBuilder {
     minimum: Option<f64>,
     maximum: Option<f64>,
     scale: Option<u32>,
@@ -103,42 +103,46 @@ pub struct NumberBuilder {
 }
 
 impl NumberBuilder {
-    pub fn minimum(mut self, minimum: impl Into<f64>) -> Self {
+    #[cfg(test)]
+    pub(crate) fn minimum(mut self, minimum: impl Into<f64>) -> Self {
         self.set_minimum(minimum);
         self
     }
 
-    pub fn set_minimum(&mut self, minimum: impl Into<f64>) -> &mut Self {
+    pub(crate) fn set_minimum(&mut self, minimum: impl Into<f64>) -> &mut Self {
         self.minimum = Some(minimum.into());
         self
     }
 
-    pub fn maximum(mut self, maximum: impl Into<f64>) -> Self {
+    #[cfg(test)]
+    pub(crate) fn maximum(mut self, maximum: impl Into<f64>) -> Self {
         self.set_maximum(maximum);
         self
     }
 
-    pub fn set_maximum(&mut self, maximum: impl Into<f64>) -> &mut Self {
+    pub(crate) fn set_maximum(&mut self, maximum: impl Into<f64>) -> &mut Self {
         self.maximum = Some(maximum.into());
         self
     }
 
-    pub fn scale(mut self, scale: u32) -> Self {
+    #[cfg(test)]
+    pub(crate) fn scale(mut self, scale: u32) -> Self {
         self.set_scale(scale);
         self
     }
 
-    pub fn set_scale(&mut self, scale: u32) -> &mut Self {
+    pub(crate) fn set_scale(&mut self, scale: u32) -> &mut Self {
         self.scale = Some(scale);
         self
     }
 
-    pub fn step(mut self, step: impl Into<f64>) -> Self {
+    #[cfg(test)]
+    pub(crate) fn step(mut self, step: impl Into<f64>) -> Self {
         self.set_step(step);
         self
     }
 
-    pub fn set_step(&mut self, step: impl Into<f64>) -> &mut Self {
+    pub(crate) fn set_step(&mut self, step: impl Into<f64>) -> &mut Self {
         self.step = Some(step.into());
         self
     }
@@ -205,7 +209,7 @@ fn sampling(
     }
 }
 
-pub struct NumberParser {}
+pub(crate) struct NumberParser {}
 
 impl GeneratorParser for NumberParser {
     fn key(&self) -> &str {

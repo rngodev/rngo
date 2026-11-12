@@ -9,18 +9,18 @@ use indexmap::IndexMap;
 use serde_json::Map;
 
 #[derive(Debug)]
-pub struct Object {
+pub(crate) struct Object {
     properties: IndexMap<String, Box<dyn Generator>>,
 }
 
 impl Object {
-    pub fn builder() -> ObjectBuilder {
+    pub(crate) fn builder() -> ObjectBuilder {
         ObjectBuilder {
             property_builders: IndexMap::new(),
         }
     }
 
-    pub fn parser() -> ObjectParser {
+    pub(crate) fn parser() -> ObjectParser {
         ObjectParser {}
     }
 }
@@ -53,12 +53,12 @@ impl Generator for Object {
 }
 
 #[derive(Debug)]
-pub struct ObjectBuilder {
+pub(crate) struct ObjectBuilder {
     property_builders: IndexMap<String, Box<dyn GeneratorBuilder>>,
 }
 
 impl ObjectBuilder {
-    pub fn set_property(
+    pub(crate) fn set_property(
         &mut self,
         key: &str,
         builder: impl GeneratorBuilder + 'static,
@@ -67,7 +67,8 @@ impl ObjectBuilder {
         self
     }
 
-    pub fn property(mut self, key: &str, builder: impl GeneratorBuilder + 'static) -> Self {
+    #[cfg(test)]
+    pub(crate) fn property(mut self, key: &str, builder: impl GeneratorBuilder + 'static) -> Self {
         self.set_property(key, builder);
         self
     }
@@ -99,7 +100,7 @@ impl GeneratorBuilder for ObjectBuilder {
     }
 }
 
-pub struct ObjectParser {}
+pub(crate) struct ObjectParser {}
 
 impl GeneratorParser for ObjectParser {
     fn key(&self) -> &str {
