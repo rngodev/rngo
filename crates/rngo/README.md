@@ -13,6 +13,7 @@ A **spec** describes the behavior of a system using the following components:
 These items are the supported public API; everything else is private and may change in any release:
 
 - `build`: the builder DSL below, i.e. the generator, channel, format and signal constructors (`object()`, `stream()`, `sql_format()`, `sql_signal()`, ...), their builder types, and `EffectBuilder`, `PrototypeBuilder`, `Moment`, `Bound`, `SignalBuilder`
+- `generator`: the extension API for writing your own generators in Rust: implement `Generator` and `GeneratorBuilder`, then pass the builder to `EffectBuilder::generator` or nest it in another builder. It also holds the types those traits use: `GeneratorContext`, `GeneratorResult`, `GeneratorBuildVisitor`, `GeneratorEdge`, `Metadata`, `TriggerEvent` and `JsonPointer`. The built-in generators themselves are private; use their builders in `build`.
 - `spec`: `Spec` and `from_value`, for JSON or YAML specs
 - `Dialect`: parses a `Spec` into the builders below
 - `SimulationBuilder`, `Simulation`, `StandaloneSimulation`, `ProxyBuilder`, `Proxy`, `StopHandle`, `AuditBuilder`, `Audit`, `AuditReport`
@@ -20,7 +21,7 @@ These items are the supported public API; everything else is private and may cha
 - `Input`, `SkippedInput`, `Step`, `Metadata`, `Output`, `Level`, `SignalOutcome`
 - `error`: `ParseError`, `ParseErrorKind`, `BuildError`, `RunError`, `RunLogError`, `FormatError`, `ChannelError`, `ProxyError`, `SignalError`, `EffectKey`, `SimulationKey`
 
-Public enums and spec structs are `#[non_exhaustive]`, so they can gain variants and fields without a breaking change.
+Public enums, spec structs, and the structs the crate hands to generators (`GeneratorContext`, `GeneratorBuildVisitor`, `TriggerEvent`) are `#[non_exhaustive]`, so they can gain variants and fields without a breaking change.
 
 ## DSL
 

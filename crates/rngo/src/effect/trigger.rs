@@ -12,6 +12,7 @@ pub(super) enum TriggerConfig {
     ClockExpression(String),
 }
 
+#[non_exhaustive]
 pub struct TriggerEvent {
     /// Milliseconds since simulation start.
     pub sim_offset: i64,

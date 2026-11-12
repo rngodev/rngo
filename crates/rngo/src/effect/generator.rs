@@ -15,7 +15,7 @@ use chrono::{DateTime, FixedOffset};
 pub(crate) use constant::Constant;
 pub(crate) use context::Context;
 pub(crate) use function::Function;
-pub(crate) use json_pointer::{JsonPointer, JsonPointerPart};
+pub use json_pointer::{JsonPointer, JsonPointerPart};
 pub(crate) use number::Number;
 pub(crate) use object::Object;
 pub(crate) use reference::Reference;
@@ -23,7 +23,7 @@ pub(crate) use select::Select;
 pub(crate) use string::Str;
 
 use crate::build::BuildError;
-use crate::effect::TriggerEvent;
+pub use crate::effect::TriggerEvent;
 use crate::log::RunLogReader;
 use rand_pcg::Pcg32;
 use rand_seeder::Seeder;
@@ -42,6 +42,7 @@ pub struct GeneratorEdge {
     pub key: String,
 }
 
+#[non_exhaustive]
 pub struct GeneratorContext<'a> {
     pub trigger: &'a TriggerEvent,
     /// The instant sim offsets are measured from.
@@ -90,6 +91,7 @@ impl GeneratorBuilder for Box<dyn GeneratorBuilder> {
     }
 }
 
+#[non_exhaustive]
 pub struct GeneratorBuildVisitor {
     pub event_run_log: Rc<dyn RunLogReader>,
     pub simulation_seed: u64,

@@ -1,6 +1,6 @@
 pub(crate) mod bound;
 mod clock;
-pub(crate) mod generator;
+pub mod generator;
 pub(crate) mod prototype;
 pub(crate) mod simulation;
 mod trigger;
@@ -23,7 +23,7 @@ use std::num::NonZeroU64;
 use std::rc::Rc;
 use trigger::{Trigger, TriggerConfig};
 
-pub(crate) use trigger::TriggerEvent;
+pub use trigger::TriggerEvent;
 
 #[derive(Debug)]
 pub struct Effect {

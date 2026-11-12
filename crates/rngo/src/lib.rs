@@ -1,6 +1,6 @@
 //! Core simulation library for rngo.
 //!
-//! The supported public API is the re-exports below plus the `build`, `spec` and `error` modules;
+//! The supported public API is the re-exports below plus the `build`, `generator`, `spec` and `error` modules;
 //! see the README for the list. Everything else is private.
 #![warn(unreachable_pub)]
 mod audit;
@@ -17,7 +17,7 @@ pub mod spec;
 pub use audit::signal::SignalOutcome;
 pub use audit::{Audit, AuditBuilder, AuditReport};
 pub use effect::simulation::{Simulation, SimulationBuilder, StandaloneSimulation};
-pub use effect::{Input, SkippedInput, Step};
+pub use effect::{Input, SkippedInput, Step, generator};
 pub use error::{
     BuildError, ChannelError, EffectKey, FormatError, ParseError, ParseErrorKind, ProxyError,
     RunError, RunLogError, SignalError, SimulationKey,
