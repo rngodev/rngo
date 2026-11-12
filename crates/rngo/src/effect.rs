@@ -5,6 +5,7 @@ pub mod prototype;
 pub mod simulation;
 mod trigger;
 
+use crate::RunError;
 use crate::build::{BuildError, EffectKey};
 use crate::effect::bound::{Bound, BoundKind};
 use crate::effect::prototype::Prototype;
@@ -86,12 +87,15 @@ impl Effect {
 }
 
 impl Iterator for Effect {
-    type Item = Result<Input, SkippedInput>;
+    type Item = Result<Step, RunError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.next_offset()?;
 
-        let trigger_event = self.trigger.pull()?;
+        let trigger_event = match self.trigger.pull()? {
+            Ok(trigger_event) => trigger_event,
+            Err(error) => return Some(Err(error)),
+        };
         let context = GeneratorContext {
             trigger: &trigger_event,
             origin: self.origin,
@@ -104,19 +108,38 @@ impl Iterator for Effect {
             let last_id = self.run_log_reader.last().map(|e| e.id).unwrap_or(0);
             self.produced += 1;
 
-            Some(Ok(Input {
+            Some(Ok(Step::Input(Input {
                 id: last_id + 1,
                 effect: self.key.clone(),
                 timestamp,
                 data,
                 metadata: result.metadata,
-            }))
+            })))
         } else {
-            Some(Err(SkippedInput {
+            Some(Ok(Step::Skipped(SkippedInput {
                 effect: self.key.clone(),
                 timestamp,
                 metadata: result.metadata,
-            }))
+            })))
+        }
+    }
+}
+
+/// What an effect did each time it fired.
+#[derive(Debug, Clone)]
+pub enum Step {
+    /// It produced an input.
+    Input(Input),
+    /// Its generator produced no value, so the attempt was skipped.
+    Skipped(SkippedInput),
+}
+
+impl Step {
+    /// The input, if the effect produced one.
+    pub fn into_input(self) -> Option<Input> {
+        match self {
+            Step::Input(input) => Some(input),
+            Step::Skipped(_) => None,
         }
     }
 }
@@ -485,8 +508,8 @@ fn build_trigger(
             .start_offset(offset_from(start, origin))
             .build()
             .map(|mut clock| {
-                let next_offset = clock.next();
-                Trigger::Clock { clock, next_offset }
+                let next = clock.next();
+                Trigger::Clock { clock, next }
             })
     };
 
@@ -600,7 +623,11 @@ mod tests {
         let results: Vec<_> = effect.collect();
 
         assert_eq!(results.len(), 3);
-        assert!(results.iter().all(Result::is_ok));
+        assert!(
+            results
+                .iter()
+                .all(|r| matches!(r, Ok(super::Step::Input(_))))
+        );
     }
 
     #[test]
@@ -614,7 +641,15 @@ mod tests {
 
         let results: Vec<_> = effect.collect();
 
-        assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 3);
-        assert_eq!(results.iter().filter(|r| r.is_err()).count(), 3);
+        let inputs = results
+            .iter()
+            .filter(|r| matches!(r, Ok(super::Step::Input(_))))
+            .count();
+        let skipped = results
+            .iter()
+            .filter(|r| matches!(r, Ok(super::Step::Skipped(_))))
+            .count();
+        assert_eq!(inputs, 3);
+        assert_eq!(skipped, 3);
     }
 }

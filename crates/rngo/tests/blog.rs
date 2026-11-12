@@ -10,7 +10,7 @@ fn assert_simulation(simulation_builder: SimulationBuilder) {
     let events: Vec<_> = simulation_builder
         .standalone()
         .unwrap()
-        .flatten()
+        .filter_map(|step| step.unwrap().into_input())
         .take(60)
         .collect();
 

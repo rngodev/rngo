@@ -8,7 +8,7 @@ fn start() -> DateTime<FixedOffset> {
 }
 
 fn offsets_in_seconds(sim: Simulation, take: usize) -> Vec<i64> {
-    sim.flatten()
+    sim.filter_map(|step| step.unwrap().into_input())
         .map(|input| (input.timestamp - start()).num_seconds())
         .take(take)
         .collect()
@@ -114,7 +114,7 @@ fn effect_respects_end_time_via_spec() {
         .unwrap();
 
     let offsets: Vec<i64> = sim
-        .flatten()
+        .filter_map(|step| step.unwrap().into_input())
         .map(|input| (input.timestamp - start()).num_seconds())
         .collect();
 
@@ -165,7 +165,7 @@ fn effect_respects_both_start_and_end() {
         .unwrap();
 
     let offsets: Vec<i64> = sim
-        .flatten()
+        .filter_map(|step| step.unwrap().into_input())
         .map(|input| (input.timestamp - start()).num_seconds())
         .collect();
 
@@ -267,7 +267,7 @@ fn an_effect_in_an_unknown_prototype_runs_on_its_own_values() {
         .run_log_reader(rngo::SimpleEventRunLog::new())
         .build()
         .unwrap()
-        .flatten()
+        .filter_map(|step| step.unwrap().into_input())
         .count();
 
     assert_eq!(inputs, 2);
@@ -302,7 +302,7 @@ fn context_sim_start_is_the_origin_and_clock_now_is_the_timestamp() {
         .run_log_reader(rngo::SimpleEventRunLog::new())
         .build()
         .unwrap();
-    let inputs: Vec<_> = sim.flatten().collect();
+    let inputs: Vec<_> = sim.filter_map(|step| step.unwrap().into_input()).collect();
 
     assert!(!inputs.is_empty());
     for input in inputs {

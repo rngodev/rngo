@@ -1,4 +1,5 @@
 use super::clock::Clock;
+use crate::RunError;
 use crate::effect::Input;
 use crate::log::RunLogReader;
 use chrono::{DateTime, FixedOffset};
@@ -27,14 +28,18 @@ pub enum Trigger {
     },
     Clock {
         clock: Clock,
-        next_offset: Option<i64>,
+        /// The clock's next item: an offset, or the error computing it, which surfaces at the last offset.
+        next: Option<Result<i64, RunError>>,
     },
 }
 
 impl Trigger {
     pub fn next_offset(&self) -> Option<i64> {
         match &self {
-            Trigger::Clock { next_offset, .. } => *next_offset,
+            Trigger::Clock { clock, next } => match next.as_ref()? {
+                Ok(offset) => Some(*offset),
+                Err(_) => Some(clock.last()),
+            },
             Trigger::Effect {
                 run_log_reader: event_run_log,
                 key,
@@ -48,7 +53,8 @@ impl Trigger {
         }
     }
 
-    pub fn pull(&mut self) -> Option<TriggerEvent> {
+    /// Takes the next trigger event, or the error that stops this trigger for good.
+    pub fn pull(&mut self) -> Option<Result<TriggerEvent, RunError>> {
         match self {
             Trigger::Effect {
                 run_log_reader: event_run_log,
@@ -59,28 +65,24 @@ impl Trigger {
                 if let Some(input_event) = event_run_log.last_for_effect(key) {
                     let offset = (input_event.timestamp - *sim_start).num_milliseconds();
                     *last_offset = offset;
-                    Some(TriggerEvent {
+                    Some(Ok(TriggerEvent {
                         sim_offset: offset,
                         input_event: Some(input_event.clone()),
-                    })
+                    }))
                 } else {
                     None
                 }
             }
-            Trigger::Clock { clock, next_offset } => {
-                if let Some(offset) = next_offset {
-                    let event = TriggerEvent {
-                        sim_offset: *offset,
+            Trigger::Clock { clock, next } => match next.take()? {
+                Ok(offset) => {
+                    *next = clock.next();
+                    Some(Ok(TriggerEvent {
+                        sim_offset: offset,
                         input_event: None,
-                    };
-
-                    *next_offset = clock.next();
-
-                    Some(event)
-                } else {
-                    None
+                    }))
                 }
-            }
+                Err(error) => Some(Err(error)),
+            },
         }
     }
 }

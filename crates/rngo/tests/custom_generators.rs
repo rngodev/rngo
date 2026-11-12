@@ -64,7 +64,10 @@ fn resolves_custom_generator_independently_per_effect() {
     }"#;
 
     let simulation = build(json).unwrap();
-    let events: Vec<_> = simulation.flatten().take(20).collect();
+    let events: Vec<_> = simulation
+        .filter_map(|step| step.unwrap().into_input())
+        .take(20)
+        .collect();
 
     assert!(events.iter().any(|e| e.effect == "a"));
     assert!(events.iter().any(|e| e.effect == "b"));
@@ -97,7 +100,10 @@ fn custom_generator_can_reference_another_custom_generator() {
     }"#;
 
     let simulation = build(json).unwrap();
-    let events: Vec<_> = simulation.flatten().take(1).collect();
+    let events: Vec<_> = simulation
+        .filter_map(|step| step.unwrap().into_input())
+        .take(1)
+        .collect();
     assert_eq!(events[0].data, serde_json::json!("x"));
 }
 

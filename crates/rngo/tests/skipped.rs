@@ -1,6 +1,8 @@
 use chrono::TimeDelta;
 use rngo::build::*;
-use rngo::{Input, Metadata, Moment, RunLogWriter, Simulation, SimulationBuilder, SqliteRunLog};
+use rngo::{
+    Input, Metadata, Moment, RunLogWriter, Simulation, SimulationBuilder, SqliteRunLog, Step,
+};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
@@ -12,11 +14,12 @@ fn log_all(simulation: Simulation, log: &impl RunLogWriter) -> Vec<Input> {
     let mut inputs = vec![];
     for item in simulation {
         match item {
-            Ok(input) => {
+            Ok(Step::Input(input)) => {
                 log.push_input(input.clone()).unwrap();
                 inputs.push(input);
             }
-            Err(skipped) => log.push_metadata(Metadata::from(skipped)).unwrap(),
+            Ok(Step::Skipped(skipped)) => log.push_metadata(Metadata::from(skipped)).unwrap(),
+            Err(error) => panic!("{error}"),
         }
     }
     inputs
@@ -82,7 +85,9 @@ fn object_with_a_skipped_property_is_itself_skipped() {
     // time window ends; keep the window short.
     let simulation = simulation_builder.standalone().unwrap();
 
-    let events: Vec<_> = simulation.flatten().collect();
+    let events: Vec<_> = simulation
+        .filter_map(|step| step.unwrap().into_input())
+        .collect();
 
     assert!(
         events.is_empty(),
@@ -104,7 +109,9 @@ fn array_with_a_skipped_item_is_itself_skipped() {
 
     let simulation = simulation_builder.standalone().unwrap();
 
-    let events: Vec<_> = simulation.flatten().collect();
+    let events: Vec<_> = simulation
+        .filter_map(|step| step.unwrap().into_input())
+        .collect();
 
     assert!(
         events.is_empty(),

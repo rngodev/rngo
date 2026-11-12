@@ -28,7 +28,7 @@ fn unlimited_effect_keeps_running_after_limited_effect_stops() {
         .run_log_reader(rngo::SimpleEventRunLog::new())
         .build()
         .unwrap()
-        .flatten()
+        .filter_map(|step| step.unwrap().into_input())
         .collect();
 
     assert_eq!(count_for(&inputs, "limited"), 3);
@@ -57,7 +57,11 @@ fn dependent_effect_stops_after_upstream_limit() {
                 .generator(constant().value(2))
         });
 
-    let inputs: Vec<_> = simulation_builder.standalone().unwrap().flatten().collect();
+    let inputs: Vec<_> = simulation_builder
+        .standalone()
+        .unwrap()
+        .filter_map(|step| step.unwrap().into_input())
+        .collect();
 
     assert_eq!(count_for(&inputs, "upstream"), 4);
     assert_eq!(count_for(&inputs, "downstream"), 4);
@@ -77,7 +81,7 @@ fn run_limit_lower_than_effect_limit_wins() {
         .run_log_reader(rngo::SimpleEventRunLog::new())
         .build()
         .unwrap()
-        .flatten()
+        .filter_map(|step| step.unwrap().into_input())
         .collect();
 
     assert_eq!(inputs.len(), 4);
@@ -97,7 +101,7 @@ fn effect_limit_lower_than_run_limit_wins() {
         .run_log_reader(rngo::SimpleEventRunLog::new())
         .build()
         .unwrap()
-        .flatten()
+        .filter_map(|step| step.unwrap().into_input())
         .collect();
 
     assert_eq!(inputs.len(), 4);
@@ -124,7 +128,7 @@ fn spec_limit_is_applied() {
         .run_log_reader(rngo::SimpleEventRunLog::new())
         .build()
         .unwrap()
-        .flatten()
+        .filter_map(|step| step.unwrap().into_input())
         .collect();
 
     assert_eq!(inputs.len(), 5);

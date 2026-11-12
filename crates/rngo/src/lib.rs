@@ -15,10 +15,10 @@ pub use effect::bound::{Bound, BoundKind, BoundValue};
 pub use effect::generator::GeneratorEdge;
 pub use effect::prototype::{Prototype, PrototypeBuilder};
 pub use effect::simulation::{Simulation, SimulationBuilder, StandaloneSimulation};
-pub use effect::{Effect, EffectBuilder, Input, SkippedInput, generator};
+pub use effect::{Effect, EffectBuilder, Input, SkippedInput, Step, generator};
 pub use error::{
     BuildError, ChannelError, EffectKey, FormatError, ParseError, ParseErrorKind, ProxyError,
-    RunLogError, SignalError, SimulationKey,
+    RunError, RunLogError, SignalError, SimulationKey,
 };
 pub use log::{Metadata, RunLogReader, RunLogWriter, SimpleEventRunLog, SqliteRunLog};
 pub use moment::Moment;

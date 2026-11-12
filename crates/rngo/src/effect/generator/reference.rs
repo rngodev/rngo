@@ -130,9 +130,9 @@ impl GeneratorParser for ReferenceParser {
         let mut builder = Reference::builder();
         let mut errors = vec![];
 
-        match visitor.spec().fields.get("effect") {
-            Some(k) if k.is_string() => {
-                builder.set_effect(k.as_str().unwrap().to_string());
+        match visitor.spec().fields.get("effect").map(|v| v.as_str()) {
+            Some(Some(effect)) => {
+                builder.set_effect(effect.to_string());
             }
             Some(_) => errors.push(visitor.invalid("effect must be a string")),
             None => errors.push(visitor.invalid("effect must be specified")),

@@ -428,7 +428,7 @@ mod tests {
             .unwrap()
             .standalone()
             .unwrap()
-            .flatten()
+            .filter_map(|step| step.unwrap().into_input())
             .map(|input| input.data)
             .take(5)
             .collect()
