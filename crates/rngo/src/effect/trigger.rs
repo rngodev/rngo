@@ -7,7 +7,10 @@ use std::rc::Rc;
 
 #[derive(Clone, Debug)]
 pub(super) enum TriggerConfig {
-    Effect { key: String },
+    Effect {
+        key: String,
+    },
+    #[cfg(test)]
     ClockHertz(f64),
     ClockExpression(String),
 }

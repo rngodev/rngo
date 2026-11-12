@@ -5,17 +5,17 @@ use cel::{Context, Program, Value};
 use chrono::{DateTime, FixedOffset, NaiveDate, TimeDelta, TimeZone, Utc};
 
 #[derive(Clone, Debug)]
-pub enum Moment {
+pub(crate) enum Moment {
     Absolute(DateTime<FixedOffset>),
     Relative(TimeDelta),
 }
 
 impl Moment {
-    pub fn parser<'a>() -> MomentParser<'a> {
+    pub(crate) fn parser<'a>() -> MomentParser<'a> {
         MomentParser { prototype: None }
     }
 
-    pub fn resolve(self, now: DateTime<FixedOffset>) -> DateTime<FixedOffset> {
+    pub(crate) fn resolve(self, now: DateTime<FixedOffset>) -> DateTime<FixedOffset> {
         match self {
             Moment::Absolute(date_time) => date_time,
             Moment::Relative(time_delta) => now + time_delta,
@@ -35,18 +35,18 @@ impl From<TimeDelta> for Moment {
     }
 }
 
-pub struct MomentParser<'a> {
+pub(crate) struct MomentParser<'a> {
     prototype: Option<&'a Prototype>,
 }
 
 impl<'a> MomentParser<'a> {
     /// Lets expressions refer to `prototype.start` and `prototype.end`, whichever the prototype has.
-    pub fn prototype(mut self, prototype: &'a Prototype) -> Self {
+    pub(crate) fn prototype(mut self, prototype: &'a Prototype) -> Self {
         self.prototype = Some(prototype);
         self
     }
 
-    pub fn parse(&self, field_name: &str, expr: &str) -> Result<Moment, Vec<ParseError>> {
+    pub(crate) fn parse(&self, field_name: &str, expr: &str) -> Result<Moment, Vec<ParseError>> {
         if let Ok(dt) = DateTime::parse_from_rfc3339(expr) {
             return Ok(Moment::Absolute(dt));
         }
