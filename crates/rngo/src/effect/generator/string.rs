@@ -81,9 +81,9 @@ impl GeneratorParser for StrParser {
     ) -> Result<Box<dyn GeneratorBuilder>, Vec<Error>> {
         let mut builder = Str::builder();
 
-        match visitor.spec().fields.get("pattern") {
-            Some(v) if v.is_string() => {
-                builder.set_pattern(v.as_str().unwrap());
+        match visitor.spec().fields.get("pattern").map(|v| v.as_str()) {
+            Some(Some(pattern)) => {
+                builder.set_pattern(pattern);
                 Ok(Box::new(builder))
             }
             Some(_) => Err(vec![

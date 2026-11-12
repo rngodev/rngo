@@ -1,7 +1,7 @@
 mod status;
 
 use console::style;
-use rngo::{Dialect, RunLogWriter, SignalOutcome, SqliteRunLog, StopHandle, spec};
+use rngo::{Dialect, RunLogWriter, SignalOutcome, SqliteRunLog, Step, StopHandle, spec};
 use status::StatusWriter;
 use std::cell::RefCell;
 use std::error::Error;
@@ -114,21 +114,29 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
         .build()
         .map_err(join_errors)?;
 
+    let mut failure: Option<Box<dyn Error>> = None;
+
     for item in simulation {
         match item {
-            Ok(input) => proxy.send(&input)?,
-            Err(skipped) => writer.push_metadata(skipped.into())?,
+            Ok(Step::Input(input)) => proxy.send(&input)?,
+            Ok(Step::Skipped(skipped)) => writer.push_metadata(skipped.into())?,
+            Err(error) => failure = Some(error.into()),
         }
         if let Some(error) = flush_failure.borrow_mut().take() {
-            return Err(error.into());
+            failure.get_or_insert(error.into());
         }
-        if stop.is_stopped() {
+        if failure.is_some() || stop.is_stopped() {
             break;
         }
     }
 
     proxy.finish()?;
     writer.finish();
+
+    if let Some(error) = failure {
+        sqlite_run_log.commit()?;
+        return Err(error);
+    }
 
     let audit = audit_builder
         .run_log(sqlite_run_log.clone())

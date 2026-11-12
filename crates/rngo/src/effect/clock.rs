@@ -1,14 +1,14 @@
-use crate::BuildError;
 use crate::cel::CelContextExt;
+use crate::{BuildError, EffectKey, RunError};
 use cel::{Context, Program, Value};
 use rand::RngExt;
 use rand_pcg::Pcg32;
 use rand_seeder::Seeder;
-use std::cell::RefCell;
 
-/// Poisson event clock yielding offsets in milliseconds since simulation start.
+/// Poisson event clock yielding offsets in milliseconds since simulation start; it ends when the rate drops to zero.
 #[derive(Debug)]
 pub struct Clock {
+    key: String,
     rng: Pcg32,
     rate_function: RateFunction,
     last: i64,
@@ -18,17 +18,41 @@ impl Clock {
     pub fn builder() -> ClockBuilder {
         ClockBuilder::new()
     }
+
+    /// The offset most recently yielded, or the start offset before the first.
+    pub fn last(&self) -> i64 {
+        self.last
+    }
 }
 
 impl Iterator for Clock {
-    type Item = i64;
+    type Item = Result<i64, RunError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let u: f64 = self.rng.random();
-        let rate = self.rate_function.offset_rate(self.last as f64 / 1000.0);
-        let interval = -u.ln() / rate;
-        self.last += (interval * 1000.0).round() as i64;
-        Some(self.last)
+        let rate = match self.rate_function.offset_rate(self.last as f64 / 1000.0) {
+            Ok(rate) => rate,
+            Err(message) => {
+                return Some(Err(RunError::effect(
+                    &self.key,
+                    EffectKey::Trigger,
+                    message,
+                )));
+            }
+        };
+        if rate.is_nan() || rate < 0.0 {
+            return Some(Err(RunError::effect(
+                &self.key,
+                EffectKey::Trigger,
+                format!("rate must be a non-negative number, got {rate}"),
+            )));
+        }
+        let interval = (-u.ln() / rate * 1000.0).round();
+        if !interval.is_finite() {
+            return None;
+        }
+        self.last = self.last.checked_add(interval as i64)?;
+        Some(Ok(self.last))
     }
 }
 
@@ -89,7 +113,7 @@ impl ClockBuilder {
                 let program = Program::compile(&expression).map_err(|e| {
                     vec![BuildError::effect(
                         self.key.clone(),
-                        crate::EffectKey::Trigger,
+                        EffectKey::Trigger,
                         format!(
                             "could not compile expression: {}",
                             e.errors
@@ -111,20 +135,17 @@ impl ClockBuilder {
                     program.execute(&context).map_err(|e| {
                         vec![BuildError::effect(
                             self.key.clone(),
-                            crate::EffectKey::Trigger,
+                            EffectKey::Trigger,
                             format!("could not execute expression: {e}"),
                         )]
                     })?;
 
-                    RateFunction::Dynamic {
-                        expression,
-                        cache: RefCell::new(Some((program, context))),
-                    }
+                    RateFunction::Dynamic { program, context }
                 } else {
                     let value = program.execute(&context).map_err(|e| {
                         vec![BuildError::effect(
                             self.key.clone(),
-                            crate::EffectKey::Trigger,
+                            EffectKey::Trigger,
                             format!("could not execute expression: {e}"),
                         )]
                     })?;
@@ -141,7 +162,7 @@ impl ClockBuilder {
                         None => {
                             return Err(vec![BuildError::effect(
                                 self.key,
-                                crate::EffectKey::Trigger,
+                                EffectKey::Trigger,
                                 format!("rate expression non-numeric: {expression}"),
                             )]);
                         }
@@ -150,7 +171,18 @@ impl ClockBuilder {
             }
         };
 
+        if let RateFunction::Fixed(rate) = rate_function
+            && (rate.is_nan() || rate < 0.0)
+        {
+            return Err(vec![BuildError::effect(
+                self.key,
+                EffectKey::Trigger,
+                format!("rate must be a non-negative number, got {rate}"),
+            )]);
+        }
+
         Ok(Clock {
+            key: self.key,
             rng,
             rate_function,
             last: self.start_offset,
@@ -158,63 +190,40 @@ impl ClockBuilder {
     }
 }
 
-pub enum RateFunction {
+enum RateFunction {
     Fixed(f64),
     Dynamic {
-        expression: String,
-        cache: RefCell<Option<(Program, Context<'static>)>>,
+        program: Program,
+        context: Context<'static>,
     },
-}
-
-impl Clone for RateFunction {
-    fn clone(&self) -> Self {
-        match self {
-            RateFunction::Fixed(rate) => RateFunction::Fixed(*rate),
-            RateFunction::Dynamic { expression, .. } => RateFunction::Dynamic {
-                expression: expression.clone(),
-                cache: RefCell::new(None),
-            },
-        }
-    }
 }
 
 impl std::fmt::Debug for RateFunction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            RateFunction::Fixed(rate) => f.debug_tuple("Static").field(rate).finish(),
-            RateFunction::Dynamic { expression, .. } => f
-                .debug_struct("Dynamic")
-                .field("expression", expression)
-                .finish(),
+            RateFunction::Fixed(rate) => f.debug_tuple("Fixed").field(rate).finish(),
+            RateFunction::Dynamic { .. } => f.debug_struct("Dynamic").finish_non_exhaustive(),
         }
     }
 }
 
 impl RateFunction {
-    fn offset_rate(&self, offset: f64) -> f64 {
+    /// The rate in hertz at `offset` seconds since simulation start, or why the expression couldn't produce one.
+    fn offset_rate(&mut self, offset: f64) -> Result<f64, String> {
         match self {
-            RateFunction::Fixed(rate) => *rate,
-            RateFunction::Dynamic { expression, cache } => {
-                let mut cache_ref = cache.borrow_mut();
-
-                // Lazily initialize program and context after deserialization
-                if cache_ref.is_none() {
-                    let program = Program::compile(expression).unwrap();
-                    let mut context = Context::default();
-                    context.with_time();
-                    *cache_ref = Some((program, context));
-                }
-
-                let (prog, ctx) = cache_ref.as_mut().unwrap();
-                ctx.with_offset(offset);
-                match prog.execute(ctx) {
-                    Ok(value) => match value {
-                        Value::Float(num) => num,
-                        Value::Int(num) => num as f64,
-                        Value::UInt(num) => num as f64,
-                        v => panic!("Unexpected rate function result: {:?}", v),
-                    },
-                    Err(e) => panic!("Error executing rate function: {:?}", e),
+            RateFunction::Fixed(rate) => Ok(*rate),
+            RateFunction::Dynamic { program, context } => {
+                context.with_offset(offset);
+                match program.execute(context) {
+                    Ok(Value::Float(num)) => Ok(num),
+                    Ok(Value::Int(num)) => Ok(num as f64),
+                    Ok(Value::UInt(num)) => Ok(num as f64),
+                    Ok(value) => Err(format!(
+                        "rate expression must return a number at offset {offset}s, got {value:?}"
+                    )),
+                    Err(e) => Err(format!(
+                        "could not execute rate expression at offset {offset}s: {e}"
+                    )),
                 }
             }
         }
@@ -231,7 +240,10 @@ mod tests {
             .hertz(hertz)
             .build()
             .unwrap();
-        clock.take_while(|&offset| offset <= seconds * 1000).count()
+        clock
+            .map(Result::unwrap)
+            .take_while(|&offset| offset <= seconds * 1000)
+            .count()
     }
 
     #[test]
@@ -252,8 +264,50 @@ mod tests {
             .hertz(10.0)
             .build()
             .unwrap();
-        let offsets: Vec<i64> = clock.take(1000).collect();
+        let offsets: Vec<i64> = clock.take(1000).map(Result::unwrap).collect();
         assert!(offsets.windows(2).all(|w| w[0] <= w[1]));
         assert!(offsets.iter().any(|o| o % 1000 != 0));
+    }
+
+    fn expression_clock(expression: &str) -> Clock {
+        Clock::builder()
+            .key("c".into())
+            .expression(expression.into())
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn non_numeric_rate_later_in_the_run_is_an_error() {
+        let mut clock = expression_clock("offset > 0.0 ? 'oops' : 1.0");
+        assert!(clock.next().unwrap().is_ok());
+        let error = clock.next().unwrap().unwrap_err();
+        assert!(matches!(error.key, EffectKey::Trigger));
+        assert!(error.message.contains("must return a number"));
+    }
+
+    #[test]
+    fn negative_rate_later_in_the_run_is_an_error() {
+        let mut clock = expression_clock("offset > 0.0 ? -1.0 : 1.0");
+        assert!(clock.next().unwrap().is_ok());
+        assert!(clock.next().unwrap().is_err());
+    }
+
+    #[test]
+    fn zero_rate_ends_the_clock() {
+        let mut clock = expression_clock("offset > 0.0 ? 0.0 : 1.0");
+        assert!(clock.next().unwrap().is_ok());
+        assert!(clock.next().is_none());
+    }
+
+    #[test]
+    fn negative_fixed_rate_is_a_build_error() {
+        assert!(
+            Clock::builder()
+                .key("c".into())
+                .hertz(-1.0)
+                .build()
+                .is_err()
+        );
     }
 }

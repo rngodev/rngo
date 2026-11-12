@@ -117,27 +117,43 @@ impl NumberBuilder {
 
 impl GeneratorBuilder for NumberBuilder {
     fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, Vec<BuildError>> {
-        let mut errors = vec![];
-
-        match (self.minimum, self.maximum) {
-            (Some(minimum), Some(maximum)) if minimum > maximum => {
-                errors.push(visitor.error("minimum is greater than maximum"));
+        if let (Some(minimum), Some(maximum)) = (self.minimum, self.maximum) {
+            if minimum > maximum {
+                return Err(vec![visitor.error("minimum is greater than maximum")]);
             }
-            _ => (),
+            if minimum == maximum && self.step.is_none() {
+                return Err(vec![
+                    visitor.error("minimum must be less than maximum unless step is set"),
+                ]);
+            }
         }
 
-        if errors.is_empty() {
-            Ok(Box::new(Number {
-                rng: visitor.rng(),
-                minimum: self.minimum.unwrap_or(f64::MIN),
-                maximum: self.maximum.unwrap_or(f64::MAX),
-                scale: self.scale,
-                step: self.step,
-                current: None,
-            }))
-        } else {
-            Err(errors)
+        if let Some(bound) = missing_bound(self.minimum, self.maximum, self.step) {
+            return Err(vec![visitor.error(format!("{bound} must be set"))]);
         }
+
+        Ok(Box::new(Number {
+            rng: visitor.rng(),
+            minimum: self.minimum.unwrap_or(f64::NAN),
+            maximum: self.maximum.unwrap_or(f64::NAN),
+            scale: self.scale,
+            step: self.step,
+            current: None,
+        }))
+    }
+}
+
+/// The first bound a number generator needs but lacks: both without `step`, else the one `step` counts from.
+fn missing_bound(
+    minimum: Option<f64>,
+    maximum: Option<f64>,
+    step: Option<f64>,
+) -> Option<&'static str> {
+    match step {
+        Some(step) if step >= 0.0 => minimum.is_none().then_some("minimum"),
+        Some(_) => maximum.is_none().then_some("maximum"),
+        None if minimum.is_none() => Some("minimum"),
+        None => maximum.is_none().then_some("maximum"),
     }
 }
 
@@ -192,10 +208,37 @@ impl GeneratorParser for NumberParser {
             }
         }
 
+        if errors.is_empty()
+            && let Some(bound) = missing_bound(builder.minimum, builder.maximum, builder.step)
+        {
+            errors.push(visitor.input_error(bound, format!("{bound} must be set")));
+        }
+
         if errors.is_empty() {
             Ok(Box::new(builder))
         } else {
             Err(errors)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::missing_bound;
+
+    #[test]
+    fn random_numbers_need_both_bounds() {
+        assert_eq!(missing_bound(None, None, None), Some("minimum"));
+        assert_eq!(missing_bound(Some(0.0), None, None), Some("maximum"));
+        assert_eq!(missing_bound(None, Some(1.0), None), Some("minimum"));
+        assert_eq!(missing_bound(Some(0.0), Some(1.0), None), None);
+    }
+
+    #[test]
+    fn stepped_numbers_need_only_the_bound_they_count_from() {
+        assert_eq!(missing_bound(Some(1.0), None, Some(1.0)), None);
+        assert_eq!(missing_bound(None, Some(1.0), Some(1.0)), Some("minimum"));
+        assert_eq!(missing_bound(None, Some(1.0), Some(-1.0)), None);
+        assert_eq!(missing_bound(Some(1.0), None, Some(-1.0)), Some("maximum"));
     }
 }

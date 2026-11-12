@@ -47,7 +47,7 @@ fn dates(value: Value, effect: &str) -> Vec<String> {
         .standalone()
         .unwrap();
     simulation
-        .flatten()
+        .filter_map(|step| step.unwrap().into_input())
         .filter(|input| input.effect == effect)
         .map(|input| input.timestamp.format("%Y-%m-%d").to_string())
         .collect()
@@ -64,7 +64,10 @@ fn effects_follow_their_prototype_bounds_and_stay_time_ordered() {
         .unwrap()
         .standalone()
         .unwrap();
-    let timestamps: Vec<_> = simulation.flatten().map(|i| i.timestamp).collect();
+    let timestamps: Vec<_> = simulation
+        .filter_map(|step| step.unwrap().into_input())
+        .map(|i| i.timestamp)
+        .collect();
     assert!(timestamps.windows(2).all(|w| w[0] <= w[1]));
 
     let b = dates(value, "b");

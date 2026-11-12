@@ -1432,3 +1432,71 @@ fn unknown_scenario_is_an_error() {
     .unwrap_err();
     assert!(error.to_string().contains("no prototype defines scenario"));
 }
+
+#[test]
+fn number_generator_without_bounds_is_a_parse_error() {
+    let tmp = TempDir::new().unwrap();
+    let base = tmp.path();
+    fs::create_dir_all(base.join(".rngo")).unwrap();
+
+    write_yaml(
+        base.join(".rngo/spec.yml"),
+        &json!({
+            "seed": 1,
+            "start": "2024-01-01",
+            "end": "2024-01-04",
+            "effects": {
+                "a": { "trigger": "hz(1, day)", "generator": { "type": "number" } }
+            }
+        }),
+    );
+
+    let error = eval(Some(base), EvalOptions::default()).unwrap_err();
+
+    assert!(
+        error.to_string().contains("effects.a.generator.minimum"),
+        "error should name the field: {error}"
+    );
+    assert!(
+        !base.join(".rngo/evals").exists(),
+        "a parse error should stop the run before it starts"
+    );
+}
+
+#[test]
+fn trigger_failing_mid_run_stops_with_an_error_and_keeps_the_log() {
+    let tmp = TempDir::new().unwrap();
+    let base = tmp.path();
+    fs::create_dir_all(base.join(".rngo")).unwrap();
+
+    write_yaml(
+        base.join(".rngo/spec.yml"),
+        &json!({
+            "seed": 1,
+            "effects": {
+                "a": {
+                    "start": "2026-01-01",
+                    "end": "now",
+                    "trigger": "offset > 0.0 ? 'oops' : 1.0",
+                    "generator": { "type": "number", "minimum": 0, "maximum": 10 }
+                }
+            }
+        }),
+    );
+
+    let error = eval(Some(base), EvalOptions::default()).unwrap_err();
+
+    assert!(
+        error.to_string().contains("effects.a.trigger"),
+        "error should name the field: {error}"
+    );
+
+    let inputs: i64 = rusqlite::Connection::open(base.join(".rngo/evals/last/log.sqlite"))
+        .unwrap()
+        .query_row("SELECT COUNT(*) FROM inputs", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(
+        inputs, 1,
+        "the input logged before the failure should be kept"
+    );
+}

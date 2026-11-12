@@ -90,7 +90,7 @@ fn measure(limit: u64) -> (usize, usize) {
     PEAK.store(baseline, Ordering::Relaxed);
 
     let mut inputs = 0;
-    for input in simulation.flatten() {
+    for input in simulation.filter_map(|step| step.unwrap().into_input()) {
         log.push_input(input).unwrap();
         inputs += 1;
     }

@@ -160,8 +160,8 @@ impl GeneratorParser for FunctionParser {
         &self,
         visitor: GeneratorParseVisitor,
     ) -> Result<Box<dyn GeneratorBuilder>, Vec<Error>> {
-        let expression = match visitor.spec().fields.get("expression") {
-            Some(v) if v.is_string() => v.as_str().unwrap().to_string(),
+        let expression = match visitor.spec().fields.get("expression").map(|v| v.as_str()) {
+            Some(Some(expression)) => expression.to_string(),
             Some(_) => {
                 return Err(vec![
                     visitor.input_error("expression", "expression must be a string"),

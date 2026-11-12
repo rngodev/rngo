@@ -74,7 +74,7 @@ fn builder(spec: &Value, limit: u64) -> SimulationBuilder {
 
 fn drain(simulation: Simulation, log: &impl RunLogWriter) -> usize {
     let mut count = 0;
-    for input in simulation.flatten() {
+    for input in simulation.filter_map(|step| step.unwrap().into_input()) {
         log.push_input(input).unwrap();
         count += 1;
     }

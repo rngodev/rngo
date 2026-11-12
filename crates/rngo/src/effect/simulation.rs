@@ -1,10 +1,10 @@
-use crate::RunLogReader;
 use crate::build::{BuildError, SimulationKey};
 use crate::effect::bound::Bound;
 use crate::effect::prototype::{Prototype, PrototypeBuilder};
-use crate::effect::{Effect, EffectBuilder, Input, SkippedInput};
+use crate::effect::{Effect, EffectBuilder, Step};
 use crate::log::SimpleEventRunLog;
 use crate::moment::Moment;
+use crate::{RunError, RunLogReader};
 use chrono::{DateTime, FixedOffset, TimeDelta, Utc};
 use indexmap::IndexMap;
 use std::collections::HashMap;
@@ -31,8 +31,9 @@ impl Simulation {
     }
 }
 
+/// Yields each effect's steps in time order; an `Err` ends the effect that failed, and callers should stop there.
 impl Iterator for Simulation {
-    type Item = Result<Input, SkippedInput>;
+    type Item = Result<Step, RunError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.limit.is_some_and(|limit| self.emitted >= limit) {
@@ -43,7 +44,7 @@ impl Iterator for Simulation {
             .sort_unstable_by_key(|e| e.next_offset().unwrap_or(i64::MAX));
 
         let item = self.effects.first_mut()?.next()?;
-        if item.is_ok() {
+        if let Ok(Step::Input(_)) = item {
             self.emitted += 1;
         }
         Some(item)
@@ -65,11 +66,11 @@ impl StandaloneSimulation {
 }
 
 impl Iterator for StandaloneSimulation {
-    type Item = Result<Input, SkippedInput>;
+    type Item = Result<Step, RunError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let item = self.simulation.next()?;
-        if let Ok(input) = &item {
+        if let Ok(Step::Input(input)) = &item {
             self.log.insert_input(input.clone());
         }
         Some(item)
@@ -339,12 +340,17 @@ mod tests {
         let items: Vec<_> = simulation_builder.limit(5).build().unwrap().collect();
 
         assert_eq!(
-            items.iter().filter(|item| item.is_ok()).count(),
+            items
+                .iter()
+                .filter(|item| matches!(item, Ok(super::Step::Input(_))))
+                .count(),
             5,
             "limit should cap real inputs"
         );
         assert!(
-            items.iter().any(|item| item.is_err()),
+            items
+                .iter()
+                .any(|item| matches!(item, Ok(super::Step::Skipped(_)))),
             "skipped attempts should not count toward the cap"
         );
     }

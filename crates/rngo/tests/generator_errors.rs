@@ -166,3 +166,26 @@ fn spec() {
         ]
     );
 }
+
+#[test]
+fn number_bounds() {
+    let missing = Dialect::primitive()
+        .parse_simulation_json(serde_json::json!({
+            "effects": { "a": { "generator": { "type": "number", "maximum": 10 } } }
+        }))
+        .unwrap_err();
+    assert_eq!(missing[0].path(), ["effects", "a", "generator", "minimum"]);
+    assert_eq!(missing[0].message(), "minimum must be set");
+
+    let mut simulation_builder = Simulation::builder();
+    simulation_builder
+        .with_effect("equal", |e| e.generator(number().minimum(1).maximum(1)))
+        .with_effect("unbounded", |e| e.generator(number().minimum(1)));
+    let errors = simulation_builder
+        .run_log_reader(rngo::SimpleEventRunLog::new())
+        .build()
+        .unwrap_err();
+    let messages: Vec<_> = errors.iter().map(|e| e.message()).collect();
+    assert!(messages.contains(&"minimum must be less than maximum unless step is set"));
+    assert!(messages.contains(&"maximum must be set"));
+}

@@ -74,13 +74,13 @@ fn display_path(path: &[String]) -> String {
 pub enum BuildError {
     #[error("failed to build simulation: `{message}`")]
     Simulation { key: SimulationKey, message: String },
-    #[error("failed to build effect `{effect}`: `{message}`")]
+    #[error("failed to build `effects.{effect}{}`: `{message}`", key.path_suffix())]
     Effect {
         effect: String,
         key: EffectKey,
         message: String,
     },
-    #[error("failed to build generator of effect `{effect}`: `{message}`")]
+    #[error("failed to build `effects.{effect}.generator`: `{message}`")]
     Generator {
         effect: String,
         path: Vec<GeneratorEdge>,
@@ -179,6 +179,7 @@ pub enum SimulationKey {
     RunLogReader,
 }
 
+/// The part of an effect's spec an error concerns.
 #[derive(Debug)]
 pub enum EffectKey {
     Generator,
@@ -186,6 +187,38 @@ pub enum EffectKey {
     Config,
     Start,
     End,
+}
+
+impl EffectKey {
+    /// The field's name, appended to the effect's path; empty for `Config`, which concerns the effect as a whole.
+    fn path_suffix(&self) -> &'static str {
+        match self {
+            EffectKey::Generator => ".generator",
+            EffectKey::Trigger => ".trigger",
+            EffectKey::Config => "",
+            EffectKey::Start => ".start",
+            EffectKey::End => ".end",
+        }
+    }
+}
+
+/// A failure partway through a run, which stops it; inputs logged before it are kept.
+#[derive(Error, Debug)]
+#[error("failed to run `effects.{effect}{}`: `{message}`", key.path_suffix())]
+pub struct RunError {
+    pub effect: String,
+    pub key: EffectKey,
+    pub message: String,
+}
+
+impl RunError {
+    pub fn effect(effect: impl Into<String>, key: EffectKey, message: impl Into<String>) -> Self {
+        RunError {
+            effect: effect.into(),
+            key,
+            message: message.into(),
+        }
+    }
 }
 
 /// A failure reading from or writing to a run log.
