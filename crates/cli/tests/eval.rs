@@ -1434,7 +1434,7 @@ fn unknown_scenario_is_an_error() {
 }
 
 #[test]
-fn number_generator_without_bounds_is_a_parse_error() {
+fn number_generator_without_bounds_produces_finite_numbers() {
     let tmp = TempDir::new().unwrap();
     let base = tmp.path();
     fs::create_dir_all(base.join(".rngo")).unwrap();
@@ -1446,7 +1446,43 @@ fn number_generator_without_bounds_is_a_parse_error() {
             "start": "2024-01-01",
             "end": "2024-01-04",
             "effects": {
-                "a": { "trigger": "hz(1, day)", "generator": { "type": "number" } }
+                "a": { "trigger": "hz(100, day)", "generator": { "type": "number" } }
+            }
+        }),
+    );
+
+    assert!(eval(Some(base), EvalOptions::default()).unwrap());
+
+    let connection = rusqlite::Connection::open(base.join(".rngo/evals/last/log.sqlite")).unwrap();
+    let mut statement = connection.prepare("SELECT data FROM inputs").unwrap();
+    let values: Vec<f64> = statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .unwrap()
+        .map(|data| serde_json::from_str::<f64>(&data.unwrap()).unwrap())
+        .collect();
+
+    assert!(!values.is_empty());
+    assert!(values.iter().all(|v| v.is_finite()));
+    assert!(values.iter().any(|v| v.fract() != 0.0));
+}
+
+#[test]
+fn number_range_too_wide_is_a_parse_error() {
+    let tmp = TempDir::new().unwrap();
+    let base = tmp.path();
+    fs::create_dir_all(base.join(".rngo")).unwrap();
+
+    write_yaml(
+        base.join(".rngo/spec.yml"),
+        &json!({
+            "seed": 1,
+            "start": "2024-01-01",
+            "end": "2024-01-04",
+            "effects": {
+                "a": {
+                    "trigger": "hz(1, day)",
+                    "generator": { "type": "number", "minimum": -1e308, "maximum": 1e308 }
+                }
             }
         }),
     );
@@ -1454,7 +1490,7 @@ fn number_generator_without_bounds_is_a_parse_error() {
     let error = eval(Some(base), EvalOptions::default()).unwrap_err();
 
     assert!(
-        error.to_string().contains("effects.a.generator.minimum"),
+        error.to_string().contains("effects.a.generator"),
         "error should name the field: {error}"
     );
     assert!(

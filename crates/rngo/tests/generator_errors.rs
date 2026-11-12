@@ -169,23 +169,36 @@ fn spec() {
 
 #[test]
 fn number_bounds() {
-    let missing = Dialect::primitive()
-        .parse_simulation_json(serde_json::json!({
-            "effects": { "a": { "generator": { "type": "number", "maximum": 10 } } }
-        }))
+    let parse = |generator: serde_json::Value| {
+        Dialect::primitive().parse_simulation_json(
+            serde_json::json!({ "effects": { "a": { "generator": generator } } }),
+        )
+    };
+
+    assert!(parse(serde_json::json!({ "type": "number" })).is_ok());
+    assert!(parse(serde_json::json!({ "type": "number", "maximum": 10 })).is_ok());
+
+    let stepped =
+        parse(serde_json::json!({ "type": "number", "maximum": 10, "step": 1 })).unwrap_err();
+    assert_eq!(stepped[0].path(), ["effects", "a", "generator", "minimum"]);
+    assert_eq!(
+        stepped[0].message(),
+        "minimum must be set when step is non-negative"
+    );
+
+    let wide = parse(serde_json::json!({ "type": "number", "minimum": -1e308, "maximum": 1e308 }))
         .unwrap_err();
-    assert_eq!(missing[0].path(), ["effects", "a", "generator", "minimum"]);
-    assert_eq!(missing[0].message(), "minimum must be set");
+    assert_eq!(wide[0].path(), ["effects", "a", "generator"]);
 
     let mut simulation_builder = Simulation::builder();
     simulation_builder
         .with_effect("equal", |e| e.generator(number().minimum(1).maximum(1)))
-        .with_effect("unbounded", |e| e.generator(number().minimum(1)));
+        .with_effect("stepped", |e| e.generator(number().maximum(1).step(1)));
     let errors = simulation_builder
         .run_log_reader(rngo::SimpleEventRunLog::new())
         .build()
         .unwrap_err();
     let messages: Vec<_> = errors.iter().map(|e| e.message()).collect();
     assert!(messages.contains(&"minimum must be less than maximum unless step is set"));
-    assert!(messages.contains(&"maximum must be set"));
+    assert!(messages.contains(&"minimum must be set when step is non-negative"));
 }
