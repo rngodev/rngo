@@ -23,7 +23,6 @@ fn echo_to(text: &str, path: &Path) -> String {
     format!("(echo {text})>> {}", path.display())
 }
 
-/// A shell command copying its stdin to its stdout.
 /// A shell command printing the lines `one` and `two`.
 fn two_lines_command() -> &'static str {
     if cfg!(windows) {
@@ -33,6 +32,7 @@ fn two_lines_command() -> &'static str {
     }
 }
 
+/// A shell command copying its stdin to its stdout.
 fn stdin_passthrough() -> &'static str {
     if cfg!(windows) {
         "findstr \"^\""
