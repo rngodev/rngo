@@ -12,7 +12,7 @@ A **spec** describes the behavior of a system using the following components:
 
 These items are the supported public API; everything else is private and may change in any release:
 
-- `build`: the builder DSL below, i.e. the generator, channel, format and signal constructors (`object()`, `stream()`, `sql_format()`, `sql_signal()`, ...), their builder types, and `EffectBuilder`, `PrototypeBuilder`, `Moment`, `Bound`, `SignalBuilder`
+- `build`: the builder DSL below, i.e. the generator, channel, format and signal constructors (`object()`, `stream()`, `sql_format()`, `sql_signal()`, ...), their builder types, and `EffectBuilder`, `PrototypeBuilder`, `Moment`, `Bound` (opaque; built from a `Moment`, a timestamp or a CEL expression string), `SignalBuilder`
 - `generator`: the extension API for writing your own generators in Rust: implement `Generator` and `GeneratorBuilder`, then pass the builder to `EffectBuilder::generator` or nest it in another builder. It also holds the types those traits use: `GeneratorContext`, `GeneratorResult`, `GeneratorBuildVisitor`, `GeneratorEdge`, `Metadata`, `TriggerEvent` and `JsonPointer`. The built-in generators themselves are private; use their builders in `build`. To give a generator its own `type` in specs, implement `GeneratorParser` (it gets a `GeneratorParseVisitor` for the spec fields and error paths) and register it with `Dialect::primitive().with_generator_parser(...)`.
 - `signal`: the extension API for custom signals: implement `Signal` (and `SignalParser` to give it a `type` in specs, registered with `Dialect::with_signal_parser`), returning a `SignalOutcome` and optional `SignalEval`. `SignalBuilder` lets the `AuditBuilder` take a built signal directly.
 - `spec`: `Spec` and `from_value`, for JSON or YAML specs
@@ -25,7 +25,7 @@ These items are the supported public API; everything else is private and may cha
 - `Input`, `SkippedInput`, `Step`, `Metadata`, `Output`, `Level`, `SignalOutcome`
 - `error`: `ParseError`, `ParseErrorKind`, `BuildError`, `RunError`, `RunLogError`, `FormatError`, `ChannelError`, `ProxyError`, `SignalError`, `EffectKey`, `SimulationKey`
 
-Public enums, spec structs, and the structs the crate hands to generators (`GeneratorContext`, `GeneratorBuildVisitor`, `TriggerEvent`) are `#[non_exhaustive]`, so they can gain variants and fields without a breaking change.
+Public enums and spec structs are `#[non_exhaustive]`, so they can gain variants and fields without a breaking change. The types the crate hands to extensions (`GeneratorContext`, `GeneratorBuildVisitor`, `TriggerEvent`, `Bound`) have private fields and accessor methods, so their internals can change freely.
 
 ## DSL
 

@@ -12,11 +12,22 @@ pub(super) enum TriggerConfig {
     ClockExpression(String),
 }
 
-#[non_exhaustive]
+/// One firing of an effect's trigger.
 pub struct TriggerEvent {
-    /// Milliseconds since simulation start.
-    pub sim_offset: i64,
-    pub input_event: Option<Rc<Input>>,
+    pub(crate) sim_offset: i64,
+    pub(crate) input_event: Option<Rc<Input>>,
+}
+
+impl TriggerEvent {
+    /// Milliseconds since the origin.
+    pub fn sim_offset(&self) -> i64 {
+        self.sim_offset
+    }
+
+    /// The input that fired this trigger, for an effect triggered by another effect.
+    pub fn input(&self) -> Option<&Input> {
+        self.input_event.as_deref()
+    }
 }
 
 #[derive(Debug)]

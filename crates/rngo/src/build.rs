@@ -76,7 +76,7 @@ pub fn stdout() -> StdoutBuilder {
 
 pub use crate::audit::signal::SignalBuilder;
 pub use crate::effect::EffectBuilder;
-pub use crate::effect::bound::{Bound, BoundKind, BoundValue};
+pub use crate::effect::bound::Bound;
 pub use crate::effect::generator::GeneratorEdge;
 pub use crate::effect::prototype::PrototypeBuilder;
 pub use crate::error::{BuildError, EffectKey, SimulationKey};

@@ -15,7 +15,7 @@ struct Counter {
 
 impl Generator for Counter {
     fn next(&mut self, context: &GeneratorContext) -> GeneratorResult {
-        let value = json!({ "count": self.next, "offset": context.trigger.sim_offset });
+        let value = json!({ "count": self.next, "offset": context.trigger().sim_offset() });
         self.next += self.step;
         value.into()
     }

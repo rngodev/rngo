@@ -43,11 +43,22 @@ pub struct GeneratorEdge {
     pub key: String,
 }
 
-#[non_exhaustive]
+/// What a generator sees each time its effect fires.
 pub struct GeneratorContext<'a> {
-    pub trigger: &'a TriggerEvent,
+    pub(crate) trigger: &'a TriggerEvent,
+    pub(crate) origin: DateTime<FixedOffset>,
+}
+
+impl GeneratorContext<'_> {
+    /// The trigger firing that this value is being generated for.
+    pub fn trigger(&self) -> &TriggerEvent {
+        self.trigger
+    }
+
     /// The instant sim offsets are measured from.
-    pub origin: DateTime<FixedOffset>,
+    pub fn origin(&self) -> DateTime<FixedOffset> {
+        self.origin
+    }
 }
 
 pub struct GeneratorResult {
@@ -92,12 +103,13 @@ impl GeneratorBuilder for Box<dyn GeneratorBuilder> {
     }
 }
 
-#[non_exhaustive]
+/// What a generator builder gets when the simulation builds: the run log, the effect, and where in
+/// the generator tree it sits.
 pub struct GeneratorBuildVisitor {
-    pub event_run_log: Rc<dyn RunLogReader>,
-    pub simulation_seed: u64,
-    pub effect_key: String,
-    pub path: Vec<GeneratorEdge>,
+    pub(crate) event_run_log: Rc<dyn RunLogReader>,
+    pub(crate) simulation_seed: u64,
+    pub(crate) effect_key: String,
+    pub(crate) path: Vec<GeneratorEdge>,
 }
 
 impl Clone for GeneratorBuildVisitor {
@@ -112,6 +124,22 @@ impl Clone for GeneratorBuildVisitor {
 }
 
 impl GeneratorBuildVisitor {
+    /// The run log, for generators that look up earlier inputs.
+    pub fn run_log(&self) -> &Rc<dyn RunLogReader> {
+        &self.event_run_log
+    }
+
+    /// The key of the effect being built.
+    pub fn effect_key(&self) -> &str {
+        &self.effect_key
+    }
+
+    /// The edges from the effect's root generator down to this one.
+    pub fn path(&self) -> &[GeneratorEdge] {
+        &self.path
+    }
+
+    /// An RNG seeded from the simulation seed and this generator's path, so each generator draws its own stream.
     pub fn rng(&self) -> Pcg32 {
         let hash = format!("{}-{}", self.simulation_seed, self.path_id());
         Seeder::from(&hash).into_rng()
