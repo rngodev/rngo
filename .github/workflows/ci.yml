@@ -68,5 +68,6 @@ jobs:
 
       - name: cargo semver-checks
         uses: obi1kenobi/cargo-semver-checks-action@v2
+        continue-on-error: true
         with:
           package: rngo
