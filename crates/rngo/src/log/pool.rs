@@ -1,5 +1,4 @@
-use rand::RngExt;
-use rand_pcg::Pcg32;
+use crate::Rng;
 use std::collections::HashMap;
 
 /// In-memory index of each tracked effect's inputs, in push order, and of which ones each unique
@@ -49,23 +48,23 @@ impl<T: Clone> InputPool<T> {
     }
 
     /// A uniformly random input of `effect`, or `None` if it has none.
-    pub(super) fn random(&self, effect: &str, rng: &mut Pcg32) -> Option<T> {
+    pub(super) fn random(&self, effect: &str, rng: &mut Rng) -> Option<T> {
         let items = self.items(effect);
         if items.is_empty() {
             return None;
         }
-        let index = rng.random_range(0..items.len());
+        let index = rng.index(items.len());
         Some(items[index].clone())
     }
 
     /// Consumes and returns a uniformly random input of `effect` that `cursor` hasn't consumed
     /// yet, or `None` if none remain.
-    pub(super) fn take(&mut self, effect: &str, cursor: &str, rng: &mut Pcg32) -> Option<T> {
+    pub(super) fn take(&mut self, effect: &str, cursor: &str, rng: &mut Rng) -> Option<T> {
         let remaining = self.remaining(effect, cursor);
         if remaining == 0 {
             return None;
         }
-        let index = rng.random_range(0..remaining);
+        let index = rng.index(remaining);
         Some(self.take_nth(effect, cursor, index))
     }
 
@@ -288,7 +287,7 @@ mod tests {
     fn take_exhausts_every_input_exactly_once() {
         let mut pool = InputPool::default();
         pool.track("a", (0..1000u64).collect());
-        let mut rng = rand_seeder::Seeder::from("pool").into_rng();
+        let mut rng = Rng::from_seed("pool");
 
         let mut seen = std::collections::HashSet::new();
         while let Some(id) = pool.take("a", "c", &mut rng) {

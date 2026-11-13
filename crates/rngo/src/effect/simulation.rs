@@ -1,7 +1,7 @@
-use crate::build::{BuildError, SimulationKey};
 use crate::effect::bound::Bound;
 use crate::effect::prototype::{Prototype, PrototypeBuilder};
 use crate::effect::{Effect, EffectBuilder, Step};
+use crate::error::{BuildError, SimulationKey};
 use crate::log::SimpleEventRunLog;
 use crate::moment::Moment;
 use crate::{RunError, RunLogReader};
@@ -241,11 +241,11 @@ impl SimulationBuilder {
 
 #[cfg(test)]
 mod tests {
-    use crate::build::BuildError;
     use crate::effect::generator::{
         Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
         Metadata,
     };
+    use crate::error::BuildError;
 
     #[derive(Debug, Default)]
     struct AlternatingGenerator {

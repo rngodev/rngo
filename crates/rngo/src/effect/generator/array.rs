@@ -2,10 +2,10 @@ use super::{
     Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
     JsonPointerPart,
 };
-use crate::build::BuildError;
 use crate::effect::generator::{GeneratorEdge, Metadata};
+use crate::error::{BuildError, ParseError as Error};
 use crate::parse::{GeneratorParseVisitor, GeneratorParser};
-use crate::spec::{self, ParseError as Error};
+use crate::spec;
 use rand::RngExt;
 use rand_pcg::Pcg32;
 
@@ -70,7 +70,7 @@ impl GeneratorBuilder for ArrayBuilder {
         };
 
         Ok(Box::new(Array {
-            rng: generator_visitor.rng(),
+            rng: generator_visitor.rng().0,
             min_items: self.min_items,
             max_items: self.max_items,
             items,

@@ -1,4 +1,4 @@
-use crate::build::BuildError;
+use crate::error::BuildError;
 use crate::log::Metadata;
 pub mod signal;
 
@@ -237,7 +237,7 @@ mod tests {
             Err(RunLogError::Unsupported)
         }
 
-        fn random_for_effect(&self, _key: &str, _rng: &mut rand_pcg::Pcg32) -> Option<Rc<Input>> {
+        fn random_for_effect(&self, _key: &str, _rng: &mut crate::Rng) -> Option<Rc<Input>> {
             unimplemented!("not exercised by these tests")
         }
 
@@ -245,7 +245,7 @@ mod tests {
             &self,
             _key: &str,
             _cursor: &str,
-            _rng: &mut rand_pcg::Pcg32,
+            _rng: &mut crate::Rng,
         ) -> Option<Rc<Input>> {
             unimplemented!("not exercised by these tests")
         }

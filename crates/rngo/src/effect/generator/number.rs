@@ -1,8 +1,7 @@
 use super::{Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorResult};
-use crate::build::BuildError;
 use crate::effect::generator::GeneratorContext;
+use crate::error::{BuildError, ParseError as Error};
 use crate::parse::{GeneratorParseVisitor, GeneratorParser};
-use crate::spec::ParseError as Error;
 use rand::RngExt;
 use rand_pcg::Pcg32;
 
@@ -130,7 +129,7 @@ impl GeneratorBuilder for NumberBuilder {
             .map_err(|(_, message)| vec![visitor.error(message)])?;
 
         Ok(Box::new(Number {
-            rng: visitor.rng(),
+            rng: visitor.rng().0,
             sampling,
             scale: self.scale,
         }))

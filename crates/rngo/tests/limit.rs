@@ -121,7 +121,7 @@ fn spec_limit_is_applied() {
     });
 
     let inputs: Vec<_> = Dialect::primitive()
-        .parse_simulation_json(value)
+        .parse_simulation(rngo::spec::from_value(value).unwrap())
         .unwrap()
         .run_log_reader(rngo::SimpleEventRunLog::new())
         .build()
@@ -152,9 +152,7 @@ fn invalid_spec_limit_is_rejected_with_effect_path() {
             }
         });
 
-        let errors = Dialect::primitive()
-            .parse_simulation_json(value)
-            .unwrap_err();
+        let errors = rngo::spec::from_value(value).unwrap_err();
 
         assert_eq!(errors.len(), 1, "limit {invalid} should be rejected");
         assert_eq!(

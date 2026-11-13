@@ -1,7 +1,6 @@
 use crate::log::pool::InputPool;
 use crate::log::{Metadata, RunLogReader, RunLogWriter};
-use crate::{Input, Output, RunLogError};
-use rand_pcg::Pcg32;
+use crate::{Input, Output, Rng, RunLogError};
 use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
 
@@ -50,11 +49,11 @@ impl RunLogReader for SimpleEventRunLog {
         self.pool(key).last(key)
     }
 
-    fn random_for_effect(&self, key: &str, rng: &mut Pcg32) -> Option<Rc<Input>> {
+    fn random_for_effect(&self, key: &str, rng: &mut Rng) -> Option<Rc<Input>> {
         self.pool(key).random(key, rng)
     }
 
-    fn unique_for_effect(&self, key: &str, cursor: &str, rng: &mut Pcg32) -> Option<Rc<Input>> {
+    fn unique_for_effect(&self, key: &str, cursor: &str, rng: &mut Rng) -> Option<Rc<Input>> {
         self.pool(key).take(key, cursor, rng)
     }
 
@@ -84,10 +83,9 @@ impl RunLogWriter for SimpleEventRunLog {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use rand_seeder::Seeder;
 
-    fn rng(seed: u64) -> Pcg32 {
-        Seeder::from(&format!("{seed}-run_log")).into_rng()
+    fn rng(seed: u64) -> Rng {
+        Rng::from_seed(&format!("{seed}-run_log"))
     }
 
     /// Builds a `SimpleEventRunLog`, populates it with ten inputs on effect "a", then draws

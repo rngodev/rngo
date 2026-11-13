@@ -88,7 +88,7 @@ fn effect_respects_start_time() {
 }
 
 /// An effect with its own end time (parsed from spec) should emit events before
-/// that end time and nothing after. Goes through Dialect::parse_simulation_json
+/// that end time and nothing after. Goes through Dialect::parse_simulation
 /// so a copy-paste bug that calls set_start instead of set_end in parse.rs would
 /// cause events to appear in the wrong half of the window and fail this test.
 #[test]
@@ -107,7 +107,7 @@ fn effect_respects_end_time_via_spec() {
     });
 
     let sim = Dialect::primitive()
-        .parse_simulation_json(spec)
+        .parse_simulation(rngo::spec::from_value(spec).unwrap())
         .unwrap()
         .run_log_reader(rngo::SimpleEventRunLog::new())
         .build()
@@ -158,7 +158,7 @@ fn effect_respects_both_start_and_end() {
     });
 
     let sim = Dialect::primitive()
-        .parse_simulation_json(spec)
+        .parse_simulation(rngo::spec::from_value(spec).unwrap())
         .unwrap()
         .run_log_reader(rngo::SimpleEventRunLog::new())
         .build()
@@ -212,7 +212,9 @@ fn an_effect_without_a_start_is_an_error() {
             "events": { "generator": { "type": "constant", "value": null } }
         }
     });
-    let mut builder = Dialect::primitive().parse_simulation_json(spec).unwrap();
+    let mut builder = Dialect::primitive()
+        .parse_simulation(rngo::spec::from_value(spec).unwrap())
+        .unwrap();
     builder = builder.effect("loose", |e| {
         e.prototype_key("nowhere")
             .end(Moment::Relative(TimeDelta::zero()))
@@ -297,7 +299,7 @@ fn context_sim_start_is_the_origin_and_clock_now_is_the_timestamp() {
     }));
 
     let sim = Dialect::primitive()
-        .parse_simulation_json(spec)
+        .parse_simulation(rngo::spec::from_value(spec).unwrap())
         .unwrap()
         .run_log_reader(rngo::SimpleEventRunLog::new())
         .build()
@@ -324,7 +326,7 @@ fn context_sim_end_is_no_longer_a_path() {
     }));
 
     let result = Dialect::primitive()
-        .parse_simulation_json(spec)
+        .parse_simulation(rngo::spec::from_value(spec).unwrap())
         .unwrap()
         .run_log_reader(rngo::SimpleEventRunLog::new())
         .build();

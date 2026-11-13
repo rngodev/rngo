@@ -1,5 +1,6 @@
 use crate::audit::signal::Signal;
-use crate::spec::{self, ParseError};
+use crate::error::ParseError;
+use crate::spec;
 
 pub trait SignalParser {
     fn key(&self) -> &str;

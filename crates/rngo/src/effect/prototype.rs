@@ -1,5 +1,5 @@
-use crate::build::{BuildError, SimulationKey};
 use crate::effect::bound::{Bound, BoundKind};
+use crate::error::{BuildError, SimulationKey};
 use chrono::{DateTime, FixedOffset, Utc};
 use std::num::NonZeroU64;
 

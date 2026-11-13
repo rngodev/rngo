@@ -1,10 +1,10 @@
 use super::{
     Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
 };
-use crate::build::BuildError;
 use crate::effect::generator::{GeneratorEdge, Metadata};
+use crate::error::{BuildError, ParseError as Error};
 use crate::parse::{GeneratorParseVisitor, GeneratorParser};
-use crate::spec::{self, ParseError as Error};
+use crate::spec;
 use rand::RngExt;
 use rand_pcg::Pcg32;
 use serde::Deserialize;
@@ -93,7 +93,7 @@ impl GeneratorBuilder for SelectBuilder {
 
         if errors.is_empty() {
             Ok(Box::new(Select {
-                rng: visitor.rng(),
+                rng: visitor.rng().0,
                 properties,
             }))
         } else {

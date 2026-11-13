@@ -1,8 +1,7 @@
 use super::{Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorResult};
-use crate::build::BuildError;
 use crate::effect::generator::GeneratorContext;
+use crate::error::{BuildError, ParseError};
 use crate::parse::{GeneratorParseVisitor, GeneratorParser};
-use crate::spec::ParseError;
 use serde_json::Value;
 
 #[derive(Debug)]

@@ -1,6 +1,6 @@
 use crate::cel::CelContextExt;
 use crate::effect::prototype::Prototype;
-use crate::spec::ParseError;
+use crate::error::ParseError;
 use cel::{Context, Program, Value};
 use chrono::{DateTime, FixedOffset, NaiveDate, TimeDelta, TimeZone, Utc};
 

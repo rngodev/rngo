@@ -6,11 +6,12 @@ use crate::audit::signal::Signal;
 use crate::audit::{Audit, AuditBuilder};
 use crate::effect::generator::custom::CustomParser;
 use crate::effect::simulation::{Simulation, SimulationBuilder};
+use crate::error::ParseError;
 use crate::moment::Moment;
 use crate::parse::ChannelParser;
 use crate::proxy::channel::ChannelBuilder;
 use crate::proxy::{Proxy, ProxyBuilder};
-use crate::spec::{self, ParseError, Spec};
+use crate::spec::{self, Spec};
 use std::rc::Rc;
 
 pub struct Dialect {
@@ -87,14 +88,6 @@ impl Dialect {
             vec![Box::new(exec()), Box::new(stdout()), Box::new(stream())],
             vec![Box::new(sql_signal())],
         )
-    }
-
-    pub fn parse_simulation_json(
-        &self,
-        value: serde_json::Value,
-    ) -> Result<SimulationBuilder, Vec<ParseError>> {
-        let spec: Spec = spec::from_value(value)?;
-        self.parse_simulation(spec)
     }
 
     pub fn parse_simulation(&self, spec: Spec) -> Result<SimulationBuilder, Vec<ParseError>> {
@@ -449,7 +442,7 @@ mod tests {
             value["seed"] = serde_json::json!(seed);
         }
         Dialect::primitive()
-            .parse_simulation_json(value)
+            .parse_simulation(spec::from_value(value).unwrap())
             .unwrap()
             .standalone()
             .unwrap()

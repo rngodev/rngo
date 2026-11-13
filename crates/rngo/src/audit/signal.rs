@@ -6,7 +6,7 @@ pub(crate) use sql::SqlSignal;
 pub use crate::parse::SignalParser;
 
 use crate::RunLogReader;
-use crate::build::BuildError;
+use crate::error::BuildError;
 use serde::Serialize;
 
 pub trait Signal: std::fmt::Debug {

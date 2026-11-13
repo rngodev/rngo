@@ -206,6 +206,8 @@ fn spec() {
     }"#;
 
     let value: serde_json::Value = serde_json::from_str(json).unwrap();
-    let simulation_builder = Dialect::primitive().parse_simulation_json(value).unwrap();
+    let simulation_builder = Dialect::primitive()
+        .parse_simulation(rngo::spec::from_value(value).unwrap())
+        .unwrap();
     assert_simulation(simulation_builder);
 }

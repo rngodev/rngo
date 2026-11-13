@@ -1,8 +1,7 @@
 use super::{Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorResult};
-use crate::build::BuildError;
 use crate::effect::generator::{GeneratorContext, Metadata};
+use crate::error::{BuildError, ParseError as Error};
 use crate::parse::{GeneratorParseVisitor, GeneratorParser};
-use crate::spec::ParseError as Error;
 
 #[derive(Debug)]
 pub(crate) struct Context {

@@ -1,5 +1,6 @@
+use crate::error::ParseError;
 use crate::proxy::format::Format;
-use crate::spec::{self, ParseError};
+use crate::spec;
 use serde_json::Value;
 use std::rc::Rc;
 

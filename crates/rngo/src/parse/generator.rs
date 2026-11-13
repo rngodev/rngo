@@ -1,6 +1,7 @@
 use crate::effect::generator::GeneratorBuilder;
 use crate::effect::generator::custom::CustomParser;
-use crate::spec::{self, ParseError};
+use crate::error::ParseError;
+use crate::spec;
 use std::rc::Rc;
 
 pub trait GeneratorParser {

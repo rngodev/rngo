@@ -1,12 +1,11 @@
 use super::{
     Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
 };
-use crate::build::BuildError;
+use crate::Rng;
 use crate::effect::generator::Metadata;
+use crate::error::{BuildError, ParseError as Error};
 use crate::log::RunLogReader;
 use crate::parse::{GeneratorParseVisitor, GeneratorParser};
-use crate::spec::ParseError as Error;
-use rand_pcg::Pcg32;
 use std::rc::Rc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -21,7 +20,7 @@ pub(crate) struct Reference {
     key: String,
     cursor: Cursor,
     unique_cursor: Option<String>,
-    rng: Pcg32,
+    rng: Rng,
 }
 
 impl Reference {

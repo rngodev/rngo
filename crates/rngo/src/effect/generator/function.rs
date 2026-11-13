@@ -1,11 +1,11 @@
 use super::{
     Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
 };
-use crate::build::BuildError;
 use crate::cel::{CelContextExt, json_to_cel};
 use crate::effect::generator::{GeneratorEdge, Metadata};
+use crate::error::{BuildError, ParseError as Error};
 use crate::parse::{GeneratorParseVisitor, GeneratorParser};
-use crate::spec::{self, ParseError as Error};
+use crate::spec;
 use cel::{Context, Program};
 use indexmap::IndexMap;
 use std::collections::HashMap;

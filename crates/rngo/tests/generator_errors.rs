@@ -110,7 +110,7 @@ fn spec() {
 
     let value: serde_json::Value = serde_json::from_str(json).unwrap();
     let errors = Dialect::primitive()
-        .parse_simulation_json(value)
+        .parse_simulation(rngo::spec::from_value(value).unwrap())
         .unwrap_err();
 
     let by_effect =
@@ -168,8 +168,11 @@ fn spec() {
 #[test]
 fn number_bounds() {
     let parse = |generator: serde_json::Value| {
-        Dialect::primitive().parse_simulation_json(
-            serde_json::json!({ "effects": { "a": { "generator": generator } } }),
+        Dialect::primitive().parse_simulation(
+            rngo::spec::from_value(
+                serde_json::json!({ "effects": { "a": { "generator": generator } } }),
+            )
+            .unwrap(),
         )
     };
 

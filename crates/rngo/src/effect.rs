@@ -6,9 +6,9 @@ pub(crate) mod simulation;
 mod trigger;
 
 use crate::RunError;
-use crate::build::{BuildError, EffectKey};
 use crate::effect::bound::{Bound, BoundKind};
 use crate::effect::prototype::Prototype;
+use crate::error::{BuildError, EffectKey};
 use crate::log::{Metadata, RunLogReader, SimpleEventRunLog};
 use chrono::{DateTime, FixedOffset, TimeDelta, Utc};
 use clock::Clock;
@@ -459,12 +459,13 @@ fn build_trigger(
 #[cfg(test)]
 mod tests {
     use super::{Effect, EffectBuilder};
-    use crate::build::{BuildError, constant};
+    use crate::build::constant;
     use crate::effect::generator::{
         Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
         Metadata,
     };
     use crate::effect::prototype::Prototype;
+    use crate::error::BuildError;
     use chrono::{TimeDelta, Utc};
     use std::num::NonZeroU64;
 

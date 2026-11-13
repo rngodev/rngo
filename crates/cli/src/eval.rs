@@ -1,7 +1,8 @@
 mod status;
 
 use console::style;
-use rngo::{Dialect, RunLogWriter, SignalOutcome, SqliteRunLog, Step, StopHandle, spec};
+use rngo::signal::SignalOutcome;
+use rngo::{Dialect, RunLogWriter, SqliteRunLog, Step, StopHandle, spec};
 use status::StatusWriter;
 use std::cell::RefCell;
 use std::error::Error;

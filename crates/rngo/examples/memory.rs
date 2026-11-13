@@ -79,7 +79,7 @@ fn measure(limit: u64) -> (usize, usize) {
     let tmp = TempDir::new().unwrap();
     let log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
     let simulation = Dialect::primitive()
-        .parse_simulation_json(spec())
+        .parse_simulation(rngo::spec::from_value(spec()).unwrap())
         .unwrap()
         .limit(limit)
         .run_log_reader(log.clone())

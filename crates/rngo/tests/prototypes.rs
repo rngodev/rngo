@@ -28,7 +28,8 @@ fn effect(prototype: Option<&str>, extra: Value) -> Value {
 }
 
 fn errors(value: Value) -> Vec<String> {
-    match Dialect::primitive().parse_simulation_json(value) {
+    match rngo::spec::from_value(value).and_then(|spec| Dialect::primitive().parse_simulation(spec))
+    {
         Err(errors) => errors
             .iter()
             .map(|e| format!("{}: {}", e.path().join("."), e))
@@ -42,7 +43,7 @@ fn errors(value: Value) -> Vec<String> {
 
 fn dates(value: Value, effect: &str) -> Vec<String> {
     let simulation = Dialect::primitive()
-        .parse_simulation_json(value)
+        .parse_simulation(rngo::spec::from_value(value).unwrap())
         .unwrap()
         .standalone()
         .unwrap();
@@ -60,7 +61,7 @@ fn effects_follow_their_prototype_bounds_and_stay_time_ordered() {
         json!({ "a": effect(None, json!({})), "b": effect(Some("late"), json!({})) }),
     );
     let simulation = Dialect::primitive()
-        .parse_simulation_json(value.clone())
+        .parse_simulation(rngo::spec::from_value(value.clone()).unwrap())
         .unwrap()
         .standalone()
         .unwrap();

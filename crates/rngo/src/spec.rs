@@ -1,9 +1,8 @@
+use crate::error::ParseError;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::num::NonZeroU64;
-
-pub use crate::error::ParseError;
 
 pub fn from_value(value: serde_json::Value) -> Result<Spec, Vec<ParseError>> {
     let mut track = serde_path_to_error::Track::new();

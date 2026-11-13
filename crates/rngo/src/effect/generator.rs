@@ -22,12 +22,10 @@ pub(crate) use reference::Reference;
 pub(crate) use select::Select;
 pub(crate) use string::Str;
 
-use crate::build::BuildError;
 pub use crate::effect::TriggerEvent;
+use crate::error::BuildError;
 use crate::log::RunLogReader;
 pub use crate::parse::{GeneratorParseVisitor, GeneratorParser};
-use rand_pcg::Pcg32;
-use rand_seeder::Seeder;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::rc::Rc;
@@ -140,9 +138,9 @@ impl GeneratorBuildVisitor {
     }
 
     /// An RNG seeded from the simulation seed and this generator's path, so each generator draws its own stream.
-    pub fn rng(&self) -> Pcg32 {
+    pub fn rng(&self) -> crate::Rng {
         let hash = format!("{}-{}", self.simulation_seed, self.path_id());
-        Seeder::from(&hash).into_rng()
+        crate::Rng::from_seed(&hash)
     }
 
     pub fn path_id(&self) -> String {
