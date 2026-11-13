@@ -103,13 +103,13 @@ impl Dialect {
         let simulation_moment_parser = Moment::parser();
 
         if let Some(seed) = spec.seed {
-            simulation_builder.set_seed(seed);
+            simulation_builder = simulation_builder.seed(seed);
         }
 
         if let Some(start) = &spec.start {
             match simulation_moment_parser.parse("start", start) {
                 Ok(timestamp) => {
-                    simulation_builder.set_start(timestamp);
+                    simulation_builder = simulation_builder.start(timestamp);
                 }
                 Err(mut e) => errors.append(&mut e),
             };
@@ -118,7 +118,7 @@ impl Dialect {
         if let Some(end) = &spec.end {
             match simulation_moment_parser.parse("end", end) {
                 Ok(timestamp) => {
-                    simulation_builder.set_end(timestamp);
+                    simulation_builder = simulation_builder.end(timestamp);
                 }
                 Err(mut e) => errors.append(&mut e),
             };
@@ -131,21 +131,21 @@ impl Dialect {
         }
 
         for (name, prototype) in &spec.prototypes {
-            simulation_builder.with_prototype(name, |mut prototype_builder| {
+            simulation_builder = simulation_builder.prototype(name, |mut prototype_builder| {
                 if let Some(start) = &prototype.start {
-                    prototype_builder.set_start(start.as_str());
+                    prototype_builder = prototype_builder.start(start.as_str());
                 }
 
                 if let Some(end) = &prototype.end {
-                    prototype_builder.set_end(end.as_str());
+                    prototype_builder = prototype_builder.end(end.as_str());
                 }
 
                 if let Some(limit) = prototype.limit {
-                    prototype_builder.set_limit(limit);
+                    prototype_builder = prototype_builder.limit(limit);
                 }
 
                 if let Some(channel) = &prototype.channel {
-                    prototype_builder.set_channel(channel.clone());
+                    prototype_builder = prototype_builder.channel(channel.clone());
                 }
 
                 prototype_builder
@@ -198,26 +198,26 @@ impl Dialect {
                 }
             };
 
-            simulation_builder.with_effect(key, |mut effect_builder| {
-                effect_builder.set_generator(generator_builder);
+            simulation_builder = simulation_builder.effect(key, |mut effect_builder| {
+                effect_builder = effect_builder.generator(generator_builder);
                 if let Some(prototype) = &effect.prototype {
-                    effect_builder.set_prototype_key(prototype.clone());
+                    effect_builder = effect_builder.prototype_key(prototype.clone());
                 }
 
                 if let Some(start) = &effect.start {
-                    effect_builder.set_start(start.as_str());
+                    effect_builder = effect_builder.start(start.as_str());
                 }
 
                 if let Some(end) = &effect.end {
-                    effect_builder.set_end(end.as_str());
+                    effect_builder = effect_builder.end(end.as_str());
                 }
 
                 if let Some(limit) = effect.limit {
-                    effect_builder.set_limit(limit);
+                    effect_builder = effect_builder.limit(limit);
                 }
 
                 if let Some(channel) = &effect.channel {
-                    effect_builder.set_channel(channel.clone());
+                    effect_builder = effect_builder.channel(channel.clone());
                 }
 
                 if let Some(trigger_union) = &effect.trigger {
@@ -228,11 +228,9 @@ impl Dialect {
                         spec::TriggerUnion::Full(trigger) => trigger.clone(),
                     };
 
-                    match trigger {
-                        spec::Trigger::Clock { rate } => {
-                            effect_builder.set_trigger_expression(rate)
-                        }
-                        spec::Trigger::Effect { key } => effect_builder.set_trigger_effect(key),
+                    effect_builder = match trigger {
+                        spec::Trigger::Clock { rate } => effect_builder.trigger_expression(rate),
+                        spec::Trigger::Effect { key } => effect_builder.trigger_effect(key),
                     };
                 }
 
@@ -293,7 +291,7 @@ impl Dialect {
             } else {
                 match self.parse_channel(channel, &formats) {
                     Ok(channel_builder) => {
-                        proxy_builder.set_channel(key.clone(), channel_builder);
+                        proxy_builder = proxy_builder.channel(key.clone(), channel_builder);
                     }
                     Err(e) => errors.extend(e.into_iter().map(|e| e.prefixed(&["channels", key]))),
                 }
@@ -314,7 +312,7 @@ impl Dialect {
         for (key, signal) in &spec.signals {
             match self.parse_signal(key, signal) {
                 Ok(built) => {
-                    audit_builder.set_signal(key.clone(), built);
+                    audit_builder = audit_builder.signal(key.clone(), built);
                 }
                 Err(mut e) => errors.append(&mut e),
             }

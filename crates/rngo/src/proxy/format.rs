@@ -13,3 +13,9 @@ pub use template::TemplateFormat;
 pub trait Format: Debug {
     fn format(&self, event: &Input) -> Result<String, FormatError>;
 }
+
+impl<F: Format + ?Sized> Format for std::rc::Rc<F> {
+    fn format(&self, event: &Input) -> Result<String, FormatError> {
+        self.as_ref().format(event)
+    }
+}

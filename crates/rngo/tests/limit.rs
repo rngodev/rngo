@@ -12,14 +12,13 @@ fn limit(n: u64) -> NonZeroU64 {
 
 #[test]
 fn unlimited_effect_keeps_running_after_limited_effect_stops() {
-    let mut simulation_builder = Simulation::builder();
-    simulation_builder
-        .with_effect("limited", |e| {
+    let simulation_builder = Simulation::builder()
+        .effect("limited", |e| {
             e.trigger_hertz(1.0)
                 .limit(limit(3))
                 .generator(constant().value(1))
         })
-        .with_effect("unlimited", |e| {
+        .effect("unlimited", |e| {
             e.trigger_expression("hz(1, hour)".into())
                 .generator(constant().value(1))
         });
@@ -45,14 +44,13 @@ fn unlimited_effect_keeps_running_after_limited_effect_stops() {
 
 #[test]
 fn dependent_effect_stops_after_upstream_limit() {
-    let mut simulation_builder = Simulation::builder();
-    simulation_builder
-        .with_effect("upstream", |e| {
+    let simulation_builder = Simulation::builder()
+        .effect("upstream", |e| {
             e.trigger_expression("hz(1, hour)".into())
                 .limit(limit(4))
                 .generator(constant().value(1))
         })
-        .with_effect("downstream", |e| {
+        .effect("downstream", |e| {
             e.trigger_effect("upstream".into())
                 .generator(constant().value(2))
         });
@@ -70,7 +68,7 @@ fn dependent_effect_stops_after_upstream_limit() {
 #[test]
 fn run_limit_lower_than_effect_limit_wins() {
     let mut simulation_builder = Simulation::builder();
-    simulation_builder.with_effect("ping", |e| {
+    simulation_builder = simulation_builder.effect("ping", |e| {
         e.trigger_hertz(1.0)
             .limit(limit(10))
             .generator(constant().value(1))
@@ -90,7 +88,7 @@ fn run_limit_lower_than_effect_limit_wins() {
 #[test]
 fn effect_limit_lower_than_run_limit_wins() {
     let mut simulation_builder = Simulation::builder();
-    simulation_builder.with_effect("ping", |e| {
+    simulation_builder = simulation_builder.effect("ping", |e| {
         e.trigger_hertz(1.0)
             .limit(limit(4))
             .generator(constant().value(1))

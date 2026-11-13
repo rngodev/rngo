@@ -216,90 +216,43 @@ impl EffectBuilder {
     }
 
     pub fn start(mut self, start: impl Into<Bound>) -> Self {
-        self.set_start(start);
-        self
-    }
-
-    /// Sets `start` to a [`Bound`]; a string is a CEL expression, parsed at build so it can refer to the default prototype via `simulation`.
-    pub fn set_start(&mut self, start: impl Into<Bound>) -> &mut Self {
         let start: Bound = start.into();
         self.start = Some(start.of_kind(BoundKind::Start));
         self
     }
 
     pub fn end(mut self, end: impl Into<Bound>) -> Self {
-        self.set_end(end);
-        self
-    }
-
-    /// Sets `end` to a [`Bound`]; a string is a CEL expression, parsed at build so it can refer to the default prototype via `simulation`.
-    pub fn set_end(&mut self, end: impl Into<Bound>) -> &mut Self {
         let end: Bound = end.into();
         self.end = Some(end.of_kind(BoundKind::End));
         self
     }
 
     pub fn limit(mut self, limit: NonZeroU64) -> Self {
-        self.set_limit(limit);
-        self
-    }
-
-    pub fn set_limit(&mut self, limit: NonZeroU64) -> &mut Self {
         self.limit = Some(limit);
         self
     }
 
     pub fn channel(mut self, channel: impl Into<String>) -> Self {
-        self.set_channel(channel);
-        self
-    }
-
-    /// Sets the channel the effect writes to, taking precedence over its prototype's.
-    pub fn set_channel(&mut self, channel: impl Into<String>) -> &mut Self {
         self.channel = Some(channel.into());
         self
     }
 
     pub fn prototype_key(mut self, key: impl Into<String>) -> Self {
-        self.set_prototype_key(key);
-        self
-    }
-
-    /// Sets the key of the prototype this effect names; no key means the default prototype and a key matching no prototype an empty one.
-    pub fn set_prototype_key(&mut self, key: impl Into<String>) -> &mut Self {
         self.prototype_key = Some(key.into());
         self
     }
 
     pub fn prototype(mut self, prototype: &Prototype) -> Self {
-        self.set_prototype(prototype);
-        self
-    }
-
-    /// Sets the prototype whose `start`, `end` and `limit` the effect takes where it sets none itself; without one the prototype is empty.
-    pub fn set_prototype(&mut self, prototype: &Prototype) -> &mut Self {
         self.prototype = Some(prototype.clone());
         self
     }
 
     pub fn now(mut self, now: DateTime<FixedOffset>) -> Self {
-        self.set_now(now);
-        self
-    }
-
-    /// Sets the instant relative moments resolve against; defaults to the current time at build.
-    pub fn set_now(&mut self, now: DateTime<FixedOffset>) -> &mut Self {
         self.now = Some(now);
         self
     }
 
     pub fn seed(mut self, seed: u64) -> Self {
-        self.set_seed(seed);
-        self
-    }
-
-    /// Sets the simulation's seed; defaults to 1.
-    pub fn set_seed(&mut self, seed: u64) -> &mut Self {
         self.seed = Some(seed);
         self
     }
@@ -310,51 +263,26 @@ impl EffectBuilder {
     }
 
     pub fn event_run_log(mut self, event_run_log: Rc<dyn RunLogReader>) -> Self {
-        self.set_event_run_log(event_run_log);
-        self
-    }
-
-    pub fn set_event_run_log(&mut self, event_run_log: Rc<dyn RunLogReader>) -> &mut Self {
         self.event_run_log = Some(event_run_log);
         self
     }
 
     pub fn trigger_effect(mut self, key: String) -> Self {
-        self.set_trigger_effect(key);
-        self
-    }
-
-    pub fn set_trigger_effect(&mut self, key: String) -> &mut Self {
         self.trigger = TriggerConfig::Effect { key };
         self
     }
 
     pub fn trigger_hertz(mut self, hertz: f64) -> Self {
-        self.set_trigger_hertz(hertz);
-        self
-    }
-
-    pub fn set_trigger_hertz(&mut self, hertz: f64) -> &mut Self {
         self.trigger = TriggerConfig::ClockHertz(hertz);
         self
     }
 
     pub fn trigger_expression(mut self, expression: String) -> Self {
-        self.set_trigger_expression(expression);
-        self
-    }
-
-    pub fn set_trigger_expression(&mut self, expression: String) -> &mut Self {
         self.trigger = TriggerConfig::ClockExpression(expression);
         self
     }
 
     pub fn generator(mut self, builder: impl GeneratorBuilder + 'static) -> Self {
-        self.set_generator(builder);
-        self
-    }
-
-    pub fn set_generator(&mut self, builder: impl GeneratorBuilder + 'static) -> &mut Self {
         self.generator_builder = Some(Box::new(builder));
         self
     }
@@ -586,7 +514,7 @@ mod tests {
             end: Some(now),
             ..Prototype::default()
         };
-        builder.set_prototype(&prototype);
+        builder = builder.prototype(&prototype);
         builder.build().unwrap()
     }
 
@@ -602,9 +530,9 @@ mod tests {
         let built = |channel: Option<&str>| {
             let mut builder = Effect::builder("ping".into()).generator(constant().value(1));
             if let Some(channel) = channel {
-                builder.set_channel(channel);
+                builder = builder.channel(channel);
             }
-            builder.set_prototype(&prototype);
+            builder = builder.prototype(&prototype);
             builder.build().unwrap()
         };
 

@@ -29,7 +29,7 @@ fn fixed_window() -> SimulationBuilder {
 #[test]
 fn simulation_respects_end_time() {
     let mut builder = fixed_window();
-    builder.with_effect("events", |e| e.generator(constant().value(Value::Null)));
+    builder = builder.effect("events", |e| e.generator(constant().value(Value::Null)));
 
     let offsets = offsets_in_seconds(
         builder
@@ -58,7 +58,7 @@ fn simulation_respects_end_time() {
 #[test]
 fn effect_respects_start_time() {
     let mut builder = fixed_window();
-    builder.with_effect("events", |e| {
+    builder = builder.effect("events", |e| {
         e.start(Moment::Absolute(start() + TimeDelta::days(15)))
             .generator(constant().value(Value::Null))
     });
@@ -213,7 +213,7 @@ fn an_effect_without_a_start_is_an_error() {
         }
     });
     let mut builder = Dialect::primitive().parse_simulation_json(spec).unwrap();
-    builder.with_effect("loose", |e| {
+    builder = builder.effect("loose", |e| {
         e.prototype_key("nowhere")
             .end(Moment::Relative(TimeDelta::zero()))
             .generator(constant().value(Value::Null))
@@ -233,7 +233,7 @@ fn an_effect_without_a_start_is_an_error() {
 #[test]
 fn an_effect_without_an_end_or_limit_is_an_error() {
     let mut builder = Simulation::builder();
-    builder.with_effect("events", |e| {
+    builder = builder.effect("events", |e| {
         e.prototype_key("nowhere")
             .start(Moment::Relative(TimeDelta::days(-1)))
             .generator(constant().value(Value::Null))
@@ -256,7 +256,7 @@ fn an_effect_without_an_end_or_limit_is_an_error() {
 #[test]
 fn an_effect_in_an_unknown_prototype_runs_on_its_own_values() {
     let mut builder = Simulation::builder();
-    builder.with_effect("events", |e| {
+    builder = builder.effect("events", |e| {
         e.prototype_key("nowhere")
             .start(Moment::Relative(TimeDelta::days(-1)))
             .limit(std::num::NonZeroU64::new(2).unwrap())

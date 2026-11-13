@@ -30,7 +30,7 @@ fn reference_with_no_prior_events_is_skipped_not_logged() {
     let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
 
     let mut simulation_builder = short_window();
-    simulation_builder.with_effect("derived", |e| {
+    simulation_builder = simulation_builder.effect("derived", |e| {
         e.trigger_hertz(1.0)
             .generator(reference().effect("nonexistent"))
     });
@@ -72,7 +72,7 @@ fn reference_with_no_prior_events_is_skipped_not_logged() {
 #[test]
 fn object_with_a_skipped_property_is_itself_skipped() {
     let mut simulation_builder = short_window();
-    simulation_builder.with_effect("derived", |e| {
+    simulation_builder = simulation_builder.effect("derived", |e| {
         e.trigger_hertz(1.0).generator(
             object()
                 .property("id", constant().value(1))
@@ -97,7 +97,7 @@ fn object_with_a_skipped_property_is_itself_skipped() {
 #[test]
 fn array_with_a_skipped_item_is_itself_skipped() {
     let mut simulation_builder = short_window();
-    simulation_builder.with_effect("derived", |e| {
+    simulation_builder = simulation_builder.effect("derived", |e| {
         e.trigger_hertz(1.0).generator(
             array()
                 .min_items(1)

@@ -109,64 +109,33 @@ impl SimulationBuilder {
     }
 
     pub fn seed(mut self, seed: u64) -> Self {
-        self.set_seed(seed);
-        self
-    }
-
-    /// Sets the seed; defaults to 1.
-    pub fn set_seed(&mut self, seed: u64) -> &mut Self {
         self.seed = Some(seed);
         self
     }
 
     pub fn now(mut self, now: DateTime<FixedOffset>) -> Self {
-        self.set_now(now);
-        self
-    }
-
-    /// Sets the instant relative moments resolve against; defaults to the current time at build.
-    pub fn set_now(&mut self, now: DateTime<FixedOffset>) -> &mut Self {
         self.now = Some(now);
         self
     }
 
     /// Sets the default prototype's start; defaults to 30 days before now.
     pub fn start(mut self, start: impl Into<Bound>) -> Self {
-        self.set_start(start);
-        self
-    }
-
-    pub fn set_start(&mut self, start: impl Into<Bound>) -> &mut Self {
-        self.default_prototype.set_start(start);
+        self.default_prototype = self.default_prototype.start(start);
         self
     }
 
     /// Sets the default prototype's end; defaults to now.
     pub fn end(mut self, end: impl Into<Bound>) -> Self {
-        self.set_end(end);
+        self.default_prototype = self.default_prototype.end(end);
         self
     }
 
-    pub fn set_end(&mut self, end: impl Into<Bound>) -> &mut Self {
-        self.default_prototype.set_end(end);
-        self
-    }
-
+    /// Defines a named prototype; `f` configures its builder.
     pub fn prototype(
         mut self,
         name: &str,
         f: impl FnOnce(PrototypeBuilder) -> PrototypeBuilder,
     ) -> Self {
-        self.with_prototype(name, f);
-        self
-    }
-
-    /// Defines a named prototype; `f` configures its builder.
-    pub fn with_prototype(
-        &mut self,
-        name: &str,
-        f: impl FnOnce(PrototypeBuilder) -> PrototypeBuilder,
-    ) -> &mut Self {
         self.prototypes
             .insert(name.into(), f(PrototypeBuilder::default().name(name)));
         self
@@ -178,19 +147,8 @@ impl SimulationBuilder {
     }
 
     /// Adds an effect; `f` configures its builder.
-    pub fn with_effect(
-        &mut self,
-        key: &str,
-        f: impl FnOnce(EffectBuilder) -> EffectBuilder,
-    ) -> &mut Self {
-        let builder = Effect::builder(key.into());
-        let builder = f(builder);
-        self.effect_builders.push(builder);
-        self
-    }
-
     pub fn effect(mut self, key: &str, f: impl FnOnce(EffectBuilder) -> EffectBuilder) -> Self {
-        self.with_effect(key, f);
+        self.effect_builders.push(f(Effect::builder(key.into())));
         self
     }
 
@@ -242,16 +200,16 @@ impl SimulationBuilder {
         let empty_prototype = Prototype::default();
 
         let mut effects = vec![];
-        for mut effect_builder in self.effect_builders {
+        for effect_builder in self.effect_builders {
             let prototype = match effect_builder.get_prototype_key() {
                 Some(key) => prototypes.get(key).unwrap_or(&empty_prototype),
                 None => &default_prototype,
             };
-            effect_builder
-                .set_prototype(prototype)
-                .set_now(now)
-                .set_event_run_log(run_log_reader.clone())
-                .set_seed(self.seed.unwrap_or(1));
+            let effect_builder = effect_builder
+                .prototype(prototype)
+                .now(now)
+                .event_run_log(run_log_reader.clone())
+                .seed(self.seed.unwrap_or(1));
 
             match effect_builder.build() {
                 Ok(effect) => effects.push(effect),
@@ -332,7 +290,7 @@ mod tests {
         let mut simulation_builder =
             super::Simulation::builder().run_log_reader(crate::SimpleEventRunLog::new());
 
-        simulation_builder.with_effect("alternating", |e| {
+        simulation_builder = simulation_builder.effect("alternating", |e| {
             e.trigger_hertz(1000.0)
                 .generator(AlternatingGeneratorBuilder)
         });
@@ -372,14 +330,13 @@ mod tests {
     fn standalone_logs_inputs_so_later_effects_can_read_them() {
         use crate::RunLogReader;
 
-        let mut simulation_builder = super::Simulation::builder();
-        simulation_builder
-            .with_effect("upstream", |e| {
+        let simulation_builder = super::Simulation::builder()
+            .effect("upstream", |e| {
                 e.trigger_hertz(1.0)
                     .limit(std::num::NonZeroU64::new(3).unwrap())
                     .generator(AlternatingGeneratorBuilder)
             })
-            .with_effect("downstream", |e| {
+            .effect("downstream", |e| {
                 e.trigger_effect("upstream".into())
                     .generator(AlternatingGeneratorBuilder)
             });

@@ -111,10 +111,8 @@ fn assert_simulation(simulation_builder: SimulationBuilder) {
 
 #[test]
 fn builder() {
-    let mut simulation_builder = Simulation::builder();
-
-    simulation_builder
-        .with_effect("user", |e| {
+    let simulation_builder = Simulation::builder()
+        .effect("user", |e| {
             e.generator(
                 object()
                     .property("id", number().minimum(1).scale(0).step(1))
@@ -128,7 +126,7 @@ fn builder() {
                     .property("created_at", context().path(["sim", "offset"])),
             )
         })
-        .with_effect("post", |e| {
+        .effect("post", |e| {
             e.generator(
                 object()
                     .property("id", number().minimum(1).scale(0).step(1))

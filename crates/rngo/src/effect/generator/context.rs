@@ -93,11 +93,6 @@ pub struct ContextBuilder {
 
 impl ContextBuilder {
     pub fn path(mut self, path: impl IntoIterator<Item: Into<String>>) -> Self {
-        self.set_path(path);
-        self
-    }
-
-    pub fn set_path(&mut self, path: impl IntoIterator<Item: Into<String>>) -> &mut Self {
         self.path = Some(path.into_iter().map(Into::into).collect());
         self
     }
@@ -137,7 +132,7 @@ impl GeneratorParser for ContextParser {
         };
 
         let mut builder = Context::builder();
-        builder.set_path(path);
+        builder = builder.path(path);
         Ok(Box::new(builder))
     }
 }

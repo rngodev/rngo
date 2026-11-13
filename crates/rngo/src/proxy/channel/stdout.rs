@@ -46,12 +46,7 @@ pub struct StdoutBuilder {
 
 impl StdoutBuilder {
     pub fn format(mut self, format: impl Format + 'static) -> Self {
-        self.set_format(Rc::new(format));
-        self
-    }
-
-    pub fn set_format(&mut self, format: Rc<dyn Format>) -> &mut Self {
-        self.format = Some(format);
+        self.format = Some(Rc::new(format));
         self
     }
 }
@@ -85,7 +80,7 @@ impl ChannelParser for StdoutParser {
         if let Some(value) = channel.fields.get("format")
             && let Some(format) = formats.parse(&["format"], value)?
         {
-            builder.set_format(format);
+            builder = builder.format(format);
         }
 
         Ok(Box::new(builder))

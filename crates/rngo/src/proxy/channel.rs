@@ -34,6 +34,16 @@ pub trait ChannelBuilder {
     ) -> Result<Box<dyn Channel>, Vec<BuildError>>;
 }
 
+impl ChannelBuilder for Box<dyn ChannelBuilder> {
+    fn build(
+        &self,
+        channel_key: &str,
+        outputs: OutputSender,
+    ) -> Result<Box<dyn Channel>, Vec<BuildError>> {
+        self.as_ref().build(channel_key, outputs)
+    }
+}
+
 /// The value a channel delivers for `input`: its formatted string, or its own `data` without a
 /// format. A format failure comes back as the error output to report instead.
 pub(crate) fn render(format: Option<&dyn Format>, input: &Input) -> Result<Value, ChannelOutput> {

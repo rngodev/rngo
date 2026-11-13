@@ -46,11 +46,6 @@ pub struct StrBuilder {
 
 impl StrBuilder {
     pub fn pattern(mut self, pattern: impl Into<String>) -> Self {
-        self.set_pattern(pattern);
-        self
-    }
-
-    pub fn set_pattern(&mut self, pattern: impl Into<String>) -> &mut Self {
         self.pattern = pattern.into();
         self
     }
@@ -83,7 +78,7 @@ impl GeneratorParser for StrParser {
 
         match visitor.spec().fields.get("pattern").map(|v| v.as_str()) {
             Some(Some(pattern)) => {
-                builder.set_pattern(pattern);
+                builder = builder.pattern(pattern);
                 Ok(Box::new(builder))
             }
             Some(_) => Err(vec![

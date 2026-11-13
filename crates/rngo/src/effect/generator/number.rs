@@ -104,41 +104,21 @@ pub struct NumberBuilder {
 
 impl NumberBuilder {
     pub fn minimum(mut self, minimum: impl Into<f64>) -> Self {
-        self.set_minimum(minimum);
-        self
-    }
-
-    pub fn set_minimum(&mut self, minimum: impl Into<f64>) -> &mut Self {
         self.minimum = Some(minimum.into());
         self
     }
 
     pub fn maximum(mut self, maximum: impl Into<f64>) -> Self {
-        self.set_maximum(maximum);
-        self
-    }
-
-    pub fn set_maximum(&mut self, maximum: impl Into<f64>) -> &mut Self {
         self.maximum = Some(maximum.into());
         self
     }
 
     pub fn scale(mut self, scale: u32) -> Self {
-        self.set_scale(scale);
-        self
-    }
-
-    pub fn set_scale(&mut self, scale: u32) -> &mut Self {
         self.scale = Some(scale);
         self
     }
 
     pub fn step(mut self, step: impl Into<f64>) -> Self {
-        self.set_step(step);
-        self
-    }
-
-    pub fn set_step(&mut self, step: impl Into<f64>) -> &mut Self {
         self.step = Some(step.into());
         self
     }
@@ -222,7 +202,7 @@ impl GeneratorParser for NumberParser {
         if let Some(v) = visitor.spec().fields.get("minimum") {
             match v.as_f64() {
                 Some(minimum) => {
-                    builder.set_minimum(minimum);
+                    builder = builder.minimum(minimum);
                 }
                 None => errors.push(visitor.input_error("minimum", "minimum must be a number")),
             }
@@ -231,7 +211,7 @@ impl GeneratorParser for NumberParser {
         if let Some(v) = visitor.spec().fields.get("maximum") {
             match v.as_f64() {
                 Some(maximum) => {
-                    builder.set_maximum(maximum);
+                    builder = builder.maximum(maximum);
                 }
                 None => errors.push(visitor.input_error("maximum", "maximum must be a number")),
             }
@@ -240,7 +220,7 @@ impl GeneratorParser for NumberParser {
         if let Some(v) = visitor.spec().fields.get("scale") {
             match v.as_u64() {
                 Some(scale) => {
-                    builder.set_scale(scale as u32);
+                    builder = builder.scale(scale as u32);
                 }
                 None => errors
                     .push(visitor.input_error("scale", "scale must be a non-negative integer")),
@@ -250,7 +230,7 @@ impl GeneratorParser for NumberParser {
         if let Some(v) = visitor.spec().fields.get("step") {
             match v.as_f64() {
                 Some(step) => {
-                    builder.set_step(step);
+                    builder = builder.step(step);
                 }
                 None => errors.push(visitor.input_error("step", "step must be a number")),
             }

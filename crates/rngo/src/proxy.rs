@@ -156,11 +156,6 @@ impl ProxyBuilder {
 
     /// When true, holds each input until its timestamp has passed; otherwise sends it right away.
     pub fn realtime(mut self, value: bool) -> Self {
-        self.set_realtime(value);
-        self
-    }
-
-    pub fn set_realtime(&mut self, value: bool) -> &mut Self {
         self.realtime = value;
         self
     }
@@ -168,22 +163,12 @@ impl ProxyBuilder {
     /// Called with the awaited timestamp when a realtime wait starts and about once a second
     /// while it lasts.
     pub fn on_wait(mut self, f: impl FnMut(DateTime<FixedOffset>) + 'static) -> Self {
-        self.set_on_wait(f);
-        self
-    }
-
-    pub fn set_on_wait(&mut self, f: impl FnMut(DateTime<FixedOffset>) + 'static) -> &mut Self {
         self.on_wait = Some(Box::new(f));
         self
     }
 
     /// Uses `handle` to stop the built proxy, so it can be shared before the proxy exists.
     pub fn stop_handle(mut self, handle: StopHandle) -> Self {
-        self.set_stop_handle(handle);
-        self
-    }
-
-    pub fn set_stop_handle(&mut self, handle: StopHandle) -> &mut Self {
         self.stop = handle;
         self
     }
@@ -194,16 +179,7 @@ impl ProxyBuilder {
         key: impl Into<String>,
         builder: impl ChannelBuilder + 'static,
     ) -> Self {
-        self.set_channel(key, Box::new(builder));
-        self
-    }
-
-    pub fn set_channel(
-        &mut self,
-        key: impl Into<String>,
-        builder: Box<dyn ChannelBuilder>,
-    ) -> &mut Self {
-        self.channel_builders.push((key.into(), builder));
+        self.channel_builders.push((key.into(), Box::new(builder)));
         self
     }
 
@@ -213,14 +189,6 @@ impl ProxyBuilder {
         mut self,
         effect_channels: impl IntoIterator<Item = (E, C)>,
     ) -> Self {
-        self.set_effect_channels(effect_channels);
-        self
-    }
-
-    pub fn set_effect_channels<E: Into<String>, C: Into<String>>(
-        &mut self,
-        effect_channels: impl IntoIterator<Item = (E, C)>,
-    ) -> &mut Self {
         self.effect_channels.extend(
             effect_channels
                 .into_iter()

@@ -140,21 +140,11 @@ pub struct StreamBuilder {
 
 impl StreamBuilder {
     pub fn format(mut self, format: impl Format + 'static) -> Self {
-        self.set_format(Rc::new(format));
-        self
-    }
-
-    pub fn set_format(&mut self, format: Rc<dyn Format>) -> &mut Self {
-        self.format = Some(format);
+        self.format = Some(Rc::new(format));
         self
     }
 
     pub fn command(mut self, value: impl Into<String>) -> Self {
-        self.set_command(value);
-        self
-    }
-
-    pub fn set_command(&mut self, value: impl Into<String>) -> &mut Self {
         self.command = Some(value.into());
         self
     }
@@ -271,7 +261,7 @@ impl ChannelParser for StreamParser {
         if let Some(value) = channel.fields.get("format")
             && let Some(format) = formats.parse(&["format"], value)?
         {
-            builder.set_format(format);
+            builder = builder.format(format);
         }
 
         Ok(Box::new(builder))

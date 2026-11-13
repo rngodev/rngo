@@ -87,11 +87,6 @@ pub struct FunctionBuilder {
 
 impl FunctionBuilder {
     pub fn expression(mut self, expression: impl Into<String>) -> Self {
-        self.set_expression(expression);
-        self
-    }
-
-    pub fn set_expression(&mut self, expression: impl Into<String>) -> &mut Self {
         self.expression = Some(expression.into());
         self
     }
@@ -101,15 +96,6 @@ impl FunctionBuilder {
         key: impl Into<String>,
         builder: impl GeneratorBuilder + 'static,
     ) -> Self {
-        self.set_variable(key, builder);
-        self
-    }
-
-    pub fn set_variable(
-        &mut self,
-        key: impl Into<String>,
-        builder: impl GeneratorBuilder + 'static,
-    ) -> &mut Self {
         self.variable_builders.insert(key.into(), Box::new(builder));
         self
     }
@@ -173,7 +159,7 @@ impl GeneratorParser for FunctionParser {
         };
 
         let mut builder = Function::builder();
-        builder.set_expression(expression);
+        builder = builder.expression(expression);
 
         if let Some(vars_value) = visitor.spec().fields.get("variables") {
             let vars: IndexMap<String, spec::Generator> =
@@ -186,7 +172,7 @@ impl GeneratorParser for FunctionParser {
                 let path = vec!["variables".into(), key.clone()];
                 match visitor.parse_input_generator(path, generator) {
                     Ok(b) => {
-                        builder.set_variable(key, b);
+                        builder = builder.variable(key, b);
                     }
                     Err(mut e) => errors.append(&mut e),
                 }

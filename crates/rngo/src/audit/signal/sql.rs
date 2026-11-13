@@ -138,21 +138,11 @@ pub struct SqlSignalBuilder {
 
 impl SqlSignalBuilder {
     pub fn query(mut self, query: impl Into<String>) -> Self {
-        self.set_query(query);
-        self
-    }
-
-    pub fn set_query(&mut self, query: impl Into<String>) -> &mut Self {
         self.query = Some(query.into());
         self
     }
 
     pub fn expect(mut self, expect: impl Into<String>) -> Self {
-        self.set_expect(expect);
-        self
-    }
-
-    pub fn set_expect(&mut self, expect: impl Into<String>) -> &mut Self {
         self.expect = Some(expect.into());
         self
     }

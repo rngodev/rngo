@@ -33,11 +33,6 @@ pub struct ConstantBuilder {
 
 impl ConstantBuilder {
     pub fn value(mut self, value: impl Into<Value>) -> Self {
-        self.set_value(value);
-        self
-    }
-
-    pub fn set_value(&mut self, value: impl Into<Value>) -> &mut Self {
         self.value = Some(value.into());
         self
     }
@@ -70,7 +65,7 @@ impl GeneratorParser for ConstantParser {
 
         match visitor.spec().fields.get("value") {
             Some(value) => {
-                builder.set_value(value.clone());
+                builder = builder.value(value.clone());
                 Ok(Box::new(builder))
             }
             None => Err(vec![visitor.invalid("value must be specified")]),

@@ -63,15 +63,6 @@ pub struct SelectBuilder {
 
 impl SelectBuilder {
     pub fn option(mut self, weight: u32, builder: impl GeneratorBuilder + 'static) -> Self {
-        self.set_option(weight, builder);
-        self
-    }
-
-    pub fn set_option(
-        &mut self,
-        weight: u32,
-        builder: impl GeneratorBuilder + 'static,
-    ) -> &mut Self {
         self.option_builders.push((weight, Box::new(builder)));
         self
     }
@@ -150,7 +141,7 @@ impl GeneratorParser for SelectParser {
             let path = vec!["options".into(), i.to_string(), "generator".into()];
             match visitor.parse_input_generator(path, option.generator) {
                 Ok(generator_builder) => {
-                    builder.set_option(option.weight.unwrap_or(1), generator_builder);
+                    builder = builder.option(option.weight.unwrap_or(1), generator_builder);
                 }
                 Err(mut e) => errors.append(&mut e),
             }

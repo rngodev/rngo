@@ -130,17 +130,17 @@ Then build an `Audit` and run it against the `RunLog`:
 
 ```rust
 let audit = rngo::Audit::builder()
-    .with_signal("some-inputs",
+    .signal("some-inputs",
         sql_signal()
             .query("SELECT count(*) FROM inputs;")
             .expect("result > 0")
     )
-    .with_signal("no-psql-errors",
+    .signal("no-psql-errors",
         sql_signal()
             .query("SELECT count(*) FROM outputs WHERE channel = 'db'")
             .expect("result == 0")
     )
-    .with_signal("minimal-log-errors",
+    .signal("minimal-log-errors",
         sql_signal()
             .query("SELECT count(*) FROM outputs WHERE channel = 'log' AND data LIKE 'ERROR%'")
             .expect("result < 20")
