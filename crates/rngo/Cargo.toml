@@ -29,6 +29,7 @@ serde_path_to_error = "0.1.20"
 multi_try = "0.3.0"
 rusqlite = { version = "0.40.1", features = ["bundled"] }
 handlebars = "6"
+schemars = { version = "1", optional = true, features = ["indexmap2"] }
 
 [dev-dependencies]
 criterion = { version = "0.8.2", features = ["html_reports"] }
@@ -41,3 +42,6 @@ harness = false
 [[bench]]
 name = "simulation"
 harness = false
+
+[features]
+schema = ["dep:schemars"]

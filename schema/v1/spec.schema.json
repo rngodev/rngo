@@ -1,0 +1,305 @@
+{
+  "$defs": {
+    "Channel": {
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Effect": {
+      "properties": {
+        "channel": {
+          "description": "Key of the channel this effect's inputs are delivered to.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "end": {
+          "description": "When the effect ends, overriding its prototype's.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "generator": {
+          "$ref": "#/$defs/Generator",
+          "description": "How each input's data is generated."
+        },
+        "limit": {
+          "description": "Maximum number of inputs the effect produces.",
+          "format": "uint64",
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "metadata": {
+          "description": "Extra data attached to every input."
+        },
+        "prototype": {
+          "description": "Key of the prototype whose window and defaults this effect uses.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "start": {
+          "description": "When the effect starts, overriding its prototype's.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "trigger": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TriggerUnion"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What fires the effect: a clock rate expression or another effect."
+        }
+      },
+      "required": [
+        "generator"
+      ],
+      "type": "object"
+    },
+    "Generator": {
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "GeneratorType": {
+      "properties": {
+        "generator": {
+          "$ref": "#/$defs/Generator"
+        }
+      },
+      "required": [
+        "generator"
+      ],
+      "type": "object"
+    },
+    "Prototype": {
+      "additionalProperties": false,
+      "description": "Named defaults for the effects that name it, which can each override them; a missing part stays unset.",
+      "properties": {
+        "channel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "end": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "limit": {
+          "format": "uint64",
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "scenarios": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Scenario"
+          },
+          "default": {},
+          "description": "Named overrides of `start` and `end`, applied by `rngo eval --scenario`.",
+          "type": "object"
+        },
+        "start": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Scenario": {
+      "description": "Overrides of a prototype's `start` and `end`.",
+      "properties": {
+        "end": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "start": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Signal": {
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Trigger": {
+      "oneOf": [
+        {
+          "properties": {
+            "rate": {
+              "type": "string"
+            },
+            "type": {
+              "const": "clock",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "rate"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "type": {
+              "const": "effect",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "key"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TriggerUnion": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/Trigger"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "channels": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Channel"
+      },
+      "default": {},
+      "description": "Where inputs are delivered, by key.",
+      "type": "object"
+    },
+    "effects": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Effect"
+      },
+      "description": "The kinds of input to generate, by key.",
+      "type": "object"
+    },
+    "end": {
+      "description": "End of the default prototype, in the same forms as `start`.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "generators": {
+      "additionalProperties": {
+        "$ref": "#/$defs/GeneratorType"
+      },
+      "default": {},
+      "description": "Named custom generator types that effects can reference.",
+      "type": "object"
+    },
+    "key": {
+      "description": "A name for the project.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "prototypes": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Prototype"
+      },
+      "type": "object"
+    },
+    "scenarios": true,
+    "seed": {
+      "description": "Seed for the run's random numbers; 1 when omitted.",
+      "format": "uint64",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "signals": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Signal"
+      },
+      "default": {},
+      "description": "Checks run once after the simulation, by key.",
+      "type": "object"
+    },
+    "start": {
+      "description": "Start of the default prototype: RFC 3339, `YYYY-MM-DD` or a CEL expression.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "version": {
+      "description": "The spec format version; 1 when omitted.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "effects"
+  ],
+  "title": "Spec",
+  "type": "object"
+}

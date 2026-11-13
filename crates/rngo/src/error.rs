@@ -21,6 +21,11 @@ pub enum ParseErrorKind {
     AmbiguousType { kind: &'static str, count: usize },
     #[error("unknown channel: {0}")]
     UnknownChannel(String),
+    #[error(
+        "spec version {found} is not supported; this rngo reads version {supported} (see {})",
+        crate::spec::MIGRATION_URL
+    )]
+    UnsupportedVersion { found: u64, supported: u32 },
 }
 
 impl ParseError {

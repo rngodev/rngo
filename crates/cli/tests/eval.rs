@@ -1576,3 +1576,31 @@ fn trigger_failing_mid_run_stops_with_an_error_and_keeps_the_log() {
         "the input logged before the failure should be kept"
     );
 }
+
+#[test]
+fn unsupported_spec_version_points_at_migration_notes() {
+    let tmp = TempDir::new().unwrap();
+    let base = tmp.path();
+    fs::create_dir_all(base.join(".rngo")).unwrap();
+    write_yaml(
+        base.join(".rngo/spec.yml"),
+        &json!({ "version": 99, "seed": 1, "phases": {} }),
+    );
+
+    let error = eval(
+        Some(base),
+        EvalOptions {
+            dry_run: true,
+            ..Default::default()
+        },
+    )
+    .unwrap_err()
+    .to_string();
+
+    assert!(
+        error.contains("spec version 99 is not supported"),
+        "{error}"
+    );
+    assert!(error.contains("MIGRATING.md"), "{error}");
+    assert!(!error.contains("unknown field"), "{error}");
+}
