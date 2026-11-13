@@ -1,21 +1,19 @@
 use super::{Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorResult};
-use crate::build::BuildError;
 use crate::effect::generator::{GeneratorContext, Metadata};
+use crate::error::{BuildError, ParseError as Error};
 use crate::parse::{GeneratorParseVisitor, GeneratorParser};
-use crate::spec::ParseError as Error;
-use serde_json;
 
 #[derive(Debug)]
-pub struct Context {
+pub(crate) struct Context {
     path: ContextPath,
 }
 
 impl Context {
-    pub fn builder() -> ContextBuilder {
+    pub(crate) fn builder() -> ContextBuilder {
         ContextBuilder { path: None }
     }
 
-    pub fn parser() -> ContextParser {
+    pub(crate) fn parser() -> ContextParser {
         ContextParser {}
     }
 }
@@ -94,11 +92,6 @@ pub struct ContextBuilder {
 
 impl ContextBuilder {
     pub fn path(mut self, path: impl IntoIterator<Item: Into<String>>) -> Self {
-        self.set_path(path);
-        self
-    }
-
-    pub fn set_path(&mut self, path: impl IntoIterator<Item: Into<String>>) -> &mut Self {
         self.path = Some(path.into_iter().map(Into::into).collect());
         self
     }
@@ -117,7 +110,7 @@ impl GeneratorBuilder for ContextBuilder {
     }
 }
 
-pub struct ContextParser {}
+pub(crate) struct ContextParser {}
 
 impl GeneratorParser for ContextParser {
     fn key(&self) -> &str {
@@ -138,7 +131,7 @@ impl GeneratorParser for ContextParser {
         };
 
         let mut builder = Context::builder();
-        builder.set_path(path);
+        builder = builder.path(path);
         Ok(Box::new(builder))
     }
 }

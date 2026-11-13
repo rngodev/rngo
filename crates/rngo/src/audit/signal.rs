@@ -1,10 +1,12 @@
 pub(crate) mod sql;
 
 use cel::Program;
-pub use sql::SqlSignal;
+pub(crate) use sql::SqlSignal;
+
+pub use crate::parse::SignalParser;
 
 use crate::RunLogReader;
-use crate::build::BuildError;
+use crate::error::BuildError;
 use serde::Serialize;
 
 pub trait Signal: std::fmt::Debug {
@@ -23,6 +25,7 @@ impl SignalBuilder for Box<dyn Signal> {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum SignalOutcome {
     Success {
         value: serde_json::Value,
@@ -40,7 +43,7 @@ pub struct SignalEval {
 }
 
 #[derive(Debug)]
-pub struct CelExpectation {
+pub(crate) struct CelExpectation {
     source: String,
     program: Program,
 }

@@ -10,23 +10,22 @@ pub(crate) mod reference;
 pub(crate) mod select;
 pub(crate) mod string;
 
-pub use array::Array;
+pub(crate) use array::Array;
 use chrono::{DateTime, FixedOffset};
-pub use constant::Constant;
-pub use context::Context;
-pub use function::Function;
+pub(crate) use constant::Constant;
+pub(crate) use context::Context;
+pub(crate) use function::Function;
 pub use json_pointer::{JsonPointer, JsonPointerPart};
-pub use number::Number;
-pub use object::Object;
-pub use reference::Reference;
-pub use select::Select;
-pub use string::Str;
+pub(crate) use number::Number;
+pub(crate) use object::Object;
+pub(crate) use reference::Reference;
+pub(crate) use select::Select;
+pub(crate) use string::Str;
 
-use crate::build::BuildError;
-use crate::effect::TriggerEvent;
+pub use crate::effect::TriggerEvent;
+use crate::error::BuildError;
 use crate::log::RunLogReader;
-use rand_pcg::Pcg32;
-use rand_seeder::Seeder;
+pub use crate::parse::{GeneratorParseVisitor, GeneratorParser};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::rc::Rc;
@@ -42,10 +41,22 @@ pub struct GeneratorEdge {
     pub key: String,
 }
 
+/// What a generator sees each time its effect fires.
 pub struct GeneratorContext<'a> {
-    pub trigger: &'a TriggerEvent,
+    pub(crate) trigger: &'a TriggerEvent,
+    pub(crate) origin: DateTime<FixedOffset>,
+}
+
+impl GeneratorContext<'_> {
+    /// The trigger firing that this value is being generated for.
+    pub fn trigger(&self) -> &TriggerEvent {
+        self.trigger
+    }
+
     /// The instant sim offsets are measured from.
-    pub origin: DateTime<FixedOffset>,
+    pub fn origin(&self) -> DateTime<FixedOffset> {
+        self.origin
+    }
 }
 
 pub struct GeneratorResult {
@@ -90,11 +101,13 @@ impl GeneratorBuilder for Box<dyn GeneratorBuilder> {
     }
 }
 
+/// What a generator builder gets when the simulation builds: the run log, the effect, and where in
+/// the generator tree it sits.
 pub struct GeneratorBuildVisitor {
-    pub event_run_log: Rc<dyn RunLogReader>,
-    pub simulation_seed: u64,
-    pub effect_key: String,
-    pub path: Vec<GeneratorEdge>,
+    pub(crate) event_run_log: Rc<dyn RunLogReader>,
+    pub(crate) simulation_seed: u64,
+    pub(crate) effect_key: String,
+    pub(crate) path: Vec<GeneratorEdge>,
 }
 
 impl Clone for GeneratorBuildVisitor {
@@ -109,9 +122,25 @@ impl Clone for GeneratorBuildVisitor {
 }
 
 impl GeneratorBuildVisitor {
-    pub fn rng(&self) -> Pcg32 {
+    /// The run log, for generators that look up earlier inputs.
+    pub fn run_log(&self) -> &Rc<dyn RunLogReader> {
+        &self.event_run_log
+    }
+
+    /// The key of the effect being built.
+    pub fn effect_key(&self) -> &str {
+        &self.effect_key
+    }
+
+    /// The edges from the effect's root generator down to this one.
+    pub fn path(&self) -> &[GeneratorEdge] {
+        &self.path
+    }
+
+    /// An RNG seeded from the simulation seed and this generator's path, so each generator draws its own stream.
+    pub fn rng(&self) -> crate::Rng {
         let hash = format!("{}-{}", self.simulation_seed, self.path_id());
-        Seeder::from(&hash).into_rng()
+        crate::Rng::from_seed(&hash)
     }
 
     pub fn path_id(&self) -> String {

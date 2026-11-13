@@ -2,15 +2,15 @@ use super::{
     Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
     JsonPointerPart,
 };
-use crate::build::BuildError;
 use crate::effect::generator::{GeneratorEdge, Metadata};
+use crate::error::{BuildError, ParseError as Error};
 use crate::parse::{GeneratorParseVisitor, GeneratorParser};
-use crate::spec::{self, ParseError as Error};
+use crate::spec;
 use rand::RngExt;
 use rand_pcg::Pcg32;
 
 #[derive(Debug)]
-pub struct Array {
+pub(crate) struct Array {
     rng: Pcg32,
     min_items: usize,
     max_items: usize,
@@ -18,7 +18,7 @@ pub struct Array {
 }
 
 impl Array {
-    pub fn builder() -> ArrayBuilder {
+    pub(crate) fn builder() -> ArrayBuilder {
         ArrayBuilder {
             min_items: 0,
             max_items: usize::MAX,
@@ -26,7 +26,7 @@ impl Array {
         }
     }
 
-    pub fn parser() -> ArrayParser {
+    pub(crate) fn parser() -> ArrayParser {
         ArrayParser {}
     }
 }
@@ -40,31 +40,16 @@ pub struct ArrayBuilder {
 
 impl ArrayBuilder {
     pub fn min_items(mut self, value: usize) -> Self {
-        self.set_min_items(value);
-        self
-    }
-
-    pub fn set_min_items(&mut self, value: usize) -> &mut Self {
         self.min_items = value;
         self
     }
 
     pub fn max_items(mut self, value: usize) -> Self {
-        self.set_max_items(value);
-        self
-    }
-
-    pub fn set_max_items(&mut self, value: usize) -> &mut Self {
         self.max_items = value;
         self
     }
 
     pub fn items(mut self, builder: impl GeneratorBuilder + 'static) -> Self {
-        self.set_items(builder);
-        self
-    }
-
-    pub fn set_items(&mut self, builder: impl GeneratorBuilder + 'static) -> &mut Self {
         self.items_builder = Some(Box::new(builder));
         self
     }
@@ -85,7 +70,7 @@ impl GeneratorBuilder for ArrayBuilder {
         };
 
         Ok(Box::new(Array {
-            rng: generator_visitor.rng(),
+            rng: generator_visitor.rng().0,
             min_items: self.min_items,
             max_items: self.max_items,
             items,
@@ -121,7 +106,7 @@ impl Generator for Array {
     }
 }
 
-pub struct ArrayParser {}
+pub(crate) struct ArrayParser {}
 
 impl GeneratorParser for ArrayParser {
     fn key(&self) -> &str {

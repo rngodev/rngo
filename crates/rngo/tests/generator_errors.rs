@@ -3,19 +3,17 @@ use rngo::{BuildError, Dialect, EffectKey, ParseError, Simulation};
 
 #[test]
 fn builder() {
-    let mut simulation_builder = Simulation::builder();
-
-    simulation_builder
-        .with_effect("number", |e| e.generator(number().minimum(100).maximum(18)))
-        .with_effect("object", |e| {
+    let simulation_builder = Simulation::builder()
+        .effect("number", |e| e.generator(number().minimum(100).maximum(18)))
+        .effect("object", |e| {
             e.generator(
                 object()
                     .property("name", string())
                     .property("age", number().minimum(100).maximum(18)),
             )
         })
-        .with_effect("no_generator", |e| e)
-        .with_effect("nested", |e| {
+        .effect("no_generator", |e| e)
+        .effect("nested", |e| {
             e.generator(
                 object().property(
                     "score",
@@ -112,7 +110,7 @@ fn spec() {
 
     let value: serde_json::Value = serde_json::from_str(json).unwrap();
     let errors = Dialect::primitive()
-        .parse_simulation_json(value)
+        .parse_simulation(rngo::spec::from_value(value).unwrap())
         .unwrap_err();
 
     let by_effect =
@@ -170,8 +168,11 @@ fn spec() {
 #[test]
 fn number_bounds() {
     let parse = |generator: serde_json::Value| {
-        Dialect::primitive().parse_simulation_json(
-            serde_json::json!({ "effects": { "a": { "generator": generator } } }),
+        Dialect::primitive().parse_simulation(
+            rngo::spec::from_value(
+                serde_json::json!({ "effects": { "a": { "generator": generator } } }),
+            )
+            .unwrap(),
         )
     };
 
@@ -190,10 +191,9 @@ fn number_bounds() {
         .unwrap_err();
     assert_eq!(wide[0].path(), ["effects", "a", "generator"]);
 
-    let mut simulation_builder = Simulation::builder();
-    simulation_builder
-        .with_effect("equal", |e| e.generator(number().minimum(1).maximum(1)))
-        .with_effect("stepped", |e| e.generator(number().maximum(1).step(1)));
+    let simulation_builder = Simulation::builder()
+        .effect("equal", |e| e.generator(number().minimum(1).maximum(1)))
+        .effect("stepped", |e| e.generator(number().maximum(1).step(1)));
     let errors = simulation_builder
         .run_log_reader(rngo::SimpleEventRunLog::new())
         .build()

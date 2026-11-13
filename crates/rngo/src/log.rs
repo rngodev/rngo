@@ -3,9 +3,8 @@ mod simple;
 mod sqlite;
 
 use crate::effect::Input;
-use crate::{Output, RunLogError};
+use crate::{Output, Rng, RunLogError};
 use chrono::{DateTime, FixedOffset};
-use rand_pcg::Pcg32;
 use serde_json::Value;
 use std::rc::Rc;
 
@@ -27,8 +26,8 @@ pub trait RunLogWriter: std::fmt::Debug {
 pub trait RunLogReader: std::fmt::Debug {
     fn last(&self) -> Option<Rc<Input>>;
     fn last_for_effect(&self, key: &str) -> Option<Rc<Input>>;
-    fn random_for_effect(&self, key: &str, rng: &mut Pcg32) -> Option<Rc<Input>>;
-    fn unique_for_effect(&self, key: &str, cursor: &str, rng: &mut Pcg32) -> Option<Rc<Input>>;
+    fn random_for_effect(&self, key: &str, rng: &mut Rng) -> Option<Rc<Input>>;
+    fn unique_for_effect(&self, key: &str, cursor: &str, rng: &mut Rng) -> Option<Rc<Input>>;
     /// Runs `query` against the log, returning its scalar result.
     fn query(&self, query: &str) -> Result<Value, RunLogError>;
 }

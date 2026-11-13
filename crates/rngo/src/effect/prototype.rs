@@ -1,5 +1,5 @@
-use crate::build::{BuildError, SimulationKey};
 use crate::effect::bound::{Bound, BoundKind};
+use crate::error::{BuildError, SimulationKey};
 use chrono::{DateTime, FixedOffset, Utc};
 use std::num::NonZeroU64;
 
@@ -21,7 +21,7 @@ impl Prototype {
     }
 }
 
-/// Builds a [`Prototype`]; whatever is left unset stays unset.
+/// Builds a prototype; whatever is left unset stays unset.
 #[derive(Clone, Debug, Default)]
 pub struct PrototypeBuilder {
     name: Option<String>,
@@ -40,67 +40,33 @@ impl PrototypeBuilder {
     }
 
     pub fn start(mut self, start: impl Into<Bound>) -> Self {
-        self.set_start(start);
-        self
-    }
-
-    /// Sets `start` to a [`Bound`]; a string is a CEL expression, parsed at build so it can refer to the default prototype via `simulation`.
-    pub fn set_start(&mut self, start: impl Into<Bound>) -> &mut Self {
         let start: Bound = start.into();
         self.start = Some(start.of_kind(BoundKind::Start));
         self
     }
 
     pub fn end(mut self, end: impl Into<Bound>) -> Self {
-        self.set_end(end);
-        self
-    }
-
-    /// Sets `end` to a [`Bound`]; a string is a CEL expression, parsed at build so it can refer to the default prototype via `simulation`.
-    pub fn set_end(&mut self, end: impl Into<Bound>) -> &mut Self {
         let end: Bound = end.into();
         self.end = Some(end.of_kind(BoundKind::End));
         self
     }
 
     pub fn limit(mut self, limit: NonZeroU64) -> Self {
-        self.set_limit(limit);
-        self
-    }
-
-    pub fn set_limit(&mut self, limit: NonZeroU64) -> &mut Self {
         self.limit = Some(limit);
         self
     }
 
     pub fn channel(mut self, channel: impl Into<String>) -> Self {
-        self.set_channel(channel);
-        self
-    }
-
-    pub fn set_channel(&mut self, channel: impl Into<String>) -> &mut Self {
         self.channel = Some(channel.into());
         self
     }
 
     pub fn now(mut self, now: DateTime<FixedOffset>) -> Self {
-        self.set_now(now);
-        self
-    }
-
-    /// Sets the instant relative moments resolve against; defaults to the current time at build.
-    pub fn set_now(&mut self, now: DateTime<FixedOffset>) -> &mut Self {
         self.now = Some(now);
         self
     }
 
     pub fn prototype(mut self, prototype: &Prototype) -> Self {
-        self.set_prototype(prototype);
-        self
-    }
-
-    /// Sets the default prototype, whose `start` and `end` expressions see as `simulation`; without it, or if it lacks either, expressions can't refer to `simulation`.
-    pub fn set_prototype(&mut self, prototype: &Prototype) -> &mut Self {
         self.prototype = Some(prototype.clone());
         self
     }
@@ -176,14 +142,13 @@ mod tests {
 
     #[test]
     fn resolves_moments_expressions_and_limit() {
-        let mut builder = Prototype::builder().limit(NonZeroU64::new(3).unwrap());
-        builder
-            .set_start(Moment::Relative(TimeDelta::days(-2)))
-            .set_end("prototype.end - days(1)");
         let now = now();
-        let prototype = builder
-            .set_now(now)
-            .set_prototype(&Prototype {
+        let prototype = Prototype::builder()
+            .limit(NonZeroU64::new(3).unwrap())
+            .start(Moment::Relative(TimeDelta::days(-2)))
+            .end("prototype.end - days(1)")
+            .now(now)
+            .prototype(&Prototype {
                 start: Some(now - TimeDelta::days(30)),
                 end: Some(now),
                 ..Prototype::default()

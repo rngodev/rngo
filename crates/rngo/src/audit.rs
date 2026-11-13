@@ -1,4 +1,4 @@
-use crate::build::BuildError;
+use crate::error::BuildError;
 use crate::log::Metadata;
 pub mod signal;
 
@@ -74,20 +74,8 @@ impl AuditBuilder {
         }
     }
 
-    pub fn with_signal(
-        mut self,
-        key: impl Into<String>,
-        builder: impl SignalBuilder + 'static,
-    ) -> Self {
-        self.set_signal(key, builder);
-        self
-    }
-
-    pub fn set_signal(
-        &mut self,
-        key: impl Into<String>,
-        builder: impl SignalBuilder + 'static,
-    ) -> &mut Self {
+    /// Adds a signal under `key`.
+    pub fn signal(mut self, key: impl Into<String>, builder: impl SignalBuilder + 'static) -> Self {
         self.signal_builders.push((key.into(), Box::new(builder)));
         self
     }
@@ -249,7 +237,7 @@ mod tests {
             Err(RunLogError::Unsupported)
         }
 
-        fn random_for_effect(&self, _key: &str, _rng: &mut rand_pcg::Pcg32) -> Option<Rc<Input>> {
+        fn random_for_effect(&self, _key: &str, _rng: &mut crate::Rng) -> Option<Rc<Input>> {
             unimplemented!("not exercised by these tests")
         }
 
@@ -257,7 +245,7 @@ mod tests {
             &self,
             _key: &str,
             _cursor: &str,
-            _rng: &mut rand_pcg::Pcg32,
+            _rng: &mut crate::Rng,
         ) -> Option<Rc<Input>> {
             unimplemented!("not exercised by these tests")
         }
@@ -371,7 +359,7 @@ mod tests {
 
         let run_log = Rc::new(MockRunLog::default());
         let audit = Audit::builder()
-            .with_signal(
+            .signal(
                 "check",
                 sql_signal().query("SELECT 1").expect("result == 1"),
             )
@@ -389,7 +377,7 @@ mod tests {
         use crate::build::sql_signal;
 
         let result = Audit::builder()
-            .with_signal("check", sql_signal().query("SELECT 1"))
+            .signal("check", sql_signal().query("SELECT 1"))
             .build();
 
         let errors = result.unwrap_err();
@@ -402,8 +390,8 @@ mod tests {
 
         let run_log = Rc::new(MockRunLog::default());
         let result = Audit::builder()
-            .with_signal("no-query", sql_signal())
-            .with_signal("also-no-query", sql_signal())
+            .signal("no-query", sql_signal())
+            .signal("also-no-query", sql_signal())
             .run_log(run_log)
             .build();
 

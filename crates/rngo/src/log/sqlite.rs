@@ -1,9 +1,8 @@
 use crate::effect::Input;
 use crate::log::pool::InputPool;
 use crate::log::{Metadata, RunLogReader, RunLogWriter};
-use crate::{Level, Output, RunLogError};
+use crate::{Level, Output, Rng, RunLogError};
 use chrono::{DateTime, Utc};
-use rand_pcg::Pcg32;
 use rusqlite::types::Value as SqlValue;
 use rusqlite::{Connection, OptionalExtension};
 use std::cell::{Cell, RefCell, RefMut};
@@ -349,7 +348,7 @@ fn query_random_for_effect(
     connection: &Connection,
     pool: &InputPool<u64>,
     key: &str,
-    rng: &mut Pcg32,
+    rng: &mut Rng,
 ) -> Result<Option<Rc<Input>>, RunLogError> {
     let Some(id) = pool.random(key, rng) else {
         return Ok(None);
@@ -362,7 +361,7 @@ fn query_unique_for_effect(
     pool: &mut InputPool<u64>,
     key: &str,
     cursor: &str,
-    rng: &mut Pcg32,
+    rng: &mut Rng,
 ) -> Result<Option<Rc<Input>>, RunLogError> {
     let Some(id) = pool.take(key, cursor, rng) else {
         return Ok(None);
@@ -391,14 +390,14 @@ impl RunLogReader for SqliteRunLog {
         self.lookup(query_last_for_effect(&self.connection.borrow(), key))
     }
 
-    fn random_for_effect(&self, key: &str, rng: &mut Pcg32) -> Option<Rc<Input>> {
+    fn random_for_effect(&self, key: &str, rng: &mut Rng) -> Option<Rc<Input>> {
         let result = self
             .pool(key)
             .and_then(|pool| query_random_for_effect(&self.connection.borrow(), &pool, key, rng));
         self.lookup(result)
     }
 
-    fn unique_for_effect(&self, key: &str, cursor: &str, rng: &mut Pcg32) -> Option<Rc<Input>> {
+    fn unique_for_effect(&self, key: &str, cursor: &str, rng: &mut Rng) -> Option<Rc<Input>> {
         let result = self.pool(key).and_then(|mut pool| {
             query_unique_for_effect(&self.connection.borrow(), &mut pool, key, cursor, rng)
         });
@@ -693,8 +692,8 @@ mod tests {
         assert!(run_log.last_for_effect("c").is_none());
     }
 
-    fn rng(seed: u64) -> Pcg32 {
-        rand_seeder::Seeder::from(&format!("{seed}-run_log")).into_rng()
+    fn rng(seed: u64) -> Rng {
+        Rng::from_seed(&format!("{seed}-run_log"))
     }
 
     /// Builds a `SqliteRunLog`, populates it with ten inputs on effect "a", then draws

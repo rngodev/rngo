@@ -11,6 +11,7 @@ pub struct ParseError {
 
 /// What went wrong while parsing a spec.
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum ParseErrorKind {
     #[error("{0}")]
     Invalid(String),
@@ -71,6 +72,7 @@ fn display_path(path: &[String]) -> String {
 
 /// A problem found while turning parsed builders into runnable simulations, proxies or audits.
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum BuildError {
     #[error("failed to build simulation: `{message}`")]
     Simulation { key: SimulationKey, message: String },
@@ -173,6 +175,7 @@ impl BuildError {
 }
 
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum SimulationKey {
     Start,
     End,
@@ -181,6 +184,7 @@ pub enum SimulationKey {
 
 /// The part of an effect's spec an error concerns.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum EffectKey {
     Generator,
     Trigger,
@@ -223,6 +227,7 @@ impl RunError {
 
 /// A failure reading from or writing to a run log.
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum RunLogError {
     #[error("sqlite: {0}")]
     Sqlite(#[from] rusqlite::Error),
@@ -236,6 +241,7 @@ pub enum RunLogError {
 
 /// A failure turning an input into the string a channel delivers.
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum FormatError {
     #[error("failed to serialize the input: {0}")]
     Serialize(#[from] serde_json::Error),
@@ -247,6 +253,7 @@ pub enum FormatError {
 
 /// A failure delivering an input to a channel, which the run can't carry on past.
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum ChannelError {
     #[error("channel `{channel}`: failed to write: {source}")]
     Write {
@@ -281,6 +288,7 @@ fn format_stderr(stderr: &str) -> String {
 
 /// A failure sending an input through a proxy.
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum ProxyError {
     #[error(transparent)]
     Channel(#[from] ChannelError),
@@ -290,6 +298,7 @@ pub enum ProxyError {
 
 /// A failure evaluating a signal.
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum SignalError {
     #[error("expect expression failed to compile: {0}")]
     Compile(String),

@@ -1,26 +1,26 @@
 use super::{
     Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
 };
-use crate::build::BuildError;
 use crate::effect::generator::{GeneratorEdge, Metadata};
+use crate::error::{BuildError, ParseError as Error};
 use crate::parse::{GeneratorParseVisitor, GeneratorParser};
-use crate::spec::{self, ParseError as Error};
+use crate::spec;
 use indexmap::IndexMap;
 use serde_json::Map;
 
 #[derive(Debug)]
-pub struct Object {
+pub(crate) struct Object {
     properties: IndexMap<String, Box<dyn Generator>>,
 }
 
 impl Object {
-    pub fn builder() -> ObjectBuilder {
+    pub(crate) fn builder() -> ObjectBuilder {
         ObjectBuilder {
             property_builders: IndexMap::new(),
         }
     }
 
-    pub fn parser() -> ObjectParser {
+    pub(crate) fn parser() -> ObjectParser {
         ObjectParser {}
     }
 }
@@ -58,17 +58,8 @@ pub struct ObjectBuilder {
 }
 
 impl ObjectBuilder {
-    pub fn set_property(
-        &mut self,
-        key: &str,
-        builder: impl GeneratorBuilder + 'static,
-    ) -> &mut Self {
-        self.property_builders.insert(key.into(), Box::new(builder));
-        self
-    }
-
     pub fn property(mut self, key: &str, builder: impl GeneratorBuilder + 'static) -> Self {
-        self.set_property(key, builder);
+        self.property_builders.insert(key.into(), Box::new(builder));
         self
     }
 }
@@ -99,7 +90,7 @@ impl GeneratorBuilder for ObjectBuilder {
     }
 }
 
-pub struct ObjectParser {}
+pub(crate) struct ObjectParser {}
 
 impl GeneratorParser for ObjectParser {
     fn key(&self) -> &str {
@@ -128,7 +119,7 @@ impl GeneratorParser for ObjectParser {
                             generator,
                         ) {
                             Ok(stream) => {
-                                builder.set_property(&key, stream);
+                                builder = builder.property(&key, stream);
                             }
                             Err(mut e) => errors.append(&mut e),
                         };

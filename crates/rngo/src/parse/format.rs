@@ -1,5 +1,6 @@
+use crate::error::ParseError;
 use crate::proxy::format::Format;
-use crate::spec::{self, ParseError};
+use crate::spec;
 use serde_json::Value;
 use std::rc::Rc;
 
@@ -19,7 +20,7 @@ pub struct FormatParseContext<'a> {
 }
 
 impl<'a> FormatParseContext<'a> {
-    pub fn new(parsers: &'a [Box<dyn FormatParser>], spec: &'a spec::Spec) -> Self {
+    pub(crate) fn new(parsers: &'a [Box<dyn FormatParser>], spec: &'a spec::Spec) -> Self {
         FormatParseContext { parsers, spec }
     }
 

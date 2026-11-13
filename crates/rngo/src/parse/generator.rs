@@ -1,6 +1,7 @@
 use crate::effect::generator::GeneratorBuilder;
 use crate::effect::generator::custom::CustomParser;
-use crate::spec::{self, ParseError};
+use crate::error::ParseError;
+use crate::spec;
 use std::rc::Rc;
 
 pub trait GeneratorParser {
@@ -55,7 +56,7 @@ impl GeneratorParseVisitor {
         ParseError::invalid(message).at(path)
     }
 
-    pub fn parse_custom_generator(
+    pub(crate) fn parse_custom_generator(
         mut self,
         name: String,
         spec: spec::Generator,
@@ -98,7 +99,7 @@ impl GeneratorParseVisitor {
         child.parse()
     }
 
-    pub fn parse(self) -> Result<Box<dyn GeneratorBuilder>, Vec<ParseError>> {
+    pub(crate) fn parse(self) -> Result<Box<dyn GeneratorBuilder>, Vec<ParseError>> {
         let generator_parsers = Rc::clone(&self.primitive_generator_parsers);
         let custom_generators = Rc::clone(&self.custom_generator_parsers);
 

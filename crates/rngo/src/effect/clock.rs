@@ -7,7 +7,7 @@ use rand_seeder::Seeder;
 
 /// Poisson event clock yielding offsets in milliseconds since simulation start; it ends when the rate drops to zero.
 #[derive(Debug)]
-pub struct Clock {
+pub(super) struct Clock {
     key: String,
     rng: Pcg32,
     rate_function: RateFunction,
@@ -15,12 +15,12 @@ pub struct Clock {
 }
 
 impl Clock {
-    pub fn builder() -> ClockBuilder {
+    pub(super) fn builder() -> ClockBuilder {
         ClockBuilder::new()
     }
 
     /// The offset most recently yielded, or the start offset before the first.
-    pub fn last(&self) -> i64 {
+    pub(super) fn last(&self) -> i64 {
         self.last
     }
 }
@@ -56,7 +56,7 @@ impl Iterator for Clock {
     }
 }
 
-pub struct ClockBuilder {
+pub(super) struct ClockBuilder {
     key: String,
     seed: u64,
     rate: ClockRate,
@@ -69,7 +69,7 @@ enum ClockRate {
 }
 
 impl ClockBuilder {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         ClockBuilder {
             key: String::new(),
             seed: 1,
@@ -78,33 +78,33 @@ impl ClockBuilder {
         }
     }
 
-    pub fn key(mut self, key: String) -> Self {
+    pub(super) fn key(mut self, key: String) -> Self {
         self.key = key;
         self
     }
 
-    pub fn seed(mut self, seed: u64) -> Self {
+    pub(super) fn seed(mut self, seed: u64) -> Self {
         self.seed = seed;
         self
     }
 
-    pub fn hertz(mut self, hertz: f64) -> Self {
+    pub(super) fn hertz(mut self, hertz: f64) -> Self {
         self.rate = ClockRate::Hertz(hertz);
         self
     }
 
-    pub fn expression(mut self, expression: String) -> Self {
+    pub(super) fn expression(mut self, expression: String) -> Self {
         self.rate = ClockRate::Expression(expression);
         self
     }
 
     /// Sets the clock's starting offset in milliseconds since simulation start.
-    pub fn start_offset(mut self, offset: i64) -> Self {
+    pub(super) fn start_offset(mut self, offset: i64) -> Self {
         self.start_offset = offset;
         self
     }
 
-    pub fn build(self) -> Result<Clock, Vec<BuildError>> {
+    pub(super) fn build(self) -> Result<Clock, Vec<BuildError>> {
         let rng: Pcg32 = Seeder::from(&format!("{}-{}", self.seed, self.key)).into_rng();
 
         let rate_function = match self.rate {

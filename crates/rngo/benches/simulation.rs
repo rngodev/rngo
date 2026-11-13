@@ -67,7 +67,7 @@ fn spec(cursor: &str) -> Value {
 
 fn builder(spec: &Value, limit: u64) -> SimulationBuilder {
     Dialect::primitive()
-        .parse_simulation_json(spec.clone())
+        .parse_simulation(rngo::spec::from_value(spec.clone()).unwrap())
         .unwrap()
         .limit(limit)
 }

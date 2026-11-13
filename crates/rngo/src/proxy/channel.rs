@@ -2,13 +2,15 @@ pub(crate) mod exec;
 pub(crate) mod stdout;
 pub(crate) mod stream;
 
-pub use exec::Exec;
-pub use stdout::Stdout;
-pub use stream::Stream;
+pub(crate) use exec::Exec;
+pub(crate) use stdout::Stdout;
+pub(crate) use stream::Stream;
+
+pub use crate::parse::ChannelParser;
+pub use crate::proxy::output::{ChannelOutput, OutputSender};
 
 use crate::effect::Input;
 use crate::proxy::format::Format;
-use crate::proxy::output::{ChannelOutput, OutputSender};
 use crate::{BuildError, ChannelError, Level};
 use serde_json::Value;
 use std::process::Command;
@@ -30,6 +32,16 @@ pub trait ChannelBuilder {
         channel_key: &str,
         outputs: OutputSender,
     ) -> Result<Box<dyn Channel>, Vec<BuildError>>;
+}
+
+impl ChannelBuilder for Box<dyn ChannelBuilder> {
+    fn build(
+        &self,
+        channel_key: &str,
+        outputs: OutputSender,
+    ) -> Result<Box<dyn Channel>, Vec<BuildError>> {
+        self.as_ref().build(channel_key, outputs)
+    }
 }
 
 /// The value a channel delivers for `input`: its formatted string, or its own `data` without a

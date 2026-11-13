@@ -1,12 +1,11 @@
 use super::{
     Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
 };
-use crate::build::BuildError;
+use crate::Rng;
 use crate::effect::generator::Metadata;
+use crate::error::{BuildError, ParseError as Error};
 use crate::log::RunLogReader;
 use crate::parse::{GeneratorParseVisitor, GeneratorParser};
-use crate::spec::ParseError as Error;
-use rand_pcg::Pcg32;
 use std::rc::Rc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -16,23 +15,23 @@ pub enum Cursor {
 }
 
 #[derive(Debug)]
-pub struct Reference {
+pub(crate) struct Reference {
     event_run_log: Rc<dyn RunLogReader>,
     key: String,
     cursor: Cursor,
     unique_cursor: Option<String>,
-    rng: Pcg32,
+    rng: Rng,
 }
 
 impl Reference {
-    pub fn builder() -> ReferenceBuilder {
+    pub(crate) fn builder() -> ReferenceBuilder {
         ReferenceBuilder {
             effect: None,
             cursor: Cursor::Random,
         }
     }
 
-    pub fn parser() -> ReferenceParser {
+    pub(crate) fn parser() -> ReferenceParser {
         ReferenceParser {}
     }
 }
@@ -78,21 +77,11 @@ pub struct ReferenceBuilder {
 
 impl ReferenceBuilder {
     pub fn effect(mut self, effect: impl Into<String>) -> Self {
-        self.set_effect(effect);
-        self
-    }
-
-    pub fn set_effect(&mut self, effect: impl Into<String>) -> &mut Self {
         self.effect = Some(effect.into());
         self
     }
 
     pub fn cursor(mut self, cursor: Cursor) -> Self {
-        self.set_cursor(cursor);
-        self
-    }
-
-    pub fn set_cursor(&mut self, cursor: Cursor) -> &mut Self {
         self.cursor = cursor;
         self
     }
@@ -116,7 +105,7 @@ impl GeneratorBuilder for ReferenceBuilder {
     }
 }
 
-pub struct ReferenceParser {}
+pub(crate) struct ReferenceParser {}
 
 impl GeneratorParser for ReferenceParser {
     fn key(&self) -> &str {
@@ -132,7 +121,7 @@ impl GeneratorParser for ReferenceParser {
 
         match visitor.spec().fields.get("effect").map(|v| v.as_str()) {
             Some(Some(effect)) => {
-                builder.set_effect(effect.to_string());
+                builder = builder.effect(effect.to_string());
             }
             Some(_) => errors.push(visitor.invalid("effect must be a string")),
             None => errors.push(visitor.invalid("effect must be specified")),
@@ -141,10 +130,10 @@ impl GeneratorParser for ReferenceParser {
         if let Some(v) = visitor.spec().fields.get("cursor") {
             match v.as_str() {
                 Some("random") => {
-                    builder.set_cursor(Cursor::Random);
+                    builder = builder.cursor(Cursor::Random);
                 }
                 Some("unique") => {
-                    builder.set_cursor(Cursor::Unique);
+                    builder = builder.cursor(Cursor::Unique);
                 }
                 _ => errors.push(
                     visitor.input_error("cursor", "cursor must be either \"random\" or \"unique\""),

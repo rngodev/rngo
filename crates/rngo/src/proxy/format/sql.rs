@@ -12,7 +12,7 @@ pub struct SqlFormat {
 }
 
 impl SqlFormat {
-    pub fn parser() -> SqlFormatParser {
+    pub(crate) fn parser() -> SqlFormatParser {
         SqlFormatParser {}
     }
 
@@ -84,7 +84,7 @@ impl Format for SqlFormat {
     }
 }
 
-pub struct SqlFormatParser;
+pub(crate) struct SqlFormatParser;
 
 impl FormatParser for SqlFormatParser {
     fn key(&self) -> &str {

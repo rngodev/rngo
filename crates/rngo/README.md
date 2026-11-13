@@ -8,6 +8,26 @@ A **spec** describes the behavior of a system using the following components:
 - a `Proxy` routes inputs to the appropriate system interfaces and captures outputs
 - an `Audit` surfaces pattern in logged inputs and outputs and may set expectations
 
+## Public API
+
+These items are the supported public API; everything else is private and may change in any release. Each item has exactly one path:
+
+- `build`: the builder DSL below, i.e. the generator, channel, format and signal constructors (`object()`, `stream()`, `sql_format()`, `sql_signal()`, ...), their builder types, and `EffectBuilder`, `PrototypeBuilder`, `Moment`, `Bound` (opaque; built from a `Moment`, a timestamp or a CEL expression string)
+- `generator`: the extension API for writing your own generators in Rust: implement `Generator` and `GeneratorBuilder`, then pass the builder to `EffectBuilder::generator` or nest it in another builder. It also holds the types those traits use: `GeneratorContext`, `GeneratorResult`, `GeneratorBuildVisitor`, `GeneratorEdge`, `Metadata`, `TriggerEvent` and `JsonPointer`. The built-in generators themselves are private; use their builders in `build`. To give a generator its own `type` in specs, implement `GeneratorParser` (it gets a `GeneratorParseVisitor` for the spec fields and error paths) and register it with `Dialect::primitive().with_generator_parser(...)`.
+- `signal`: the extension API for custom signals: implement `Signal` (and `SignalParser` to give it a `type` in specs, registered with `Dialect::with_signal_parser`), returning a `SignalOutcome` and optional `SignalEval`. `SignalBuilder` lets the `AuditBuilder` take a built signal directly. `SignalOutcome` is also what an `Audit` records for each signal.
+- `spec`: `Spec` and `from_value`, for JSON or YAML specs (`from_value` then `Dialect::parse_simulation` parses a JSON value)
+- `Dialect`: parses a `Spec` into the builders below. `Dialect::primitive()` has every built-in parser, and `with_generator_parser`, `with_format_parser`, `with_channel_parser` and `with_signal_parser` add custom ones. For full control, `Dialect::new` takes exactly the parsers you list.
+- `parsers`: one function per built-in parser (`parsers::number()`, `parsers::stream()`, `parsers::sql_signal()`, ...), for building a dialect with `Dialect::new`
+- `channel`: the extension API for custom channels: `Channel`, `ChannelBuilder`, `ChannelParser`, `ChannelOutput` and `OutputSender`
+- `format`: the extension API for custom formats: `Format`, `FormatParser` and `FormatParseContext` (which a channel parser uses to parse its `format` field), plus the built-in `SqlFormat` and `TemplateFormat`
+- `SimulationBuilder`, `Simulation`, `StandaloneSimulation`, `ProxyBuilder`, `Proxy`, `StopHandle`, `AuditBuilder`, `Audit`, `AuditReport`
+- `SqliteRunLog`, `SimpleEventRunLog`, `RunLogReader`, `RunLogWriter`
+- `Input`, `SkippedInput`, `Step`, `Metadata`, `Output`, `Level`
+- `Rng`: the seeded RNG `RunLogReader::random_for_effect`/`unique_for_effect` and `GeneratorBuildVisitor::rng` use, so the API doesn't expose `rand_pcg`
+- the errors, at the crate root: `ParseError`, `ParseErrorKind`, `BuildError`, `RunError`, `RunLogError`, `FormatError`, `ChannelError`, `ProxyError`, `SignalError`, `EffectKey`, `SimulationKey`
+
+Public enums and spec structs are `#[non_exhaustive]`, so they can gain variants and fields without a breaking change. The types the crate hands to extensions (`GeneratorContext`, `GeneratorBuildVisitor`, `TriggerEvent`, `Bound`) have private fields and accessor methods, so their internals can change freely.
+
 ## DSL
 
 You can define a spec using a builder DSL. First we'll define a `SqliteRunLog`:
@@ -19,6 +39,8 @@ let run_log = rngo::SqliteRunLog::new(".".into())?;
 Next a `Simulation`:
 
 ```rust
+use rngo::build::*;
+
 let mut simulation = rngo::Simulation::builder()
     .seed(41)
     .start(Moment::Relative(TimeDelta::days(-90)))
@@ -109,17 +131,17 @@ Then build an `Audit` and run it against the `RunLog`:
 
 ```rust
 let audit = rngo::Audit::builder()
-    .with_signal("some-inputs",
+    .signal("some-inputs",
         sql_signal()
             .query("SELECT count(*) FROM inputs;")
             .expect("result > 0")
     )
-    .with_signal("no-psql-errors",
+    .signal("no-psql-errors",
         sql_signal()
             .query("SELECT count(*) FROM outputs WHERE channel = 'db'")
             .expect("result == 0")
     )
-    .with_signal("minimal-log-errors",
+    .signal("minimal-log-errors",
         sql_signal()
             .query("SELECT count(*) FROM outputs WHERE channel = 'log' AND data LIKE 'ERROR%'")
             .expect("result < 20")

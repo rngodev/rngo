@@ -1,6 +1,5 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use rand_pcg::Pcg32;
-use rngo::{Input, RunLogReader, RunLogWriter, SqliteRunLog};
+use rngo::{Input, Rng, RunLogReader, RunLogWriter, SqliteRunLog};
 use std::hint::black_box;
 use std::rc::Rc;
 use tempfile::TempDir;
@@ -33,8 +32,8 @@ fn filled(count: u64) -> (TempDir, Rc<SqliteRunLog>) {
     (tmp, log)
 }
 
-fn rng() -> Pcg32 {
-    rand_seeder::Seeder::from("bench").into_rng()
+fn rng() -> Rng {
+    Rng::from_seed("bench")
 }
 
 fn push_input(c: &mut Criterion) {

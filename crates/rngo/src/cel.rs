@@ -66,7 +66,7 @@ fn join(This(list): This<Arc<Vec<Value>>>, separator: Arc<String>) -> String {
         .join(separator.as_str())
 }
 
-pub trait CelContextExt {
+pub(crate) trait CelContextExt {
     fn with_time(&mut self) -> &mut Self;
     fn with_hertz(&mut self) -> &mut Self;
     fn with_strings(&mut self) -> &mut Self;

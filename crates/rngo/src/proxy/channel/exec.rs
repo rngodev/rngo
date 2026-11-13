@@ -10,17 +10,17 @@ use std::process::Stdio;
 use std::rc::Rc;
 
 #[derive(Debug)]
-pub struct Exec {
+pub(crate) struct Exec {
     channel_key: String,
     format: Option<Rc<dyn Format>>,
 }
 
 impl Exec {
-    pub fn parser() -> ExecParser {
+    pub(crate) fn parser() -> ExecParser {
         ExecParser {}
     }
 
-    pub fn builder() -> ExecBuilder {
+    pub(crate) fn builder() -> ExecBuilder {
         ExecBuilder::default()
     }
 }
@@ -82,12 +82,7 @@ pub struct ExecBuilder {
 
 impl ExecBuilder {
     pub fn format(mut self, format: impl Format + 'static) -> Self {
-        self.set_format(Rc::new(format));
-        self
-    }
-
-    pub fn set_format(&mut self, format: Rc<dyn Format>) -> &mut Self {
-        self.format = Some(format);
+        self.format = Some(Rc::new(format));
         self
     }
 }
@@ -105,7 +100,7 @@ impl ChannelBuilder for ExecBuilder {
     }
 }
 
-pub struct ExecParser {}
+pub(crate) struct ExecParser {}
 
 impl ChannelParser for ExecParser {
     fn key(&self) -> &str {
@@ -132,7 +127,7 @@ impl ChannelParser for ExecParser {
         if let Some(value) = channel.fields.get("format")
             && let Some(format) = formats.parse(&["format"], value)?
         {
-            builder.set_format(format);
+            builder = builder.format(format);
         }
 
         Ok(Box::new(builder))

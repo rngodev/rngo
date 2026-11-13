@@ -4,7 +4,7 @@ use std::fmt;
 fn build(json: &str) -> Result<Simulation, String> {
     let value: serde_json::Value = serde_json::from_str(json).unwrap();
     let simulation_builder = Dialect::primitive()
-        .parse_simulation_json(value)
+        .parse_simulation(rngo::spec::from_value(value).unwrap())
         .map_err(join_errors)?;
     simulation_builder
         .run_log_reader(rngo::SimpleEventRunLog::new())
@@ -23,7 +23,7 @@ fn join_errors<E: fmt::Display>(errors: Vec<E>) -> String {
 fn parse_errors(json: &str) -> Vec<ParseError> {
     let value: serde_json::Value = serde_json::from_str(json).unwrap();
     Dialect::primitive()
-        .parse_simulation_json(value)
+        .parse_simulation(rngo::spec::from_value(value).unwrap())
         .unwrap_err()
 }
 

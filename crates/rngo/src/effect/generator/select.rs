@@ -1,34 +1,34 @@
 use super::{
     Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
 };
-use crate::build::BuildError;
 use crate::effect::generator::{GeneratorEdge, Metadata};
+use crate::error::{BuildError, ParseError as Error};
 use crate::parse::{GeneratorParseVisitor, GeneratorParser};
-use crate::spec::{self, ParseError as Error};
+use crate::spec;
 use rand::RngExt;
 use rand_pcg::Pcg32;
 use serde::Deserialize;
 
 #[derive(Debug)]
-pub struct Select {
+pub(crate) struct Select {
     rng: Pcg32,
     properties: Vec<SelectProperty>,
 }
 
 impl Select {
-    pub fn builder() -> SelectBuilder {
+    pub(crate) fn builder() -> SelectBuilder {
         SelectBuilder {
             option_builders: vec![],
         }
     }
 
-    pub fn parser() -> SelectParser {
+    pub(crate) fn parser() -> SelectParser {
         SelectParser {}
     }
 }
 
 #[derive(Debug)]
-pub struct SelectProperty {
+pub(crate) struct SelectProperty {
     pub generator: Box<dyn Generator>,
     pub weight: u32,
 }
@@ -63,15 +63,6 @@ pub struct SelectBuilder {
 
 impl SelectBuilder {
     pub fn option(mut self, weight: u32, builder: impl GeneratorBuilder + 'static) -> Self {
-        self.set_option(weight, builder);
-        self
-    }
-
-    pub fn set_option(
-        &mut self,
-        weight: u32,
-        builder: impl GeneratorBuilder + 'static,
-    ) -> &mut Self {
         self.option_builders.push((weight, Box::new(builder)));
         self
     }
@@ -102,7 +93,7 @@ impl GeneratorBuilder for SelectBuilder {
 
         if errors.is_empty() {
             Ok(Box::new(Select {
-                rng: visitor.rng(),
+                rng: visitor.rng().0,
                 properties,
             }))
         } else {
@@ -117,7 +108,7 @@ struct OptionSpec {
     generator: spec::Generator,
 }
 
-pub struct SelectParser {}
+pub(crate) struct SelectParser {}
 
 impl GeneratorParser for SelectParser {
     fn key(&self) -> &str {
@@ -150,7 +141,7 @@ impl GeneratorParser for SelectParser {
             let path = vec!["options".into(), i.to_string(), "generator".into()];
             match visitor.parse_input_generator(path, option.generator) {
                 Ok(generator_builder) => {
-                    builder.set_option(option.weight.unwrap_or(1), generator_builder);
+                    builder = builder.option(option.weight.unwrap_or(1), generator_builder);
                 }
                 Err(mut e) => errors.append(&mut e),
             }

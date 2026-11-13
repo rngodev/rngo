@@ -1,7 +1,8 @@
 mod status;
 
 use console::style;
-use rngo::{Dialect, RunLogWriter, SignalOutcome, SqliteRunLog, Step, StopHandle, spec};
+use rngo::signal::SignalOutcome;
+use rngo::{Dialect, RunLogWriter, SqliteRunLog, Step, StopHandle, spec};
 use status::StatusWriter;
 use std::cell::RefCell;
 use std::error::Error;
@@ -92,7 +93,7 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
         .build()
         .map_err(join_errors)?;
     let effect_channels = simulation.effect_channels();
-    proxy_builder.set_effect_channels(effect_channels.clone());
+    proxy_builder = proxy_builder.effect_channels(effect_channels.clone());
     let writer = StatusWriter::new(sqlite_run_log.clone(), effect_channels);
 
     let flush_failure = Rc::new(RefCell::new(None));
@@ -100,7 +101,7 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
     if realtime {
         let status = writer.clone();
         let failure = flush_failure.clone();
-        proxy_builder.set_realtime(true).set_on_wait(move |until| {
+        proxy_builder = proxy_builder.realtime(true).on_wait(move |until| {
             if let Err(error) = status.flush() {
                 failure.borrow_mut().get_or_insert(error);
             }
@@ -120,6 +121,7 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
         match item {
             Ok(Step::Input(input)) => proxy.send(&input)?,
             Ok(Step::Skipped(skipped)) => writer.push_metadata(skipped.into())?,
+            Ok(_) => {}
             Err(error) => failure = Some(error.into()),
         }
         if let Some(error) = flush_failure.borrow_mut().take() {
@@ -166,6 +168,7 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
                     }
                     None => println!("{key}: {value}"),
                 },
+                _ => {}
             }
         }
 

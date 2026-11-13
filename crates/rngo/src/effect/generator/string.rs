@@ -1,12 +1,11 @@
 use super::{Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorResult};
-use crate::build::BuildError;
 use crate::effect::generator::GeneratorContext;
+use crate::error::{BuildError, ParseError as Error};
 use crate::parse::{GeneratorParseVisitor, GeneratorParser};
-use crate::spec::ParseError as Error;
 use rand::distr::Distribution;
 use rand_pcg::Pcg32;
 
-pub struct Str {
+pub(crate) struct Str {
     rng: Pcg32,
     regex: rand_regex::Regex,
 }
@@ -18,13 +17,13 @@ impl std::fmt::Debug for Str {
 }
 
 impl Str {
-    pub fn builder() -> StrBuilder {
+    pub(crate) fn builder() -> StrBuilder {
         StrBuilder {
             pattern: ".{0,64}".into(),
         }
     }
 
-    pub fn parser() -> StrParser {
+    pub(crate) fn parser() -> StrParser {
         StrParser {}
     }
 }
@@ -46,11 +45,6 @@ pub struct StrBuilder {
 
 impl StrBuilder {
     pub fn pattern(mut self, pattern: impl Into<String>) -> Self {
-        self.set_pattern(pattern);
-        self
-    }
-
-    pub fn set_pattern(&mut self, pattern: impl Into<String>) -> &mut Self {
         self.pattern = pattern.into();
         self
     }
@@ -62,13 +56,13 @@ impl GeneratorBuilder for StrBuilder {
             .map_err(|e| vec![visitor.error(format!("invalid pattern: {e}"))])?;
 
         Ok(Box::new(Str {
-            rng: visitor.rng(),
+            rng: visitor.rng().0,
             regex,
         }))
     }
 }
 
-pub struct StrParser {}
+pub(crate) struct StrParser {}
 
 impl GeneratorParser for StrParser {
     fn key(&self) -> &str {
@@ -83,7 +77,7 @@ impl GeneratorParser for StrParser {
 
         match visitor.spec().fields.get("pattern").map(|v| v.as_str()) {
             Some(Some(pattern)) => {
-                builder.set_pattern(pattern);
+                builder = builder.pattern(pattern);
                 Ok(Box::new(builder))
             }
             Some(_) => Err(vec![

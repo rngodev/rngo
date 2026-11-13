@@ -1,30 +1,30 @@
 use super::{
     Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
 };
-use crate::build::BuildError;
 use crate::cel::{CelContextExt, json_to_cel};
 use crate::effect::generator::{GeneratorEdge, Metadata};
+use crate::error::{BuildError, ParseError as Error};
 use crate::parse::{GeneratorParseVisitor, GeneratorParser};
-use crate::spec::{self, ParseError as Error};
+use crate::spec;
 use cel::{Context, Program};
 use indexmap::IndexMap;
 use std::collections::HashMap;
 
 #[derive(Debug)]
-pub struct Function {
+pub(crate) struct Function {
     program: Program,
     variables: HashMap<String, Box<dyn Generator>>,
 }
 
 impl Function {
-    pub fn builder() -> FunctionBuilder {
+    pub(crate) fn builder() -> FunctionBuilder {
         FunctionBuilder {
             expression: None,
             variable_builders: IndexMap::new(),
         }
     }
 
-    pub fn parser() -> FunctionParser {
+    pub(crate) fn parser() -> FunctionParser {
         FunctionParser {}
     }
 }
@@ -87,11 +87,6 @@ pub struct FunctionBuilder {
 
 impl FunctionBuilder {
     pub fn expression(mut self, expression: impl Into<String>) -> Self {
-        self.set_expression(expression);
-        self
-    }
-
-    pub fn set_expression(&mut self, expression: impl Into<String>) -> &mut Self {
         self.expression = Some(expression.into());
         self
     }
@@ -101,15 +96,6 @@ impl FunctionBuilder {
         key: impl Into<String>,
         builder: impl GeneratorBuilder + 'static,
     ) -> Self {
-        self.set_variable(key, builder);
-        self
-    }
-
-    pub fn set_variable(
-        &mut self,
-        key: impl Into<String>,
-        builder: impl GeneratorBuilder + 'static,
-    ) -> &mut Self {
         self.variable_builders.insert(key.into(), Box::new(builder));
         self
     }
@@ -149,7 +135,7 @@ impl GeneratorBuilder for FunctionBuilder {
     }
 }
 
-pub struct FunctionParser {}
+pub(crate) struct FunctionParser {}
 
 impl GeneratorParser for FunctionParser {
     fn key(&self) -> &str {
@@ -173,7 +159,7 @@ impl GeneratorParser for FunctionParser {
         };
 
         let mut builder = Function::builder();
-        builder.set_expression(expression);
+        builder = builder.expression(expression);
 
         if let Some(vars_value) = visitor.spec().fields.get("variables") {
             let vars: IndexMap<String, spec::Generator> =
@@ -186,7 +172,7 @@ impl GeneratorParser for FunctionParser {
                 let path = vec!["variables".into(), key.clone()];
                 match visitor.parse_input_generator(path, generator) {
                     Ok(b) => {
-                        builder.set_variable(key, b);
+                        builder = builder.variable(key, b);
                     }
                     Err(mut e) => errors.append(&mut e),
                 }

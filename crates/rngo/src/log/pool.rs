@@ -1,5 +1,4 @@
-use rand::RngExt;
-use rand_pcg::Pcg32;
+use crate::Rng;
 use std::collections::HashMap;
 
 /// In-memory index of each tracked effect's inputs, in push order, and of which ones each unique
@@ -22,24 +21,24 @@ impl<T> Default for InputPool<T> {
 
 impl<T: Clone> InputPool<T> {
     /// Whether `track` has been called for `effect`.
-    pub fn is_tracked(&self, effect: &str) -> bool {
+    pub(super) fn is_tracked(&self, effect: &str) -> bool {
         self.effects.contains_key(effect)
     }
 
     /// Starts tracking `effect`, seeded with its existing `items` in push order.
-    pub fn track(&mut self, effect: &str, items: Vec<T>) {
+    pub(super) fn track(&mut self, effect: &str, items: Vec<T>) {
         self.effects.insert(effect.to_string(), items);
     }
 
     /// Appends `item` to `effect`'s inputs; ignored if `effect` isn't tracked.
-    pub fn push(&mut self, effect: &str, item: T) {
+    pub(super) fn push(&mut self, effect: &str, item: T) {
         if let Some(items) = self.effects.get_mut(effect) {
             items.push(item);
         }
     }
 
     /// `effect`'s most recently pushed input.
-    pub fn last(&self, effect: &str) -> Option<T> {
+    pub(super) fn last(&self, effect: &str) -> Option<T> {
         self.items(effect).last().cloned()
     }
 
@@ -49,23 +48,23 @@ impl<T: Clone> InputPool<T> {
     }
 
     /// A uniformly random input of `effect`, or `None` if it has none.
-    pub fn random(&self, effect: &str, rng: &mut Pcg32) -> Option<T> {
+    pub(super) fn random(&self, effect: &str, rng: &mut Rng) -> Option<T> {
         let items = self.items(effect);
         if items.is_empty() {
             return None;
         }
-        let index = rng.random_range(0..items.len());
+        let index = rng.index(items.len());
         Some(items[index].clone())
     }
 
     /// Consumes and returns a uniformly random input of `effect` that `cursor` hasn't consumed
     /// yet, or `None` if none remain.
-    pub fn take(&mut self, effect: &str, cursor: &str, rng: &mut Pcg32) -> Option<T> {
+    pub(super) fn take(&mut self, effect: &str, cursor: &str, rng: &mut Rng) -> Option<T> {
         let remaining = self.remaining(effect, cursor);
         if remaining == 0 {
             return None;
         }
-        let index = rng.random_range(0..remaining);
+        let index = rng.index(remaining);
         Some(self.take_nth(effect, cursor, index))
     }
 
@@ -105,7 +104,7 @@ impl<T: Clone + Ord> InputPool<T> {
     /// Records `item` as consumed by `cursor` without returning it; ignored if `item` isn't one of
     /// `effect`'s inputs. Used to replay prior draws when reopening a log. Assumes `effect`'s
     /// inputs were pushed in increasing order, and must not be called twice for the same item.
-    pub fn mark(&mut self, effect: &str, cursor: &str, item: &T) {
+    pub(super) fn mark(&mut self, effect: &str, cursor: &str, item: &T) {
         if let Ok(position) = self.items(effect).binary_search(item) {
             self.consumed(effect, cursor).mark(position);
         }
@@ -288,7 +287,7 @@ mod tests {
     fn take_exhausts_every_input_exactly_once() {
         let mut pool = InputPool::default();
         pool.track("a", (0..1000u64).collect());
-        let mut rng = rand_seeder::Seeder::from("pool").into_rng();
+        let mut rng = Rng::from_seed("pool");
 
         let mut seen = std::collections::HashSet::new();
         while let Some(id) = pool.take("a", "c", &mut rng) {

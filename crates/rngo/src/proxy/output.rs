@@ -5,6 +5,7 @@ use std::sync::mpsc::Sender;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Level {
     Error,
     Warning,
@@ -37,7 +38,7 @@ impl ChannelOutput {
     }
 
     /// Converts to an [`Output`] on `channel`, timestamped now.
-    pub fn into_output(self, channel: &str, input_id: Option<u64>) -> Output {
+    pub(crate) fn into_output(self, channel: &str, input_id: Option<u64>) -> Output {
         Output {
             input_id,
             timestamp: Utc::now(),
@@ -58,7 +59,7 @@ pub struct OutputSender {
 }
 
 impl OutputSender {
-    pub fn new(channel: impl Into<String>, tx: Sender<Output>) -> Self {
+    pub(crate) fn new(channel: impl Into<String>, tx: Sender<Output>) -> Self {
         OutputSender {
             channel: channel.into(),
             tx,

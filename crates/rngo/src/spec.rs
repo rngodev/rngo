@@ -1,9 +1,8 @@
+use crate::error::ParseError;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::num::NonZeroU64;
-
-pub use crate::error::ParseError;
 
 pub fn from_value(value: serde_json::Value) -> Result<Spec, Vec<ParseError>> {
     let mut track = serde_path_to_error::Track::new();
@@ -15,6 +14,7 @@ pub fn from_value(value: serde_json::Value) -> Result<Spec, Vec<ParseError>> {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct Spec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<String>,
@@ -64,6 +64,7 @@ impl Spec {
 /// Named defaults for the effects that name it, which can each override them; a missing part stays unset.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct Prototype {
     pub start: Option<String>,
     pub end: Option<String>,
@@ -76,6 +77,7 @@ pub struct Prototype {
 
 /// Overrides of a prototype's `start` and `end`.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[non_exhaustive]
 pub struct Scenario {
     pub start: Option<String>,
     pub end: Option<String>,
@@ -84,6 +86,7 @@ pub struct Scenario {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
+#[non_exhaustive]
 pub enum Trigger {
     Clock { rate: String },
     Effect { key: String },
@@ -91,12 +94,14 @@ pub enum Trigger {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(untagged)]
+#[non_exhaustive]
 pub enum TriggerUnion {
     Shorthand(String),
     Full(Trigger),
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[non_exhaustive]
 pub struct Effect {
     pub prototype: Option<String>,
     pub channel: Option<String>,
@@ -110,6 +115,7 @@ pub struct Effect {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct Format {
     #[serde(rename = "type")]
     pub ftype: Option<String>,
@@ -119,6 +125,7 @@ pub struct Format {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct Generator {
     #[serde(rename = "type")]
     pub stype: Option<String>,
@@ -127,12 +134,14 @@ pub struct Generator {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[non_exhaustive]
 pub struct GeneratorType {
     pub generator: Generator,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct Channel {
     #[serde(rename = "type")]
     pub ctype: Option<String>,
@@ -142,6 +151,7 @@ pub struct Channel {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct Signal {
     #[serde(rename = "type")]
     pub stype: Option<String>,

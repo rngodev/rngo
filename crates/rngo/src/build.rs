@@ -16,7 +16,7 @@ pub use crate::proxy::channel::exec::ExecBuilder;
 pub use crate::proxy::channel::stdout::StdoutBuilder;
 pub use crate::proxy::channel::stream::StreamBuilder;
 use crate::proxy::channel::{Exec, Stdout, Stream};
-pub use crate::proxy::format::{SqlFormat, TemplateFormat};
+use crate::proxy::format::SqlFormat;
 
 pub fn array() -> ArrayBuilder {
     Array::builder()
@@ -74,5 +74,7 @@ pub fn stdout() -> StdoutBuilder {
     Stdout::builder()
 }
 
-pub use crate::effect::generator::GeneratorEdge;
-pub use crate::error::{BuildError, EffectKey, SimulationKey};
+pub use crate::effect::EffectBuilder;
+pub use crate::effect::bound::Bound;
+pub use crate::effect::prototype::PrototypeBuilder;
+pub use crate::moment::Moment;

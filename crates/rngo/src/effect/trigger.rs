@@ -6,20 +6,32 @@ use chrono::{DateTime, FixedOffset};
 use std::rc::Rc;
 
 #[derive(Clone, Debug)]
-pub enum TriggerConfig {
+pub(super) enum TriggerConfig {
     Effect { key: String },
     ClockHertz(f64),
     ClockExpression(String),
 }
 
+/// One firing of an effect's trigger.
 pub struct TriggerEvent {
-    /// Milliseconds since simulation start.
-    pub sim_offset: i64,
-    pub input_event: Option<Rc<Input>>,
+    pub(crate) sim_offset: i64,
+    pub(crate) input_event: Option<Rc<Input>>,
+}
+
+impl TriggerEvent {
+    /// Milliseconds since the origin.
+    pub fn sim_offset(&self) -> i64 {
+        self.sim_offset
+    }
+
+    /// The input that fired this trigger, for an effect triggered by another effect.
+    pub fn input(&self) -> Option<&Input> {
+        self.input_event.as_deref()
+    }
 }
 
 #[derive(Debug)]
-pub enum Trigger {
+pub(super) enum Trigger {
     Effect {
         run_log_reader: Rc<dyn RunLogReader>,
         key: String,
@@ -34,7 +46,7 @@ pub enum Trigger {
 }
 
 impl Trigger {
-    pub fn next_offset(&self) -> Option<i64> {
+    pub(super) fn next_offset(&self) -> Option<i64> {
         match &self {
             Trigger::Clock { clock, next } => match next.as_ref()? {
                 Ok(offset) => Some(*offset),
@@ -54,7 +66,7 @@ impl Trigger {
     }
 
     /// Takes the next trigger event, or the error that stops this trigger for good.
-    pub fn pull(&mut self) -> Option<Result<TriggerEvent, RunError>> {
+    pub(super) fn pull(&mut self) -> Option<Result<TriggerEvent, RunError>> {
         match self {
             Trigger::Effect {
                 run_log_reader: event_run_log,
