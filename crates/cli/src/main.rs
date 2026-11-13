@@ -1,6 +1,5 @@
 use clap::{Parser, Subcommand};
 use rngo::StopHandle;
-use rngo::spec::{SCHEMA_NAMES, json_schema};
 use rngo_cli::{eval, init, skills};
 
 /// Simulate code usage, record everything and analyze the results
@@ -50,15 +49,6 @@ enum Commands {
         realtime: bool,
         /// A spec file, a `.rngo` directory, or a directory containing `.rngo` (default: `./.rngo`)
         path: Option<std::path::PathBuf>,
-    },
-    /// Print the JSON Schema for a spec document
-    ///
-    /// `spec` is `spec.yml`; the others are the per-file `effects/*.yml`,
-    /// `channels/*.yml`, `generators/*.yml` and `signals/*.yml`.
-    Schema {
-        /// Which document to print the schema of
-        #[arg(default_value = "spec", value_parser = clap::builder::PossibleValuesParser::new(SCHEMA_NAMES))]
-        name: String,
     },
     /// Manage rngo agent skills
     Skills {
@@ -132,10 +122,6 @@ fn main() {
                 std::process::exit(1);
             }
         },
-        Commands::Schema { name } => {
-            let schema = json_schema(&name).expect("clap restricts name to known schemas");
-            println!("{}", serde_json::to_string_pretty(&schema).unwrap());
-        }
         Commands::Skills { command } => match command {
             SkillsCommands::Install { path } => {
                 if let Err(e) = skills::install(std::path::Path::new("."), path) {

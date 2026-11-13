@@ -1552,6 +1552,7 @@ dependencies = [
  "rand_pcg",
  "rand_regex",
  "rand_seeder",
+ "rngo",
  "rusqlite",
  "schemars",
  "serde",

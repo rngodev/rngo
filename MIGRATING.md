@@ -2,7 +2,7 @@
 
 A spec declares the format it uses with a top-level `version`. A spec with no `version` is version 1. `rngo` reads one version at a time and says so when a spec declares another.
 
-Editors can validate and autocomplete specs with the JSON Schemas in `schema/v1/`; `rngo schema` prints them. `rngo init` adds the `$schema` line to a new `spec.yml`.
+Editors can validate and autocomplete specs with the JSON Schemas in `schema/v1/`. `rngo init` adds the `$schema` line to a new `spec.yml`.
 
 ## Version 1
 

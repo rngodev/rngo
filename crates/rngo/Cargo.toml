@@ -32,6 +32,7 @@ handlebars = "6"
 schemars = { version = "1", optional = true, features = ["indexmap2"] }
 
 [dev-dependencies]
+rngo = { path = ".", features = ["schema"] }
 criterion = { version = "0.8.2", features = ["html_reports"] }
 tempfile = "3"
 
