@@ -17,3 +17,6 @@ bench *args:
 
 memory *limits:
     cargo run --release -p rngo --example memory -- {{limits}}
+
+schema:
+    UPDATE_SCHEMA=1 cargo test -p rngo --features schema --test schema

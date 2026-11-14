@@ -1,0 +1,27 @@
+{
+  "$defs": {
+    "Generator": {
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "generator": {
+      "$ref": "#/$defs/Generator"
+    }
+  },
+  "required": [
+    "generator"
+  ],
+  "title": "GeneratorType",
+  "type": "object"
+}

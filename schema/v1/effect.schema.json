@@ -1,0 +1,125 @@
+{
+  "$defs": {
+    "Generator": {
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Trigger": {
+      "oneOf": [
+        {
+          "properties": {
+            "rate": {
+              "type": "string"
+            },
+            "type": {
+              "const": "clock",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "rate"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "type": {
+              "const": "effect",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "key"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TriggerUnion": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/Trigger"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "channel": {
+      "description": "Key of the channel this effect's inputs are delivered to.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "end": {
+      "description": "When the effect ends, overriding its prototype's.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "generator": {
+      "$ref": "#/$defs/Generator",
+      "description": "How each input's data is generated."
+    },
+    "limit": {
+      "description": "Maximum number of inputs the effect produces.",
+      "format": "uint64",
+      "minimum": 1,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "metadata": {
+      "description": "Extra data attached to every input."
+    },
+    "prototype": {
+      "description": "Key of the prototype whose window and defaults this effect uses.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "start": {
+      "description": "When the effect starts, overriding its prototype's.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "trigger": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TriggerUnion"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "What fires the effect: a clock rate expression or another effect."
+    }
+  },
+  "required": [
+    "generator"
+  ],
+  "title": "Effect",
+  "type": "object"
+}

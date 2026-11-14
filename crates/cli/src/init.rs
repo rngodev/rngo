@@ -3,8 +3,13 @@ use std::fs;
 use std::path::Path;
 
 use dialoguer::{Confirm, Input};
+use rngo::spec::SPEC_VERSION;
 
 use crate::{skills, ui};
+
+/// Where editors fetch the schema for `spec.yml`.
+const SPEC_SCHEMA_URL: &str =
+    "https://raw.githubusercontent.com/rngodev/rngo/main/schema/v1/spec.schema.json";
 
 /// Creates `.rngo/` under `base`; with `default`, skips prompts and skill installation.
 pub fn init(base: &Path, default: bool) -> Result<(), Box<dyn Error>> {
@@ -58,7 +63,9 @@ fn init_project(
 }
 
 fn spec_yaml(key: &str, seed: u64) -> String {
-    format!("key: {key}\nseed: {seed}\n")
+    format!(
+        "# yaml-language-server: $schema={SPEC_SCHEMA_URL}\nversion: {SPEC_VERSION}\nkey: {key}\nseed: {seed}\n"
+    )
 }
 
 fn prompt_key(default: &str) -> String {
@@ -154,7 +161,9 @@ mod tests {
         init_project(base, false, |d| d.to_string(), || 1, || true).unwrap();
 
         let spec = fs::read_to_string(base.join(".rngo/spec.yml")).unwrap();
-        assert_eq!(spec, format!("key: {name}\nseed: 1\n"));
+        assert!(spec.contains("version: 1\n"));
+        assert!(spec.contains("# yaml-language-server: $schema=https://"));
+        assert!(spec.ends_with(&format!("key: {name}\nseed: 1\n")));
     }
 
     #[test]
@@ -251,7 +260,9 @@ mod tests {
         .unwrap();
 
         let spec = fs::read_to_string(base.join(".rngo/spec.yml")).unwrap();
-        assert_eq!(spec, format!("key: {name}\nseed: 1\n"));
+        assert!(spec.contains("version: 1\n"));
+        assert!(spec.contains("# yaml-language-server: $schema=https://"));
+        assert!(spec.ends_with(&format!("key: {name}\nseed: 1\n")));
 
         let gitignore = fs::read_to_string(base.join(".gitignore")).unwrap();
         assert_eq!(gitignore, ".rngo/evals\n");
