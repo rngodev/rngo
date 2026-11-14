@@ -16,7 +16,9 @@ fn committed_schemas_are_up_to_date() {
         if update {
             std::fs::write(&path, &expected).unwrap();
         } else {
-            let actual = std::fs::read_to_string(&path).unwrap_or_default();
+            let actual = std::fs::read_to_string(&path)
+                .unwrap_or_default()
+                .replace("\r\n", "\n");
             assert_eq!(
                 actual,
                 expected,
