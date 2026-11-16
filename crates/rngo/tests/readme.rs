@@ -3,7 +3,7 @@ use rngo::{Dialect, SimpleEventRunLog};
 /// The README's JSON spec parses into all three builders and the simulation builds, so it can't drift from the spec format.
 #[test]
 fn readme_spec_is_valid() {
-    let readme = include_str!("../README.md");
+    let readme = include_str!("../README.md").replace("\r\n", "\n");
     let raw = readme
         .split("```json\n")
         .nth(1)
