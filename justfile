@@ -20,3 +20,10 @@ memory *limits:
 
 schema:
     UPDATE_SCHEMA=1 cargo test -p rngo --features schema --test schema
+
+check-examples:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for dir in examples/*/.rngo; do
+        cargo run -q -p rngo-cli -- eval --dry-run "$dir"
+    done
