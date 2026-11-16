@@ -26,7 +26,7 @@ It will also generate a handful of API requests against the `GET /posts/slug/:sl
 
 The API logs to stdout and, as structured JSON, to `logs/app.log`. The `app-log` channel defined at `.rngo/channels/log.yml` has no effects writing to it, so it's a pure signal source: it tails that file for the duration of the run, recording each log line as a signal with no particular effect.
 
-Reusable custom schemas defined under `.rngo/schemas/` are referenced from the effects by name instead of being inlined:
+Reusable custom generators defined under `.rngo/generators/` are referenced from the effects by name instead of being inlined:
 
 - `name` and `email` are enumerations of realistic constant values.
 - `lorem.word`, `lorem.sentence`, and `lorem.paragraph` compose into placeholder text and are used for author bios and post titles/bodies.
