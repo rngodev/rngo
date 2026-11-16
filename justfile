@@ -9,6 +9,9 @@ clippy:
 clippy-fix:
     cargo clippy --fix --workspace --all-targets -- -D warnings
 
+deny:
+    cargo deny check
+
 release version:
     bash scripts/release.sh {{version}}
 

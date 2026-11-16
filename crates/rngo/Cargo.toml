@@ -27,7 +27,7 @@ chrono = "0.4.44"
 thiserror = "2.0.18"
 serde_path_to_error = "0.1.20"
 multi_try = "0.3.0"
-rusqlite = { version = "0.40.1", features = ["bundled"] }
+rusqlite = { version = "0.43.0", features = ["bundled"] }
 handlebars = "6"
 schemars = { version = "1", optional = true, features = ["indexmap2"] }
 

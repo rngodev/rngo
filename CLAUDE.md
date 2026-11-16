@@ -23,6 +23,7 @@ cargo fmt                       # format code (rustfmt.toml: imports_granularity
 cargo fmt --check               # check formatting (used in CI)
 just clippy                     # lint, matching CI (warnings are errors)
 just clippy-fix                 # lint and auto-fix clippy suggestions
+just deny                      # check dependencies for advisories, licenses, bans and sources (needs cargo-deny)
 just check-examples             # dry-run every examples/*/.rngo spec through the CLI
 cargo clippy --workspace --all-targets -- -D warnings  # lint (warnings are errors in CI)
 cargo build                     # build
@@ -124,6 +125,10 @@ Named `signals` in the spec are checks run once, after the simulation completes,
 A shared `Rc<dyn RunLogReader>` is threaded through all effects and generators so that `Reference`, trigger-by-effect, and SQL signals can look up previously emitted events — by last input overall, last/random/unique input for a given effect key, or an arbitrary `query()`. A separate `RunLogWriter` trait pushes `Input`, `Output`, and `Metadata` rows. `SimpleEventRunLog` (`log/simple.rs`) is the in-memory implementation; `SqliteRunLog` (`log/sqlite.rs`) persists all three to `log.sqlite` in the run directory and implements both traits.
 
 `InputPool` (`log/pool.rs`) backs the per-effect lookups in both implementations: each tracked effect's inputs in push order, plus a consumed set per (effect, cursor). Effects are tracked lazily: the first lookup for an effect loads its already-logged inputs (each log's private `pool(effect)` helper does this), and `push` ignores untracked effects, so effects nothing references cost no memory. A consumed set is a bitset of positions plus a Fenwick tree with one node per 64-bit word; a lookup walks the tree to the word, then picks the zero bit within it. The pool owns the random draws: `random` (for `random_for_effect`) indexes into the effect's list, and `take` (for `unique_for_effect`) finds the k-th unconsumed input in O(log n); `SimpleEventRunLog` also uses it for `last_for_effect`. Because the draws live in the pool, both logs produce identical output for a given seed. Selection only needs to be deterministic for a given seed and version, not stable across versions (the project is pre-1.0). A consumed set's state depends only on which inputs a cursor has consumed, not the order it consumed them in, so rebuilding it from the log reproduces an uninterrupted run exactly. `mark` finds an item by binary search, which relies on each effect's inputs being pushed in increasing `id` order (true because ids come from `last().id + 1`). `SqliteRunLog` stores only ids in its pool and fetches rows by `id`; when it first tracks an effect it loads that effect's ids from the `inputs` table and replays its `_unique_reference` metadata rows, which also restores cursor state when reopening an existing log. It still writes those rows on every unique draw.
+
+### Dependency checks (`deny.toml`)
+
+`cargo-deny` runs in the `deny` CI job on every PR and push, and `.github/workflows/audit.yml` runs its advisories check weekly so new advisories surface between PRs. Every entry in `advisories.ignore` needs a `reason`, and license allowances for a single crate go in `licenses.exceptions`, not the global allow-list; revisit ignores when a patched release appears. `rusqlite` bundles SQLite, so SQLite CVEs clear only by bumping `rusqlite` in both crates (they must match, as `libsqlite3-sys` links the native library once).
 
 ### Benchmarks (`crates/rngo/benches/`)
 
