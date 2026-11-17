@@ -10,6 +10,8 @@ Avoid inline comments. If additional context is needed for a section of code, ad
 
 The Rust toolchain is pinned in `rust-toolchain.toml` (used locally and in CI), and the minimum supported Rust version is `rust-version` under `[workspace.package]` in the root `Cargo.toml`. Bump them together, in their own PR, and fix any new clippy lints there.
 
+Add a line under `## Unreleased` in `CHANGELOG.md` for every user-visible change, and mark breaking ones with their migration notes (a spec-breaking change also gets its `MIGRATING.md` note). `just release` renames `Unreleased` to the new version and refuses to run when it is empty; the release workflow's `validate` job checks the tag has a changelog section and matching crate versions, and publishes that section as the GitHub release notes. `crates` publishes last, after `binaries`, so nothing reaches crates.io unless validation and every binary build passed.
+
 Always run `just fmt` and `just clippy` after making code changes. If clippy reports warnings or errors, fix them directly in the code.
 
 ## Commands
