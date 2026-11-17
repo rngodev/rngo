@@ -9,10 +9,7 @@ targets = [
 [advisories]
 ignore = [
     { id = "RUSTSEC-2024-0449", reason = "unsafe-libyaml is unmaintained and has no replacement; it comes in through serde_yaml in rngo-cli, which only parses the user's own spec files" },
-    { id = "RUSTSEC-2026-0367", reason = "zip has no patched release; only ZipArchive::extract is affected and `rngo skills` extracts an archive it downloads from GitHub into a temp directory" },
-    { id = "RUSTSEC-2026-0368", reason = "zip has no patched release; see RUSTSEC-2026-0367" },
-    { id = "RUSTSEC-2026-0369", reason = "zip has no patched release; see RUSTSEC-2026-0367" },
-    { id = "RUSTSEC-2026-0429", reason = "zip has no patched release; see RUSTSEC-2026-0367" },
+    { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained with no safe upgrade and no advisory describes a vulnerability in it; it is a direct dependency of rngo and rngo-cli and also comes in through cel, so it clears only by replacing it in both and moving cel off it" },
 ]
 
 [licenses]
