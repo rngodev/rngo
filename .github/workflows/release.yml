@@ -6,24 +6,36 @@ on:
 permissions:
   contents: write
 jobs:
-  crates:
+  validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust
         run: rustup toolchain install
-      - name: Publish to crates.io
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Check the versions match the tag
         run: |
-          cargo publish -p rngo --verbose
-          sleep 30
-          cargo publish -p rngo-cli --verbose
+          for manifest in crates/rngo/Cargo.toml crates/cli/Cargo.toml; do
+            version=$(grep -m1 '^version' "$manifest" | sed -E 's/version *= *"([^"]+)"/\1/')
+            if [[ "$version" != "$GITHUB_REF_NAME" ]]; then
+              echo "Error: $manifest has version $version but the tag is $GITHUB_REF_NAME"
+              exit 1
+            fi
+          done
+      - name: Check the changelog has an entry for the tag
+        run: bash scripts/changelog-section.sh "$GITHUB_REF_NAME" > /dev/null
+      - name: Check rngo can be published
+        run: cargo publish -p rngo --dry-run
   release:
+    needs: validate
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - name: Extract release notes
+        run: bash scripts/changelog-section.sh "$GITHUB_REF_NAME" > release-notes.md
       - name: Create release
         uses: softprops/action-gh-release@v2.2.2
+        with:
+          body_path: release-notes.md
   binaries:
     strategy:
       matrix:
@@ -73,3 +85,16 @@ jobs:
         uses: softprops/action-gh-release@v2.2.2
         with:
           files: dist/*.zip
+  crates:
+    needs: binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup toolchain install
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          cargo publish -p rngo --verbose
+          cargo publish -p rngo-cli --verbose

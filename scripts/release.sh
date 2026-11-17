@@ -28,6 +28,13 @@ fi
 
 echo "Releasing $CURRENT -> $VERSION"
 
+bash scripts/changelog-section.sh Unreleased > /dev/null
+awk -v heading="## $VERSION - $(date +%Y-%m-%d)" '
+  /^## Unreleased$/ { print; print ""; print heading; next }
+  { print }
+' CHANGELOG.md > CHANGELOG.md.bak
+mv CHANGELOG.md.bak CHANGELOG.md
+
 sed -i.bak -E "s/^version = \"[^\"]+\"/version = \"$VERSION\"/" crates/rngo/Cargo.toml
 sed -i.bak -E "s/^rngo = \{ version = \"[^\"]+\"/rngo = { version = \"$VERSION\"/" crates/cli/Cargo.toml
 sed -i.bak -E "s/^version = \"[^\"]+\"/version = \"$VERSION\"/" crates/cli/Cargo.toml
@@ -35,7 +42,7 @@ find crates -name "*.bak" -delete
 
 cargo generate-lockfile
 
-git add Cargo.lock crates/rngo/Cargo.toml crates/cli/Cargo.toml
+git add CHANGELOG.md Cargo.lock crates/rngo/Cargo.toml crates/cli/Cargo.toml
 git commit -m "$VERSION"
 git tag $VERSION
 git push origin main --tags
