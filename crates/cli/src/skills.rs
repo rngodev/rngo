@@ -4,16 +4,34 @@ use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
 use dialoguer::{Confirm, Input, Select};
-use semver::Version;
+use semver::{Version, VersionReq};
 use tempfile::TempDir;
 
 use crate::ui;
 
-const RELEASES_URL: &str = "https://api.github.com/repos/rngodev/agent/releases/latest";
+const RELEASES_URL: &str = "https://api.github.com/repos/rngodev/agent/releases?per_page=30";
+const LATEST_RELEASE_URL: &str = "https://api.github.com/repos/rngodev/agent/releases/latest";
+const REQUIREMENT_ASSET: &str = "cli-requirement.txt";
+const CLI_VERSION: &str = env!("CARGO_PKG_VERSION");
 const USER_AGENT: &str = "rngo-cli";
 const VERSION_FILE: &str = ".version";
 
 type Skill = (String, PathBuf);
+
+/// An agent release and where to find its zipball and CLI requirement.
+#[derive(Debug, Clone, PartialEq)]
+struct AgentRelease {
+    tag: String,
+    zipball_url: String,
+    requirement_url: Option<String>,
+}
+
+/// The release to install, with why it isn't a compatible one when it is a fallback.
+#[derive(Debug, PartialEq)]
+struct Selection {
+    release: AgentRelease,
+    fallback_reason: Option<String>,
+}
 
 pub fn offer_install(base: &Path) {
     if let Err(e) = try_offer_install(base) {
@@ -35,7 +53,7 @@ fn try_offer_install(base: &Path) -> Result<(), Box<dyn Error>> {
     do_install(&dir)
 }
 
-/// Downloads the latest rngo agent skills into `path`, or a location chosen interactively.
+/// Downloads the rngo agent skills compatible with this CLI into `path`, or a location chosen interactively.
 pub fn install(base: &Path, path: Option<PathBuf>) -> Result<(), Box<dyn Error>> {
     let dir = match path {
         Some(path) => path,
@@ -46,9 +64,16 @@ pub fn install(base: &Path, path: Option<PathBuf>) -> Result<(), Box<dyn Error>>
 }
 
 fn do_install(dir: &Path) -> Result<(), Box<dyn Error>> {
-    let zipball_url = fetch_latest_zipball_url()?;
-    let (_tmp, skills) = fetch_skills(&zipball_url)?;
+    let selection = select_for_cli()?;
+    let (_tmp, skills) = fetch_skills(&selection.release.zipball_url)?;
 
+    if let Some(reason) = &selection.fallback_reason {
+        eprintln!(
+            "warning: no agent skills release is compatible with rngo {CLI_VERSION} ({reason}); installing the latest release, {}",
+            selection.release.tag
+        );
+    }
+    ui::outcome(format!("agent skills release {}", selection.release.tag));
     ui::outcome(format!("{}:", dir.display()));
     remove_stale_skills(dir, &skills)?;
     install_skills(dir, &skills)?;
@@ -214,18 +239,106 @@ fn extract_skills(zip_bytes: &[u8]) -> Result<TempDir, Box<dyn Error>> {
     Ok(tmp)
 }
 
-fn fetch_latest_zipball_url() -> Result<String, Box<dyn Error>> {
-    let json: serde_json::Value = ureq::get(RELEASES_URL)
+fn select_for_cli() -> Result<Selection, Box<dyn Error>> {
+    let cli = Version::parse(CLI_VERSION)?;
+
+    match fetch_releases() {
+        Ok(releases) => select_release(&releases, &cli, fetch_requirement),
+        Err(e) => {
+            let release = fetch_latest_release()?;
+            Ok(Selection {
+                release,
+                fallback_reason: Some(format!("could not list releases: {e}")),
+            })
+        }
+    }
+}
+
+/// Picks the newest release whose CLI requirement matches `cli`, else the latest with a reason.
+///
+/// `releases` are newest first; `requirement` fetches a release's CLI requirement, if it has a valid one.
+fn select_release(
+    releases: &[AgentRelease],
+    cli: &Version,
+    mut requirement: impl FnMut(&AgentRelease) -> Result<Option<VersionReq>, Box<dyn Error>>,
+) -> Result<Selection, Box<dyn Error>> {
+    let latest = releases
+        .first()
+        .ok_or("the agent repository has no releases")?;
+    let cli = Version::new(cli.major, cli.minor, cli.patch);
+
+    let mut declared = 0;
+    for release in releases {
+        if let Ok(Some(req)) = requirement(release) {
+            declared += 1;
+            if req.matches(&cli) {
+                return Ok(Selection {
+                    release: release.clone(),
+                    fallback_reason: None,
+                });
+            }
+        }
+    }
+
+    let reason = if declared == 0 {
+        "no release declares a supported CLI version".to_string()
+    } else {
+        "no release supports this CLI version".to_string()
+    };
+    Ok(Selection {
+        release: latest.clone(),
+        fallback_reason: Some(reason),
+    })
+}
+
+fn parse_release(json: &serde_json::Value) -> Option<AgentRelease> {
+    let requirement_url = json["assets"].as_array().and_then(|assets| {
+        assets
+            .iter()
+            .find(|a| a["name"] == REQUIREMENT_ASSET)
+            .and_then(|a| a["browser_download_url"].as_str())
+            .map(str::to_string)
+    });
+
+    Some(AgentRelease {
+        tag: json["tag_name"].as_str()?.to_string(),
+        zipball_url: json["zipball_url"].as_str()?.to_string(),
+        requirement_url,
+    })
+}
+
+fn fetch_releases() -> Result<Vec<AgentRelease>, Box<dyn Error>> {
+    let json: serde_json::Value = github_get(RELEASES_URL)?;
+    let releases = json
+        .as_array()
+        .ok_or("unexpected releases response")?
+        .iter()
+        .filter(|r| r["draft"] != true)
+        .filter_map(parse_release)
+        .collect();
+    Ok(releases)
+}
+
+fn fetch_latest_release() -> Result<AgentRelease, Box<dyn Error>> {
+    let json = github_get(LATEST_RELEASE_URL)?;
+    parse_release(&json).ok_or_else(|| "latest release is missing a zipball_url".into())
+}
+
+fn github_get(url: &str) -> Result<serde_json::Value, Box<dyn Error>> {
+    Ok(ureq::get(url)
         .header("User-Agent", USER_AGENT)
         .header("Accept", "application/vnd.github+json")
         .call()?
         .body_mut()
-        .read_json()?;
+        .read_json()?)
+}
 
-    json["zipball_url"]
-        .as_str()
-        .map(|s| s.to_string())
-        .ok_or_else(|| "latest release is missing a zipball_url".into())
+fn fetch_requirement(release: &AgentRelease) -> Result<Option<VersionReq>, Box<dyn Error>> {
+    let Some(url) = &release.requirement_url else {
+        return Ok(None);
+    };
+    let text = String::from_utf8(download(url)?)?;
+    Ok(VersionReq::parse(text.trim()).ok())
 }
 
 fn download(url: &str) -> Result<Vec<u8>, Box<dyn Error>> {
@@ -294,6 +407,104 @@ mod tests {
         assert_eq!(
             skill_version(&skills[1].1.join(".version")),
             Some(Version::new(0, 2, 0))
+        );
+    }
+
+    fn release(tag: &str) -> AgentRelease {
+        AgentRelease {
+            tag: tag.to_string(),
+            zipball_url: format!("https://example.test/{tag}.zip"),
+            requirement_url: None,
+        }
+    }
+
+    fn pick(releases: &[AgentRelease], cli: &str, reqs: &[(&str, &str)]) -> Selection {
+        select_release(releases, &Version::parse(cli).unwrap(), |r| {
+            Ok(reqs
+                .iter()
+                .find(|(tag, _)| *tag == r.tag)
+                .and_then(|(_, req)| VersionReq::parse(req).ok()))
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn select_release_prefers_newest_compatible_over_newer_incompatible() {
+        let releases = [release("v0.3.0"), release("v0.2.0"), release("v0.1.0")];
+        let selection = pick(
+            &releases,
+            "0.40.1",
+            &[
+                ("v0.3.0", ">=0.41"),
+                ("v0.2.0", ">=0.40, <0.41"),
+                ("v0.1.0", "<0.40"),
+            ],
+        );
+        assert_eq!(selection.release.tag, "v0.2.0");
+        assert_eq!(selection.fallback_reason, None);
+    }
+
+    #[test]
+    fn select_release_falls_back_to_latest_when_none_match() {
+        let releases = [release("v0.3.0"), release("v0.2.0")];
+        let selection = pick(
+            &releases,
+            "0.40.0",
+            &[("v0.3.0", ">=1"), ("v0.2.0", ">=0.5, <0.6")],
+        );
+        assert_eq!(selection.release.tag, "v0.3.0");
+        assert_eq!(
+            selection.fallback_reason.as_deref(),
+            Some("no release supports this CLI version")
+        );
+    }
+
+    #[test]
+    fn select_release_skips_missing_and_unparseable_requirements() {
+        let releases = [release("v0.3.0"), release("v0.2.0")];
+        let selection = pick(
+            &releases,
+            "0.40.0",
+            &[("v0.3.0", "garbage"), ("v0.2.0", "^0.40")],
+        );
+        assert_eq!(selection.release.tag, "v0.2.0");
+
+        let selection = pick(&releases, "0.40.0", &[]);
+        assert_eq!(selection.release.tag, "v0.3.0");
+        assert_eq!(
+            selection.fallback_reason.as_deref(),
+            Some("no release declares a supported CLI version")
+        );
+    }
+
+    #[test]
+    fn select_release_matches_pre_release_cli_versions() {
+        let releases = [release("v0.2.0")];
+        let selection = pick(&releases, "0.40.0-rc.1", &[("v0.2.0", "^0.40")]);
+        assert_eq!(selection.fallback_reason, None);
+    }
+
+    #[test]
+    fn select_release_errors_without_releases() {
+        let result = select_release(&[], &Version::new(0, 40, 0), |_| Ok(None));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_release_reads_requirement_asset() {
+        let json = serde_json::json!({
+            "tag_name": "v0.2.0",
+            "zipball_url": "https://example.test/z",
+            "assets": [
+                {"name": "other.txt", "browser_download_url": "https://example.test/o"},
+                {"name": REQUIREMENT_ASSET, "browser_download_url": "https://example.test/r"}
+            ]
+        });
+        let release = parse_release(&json).unwrap();
+        assert_eq!(release.tag, "v0.2.0");
+        assert_eq!(
+            release.requirement_url.as_deref(),
+            Some("https://example.test/r")
         );
     }
 
