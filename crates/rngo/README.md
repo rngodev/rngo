@@ -1,14 +1,4 @@
-<div align="center">
-
-<img src="https://raw.githubusercontent.com/rngodev/rngo/main/assets/logo.svg" alt="rngo logo" width="160" height="160">
-
 # rngo
-
-[![CI](https://github.com/rngodev/rngo/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/rngodev/rngo/actions/workflows/ci.yml)
-[![Crates.io](https://img.shields.io/crates/v/rngo.svg)](https://crates.io/crates/rngo)
-[![Docs.rs](https://docs.rs/rngo/badge.svg)](https://docs.rs/rngo)
-
-</div>
 
 The `rngo` library lets you build a **spec** in Rust and evaluate it.
 
@@ -20,25 +10,19 @@ A **spec** describes the behavior of a system using the following components:
 
 ## DSL
 
-You can define a spec using a builder DSL. First we'll define a `SqliteRunLog`, which writes `log.sqlite` into the directory you give it:
+You can define a spec using a builder DSL:
 
-```rust
-# fn main() {
-# let dir = tempfile::tempdir().unwrap();
-let run_log = rngo::SqliteRunLog::new(dir.path().to_path_buf()).unwrap();
-# }
-```
-
-Next a `Simulation`:
-
-```rust
-# fn main() {
-# let dir = tempfile::tempdir().unwrap();
-# let run_log = rngo::SqliteRunLog::new(dir.path().to_path_buf()).unwrap();
+```rust,no_run
 use std::num::NonZeroU64;
 use jiff::SignedDuration;
 use serde_json::Value;
 use rngo::build::*;
+
+// The run log records inputs, outputs and metadata. `SqliteRunLog` writes
+// `log.sqlite` into the directory you give it.
+let run_log = rngo::SqliteRunLog::new("run".into()).unwrap();
+
+// The simulation generates a deterministic stream of inputs.
 let mut simulation = rngo::Simulation::builder()
     .seed(41)
     .start(Moment::Relative(SignedDuration::from_hours(-2160)))
@@ -50,7 +34,7 @@ let mut simulation = rngo::Simulation::builder()
     })
     .effect("user", |effect| {
         effect
-            .trigger_expression("hz(10, hour) * (offset * 0.0001)".to_string())
+            .trigger_expression("hz(10, hour) * (1.0 + offset * 0.0001)".to_string())
             .limit(NonZeroU64::new(1000).unwrap())
             .generator(
                 object()
@@ -68,7 +52,7 @@ let mut simulation = rngo::Simulation::builder()
     .effect("post", |effect| {
         effect
             .prototype_key("recent")
-            .trigger_expression("hz(100, hour) * (offset * 0.0001)".to_string())
+            .trigger_expression("hz(100, hour) * (1.0 + offset * 0.0001)".to_string())
             .generator(
                 object()
                     .property("id", number().minimum(1).scale(0).step(1))
@@ -92,17 +76,9 @@ let mut simulation = rngo::Simulation::builder()
     })
     .run_log_reader(run_log.clone())
     .build().unwrap();
-# }
-```
 
-And then the `Proxy`:
-
-```rust,no_run
-# use rngo::build::*;
-# fn main() {
-# let dir = tempfile::tempdir().unwrap();
-# let run_log = rngo::SqliteRunLog::new(dir.path().to_path_buf()).unwrap();
-let proxy = rngo::Proxy::builder()
+// The proxy routes inputs to the system's interfaces and captures outputs.
+let mut proxy = rngo::Proxy::builder()
     .channel(
         "db",
         stream()
@@ -117,91 +93,8 @@ let proxy = rngo::Proxy::builder()
     .channel("log", stream().command("tail -F logs/app.log"))
     .run_log_writer(run_log.clone())
     .build().unwrap();
-# let _ = &proxy;
-# }
-```
 
-To evaluate the spec, first run the `Simulation` against the `Proxy`: 
-
-```rust
-# use std::num::NonZeroU64;
-# use jiff::SignedDuration;
-# use rngo::build::*;
-# fn main() {
-# let dir = tempfile::tempdir().unwrap();
-# let run_log = rngo::SqliteRunLog::new(dir.path().to_path_buf()).unwrap();
-# let mut simulation = rngo::Simulation::builder()
-#     .start(Moment::Relative(SignedDuration::from_hours(-24)))
-#     .end(Moment::Relative(SignedDuration::ZERO))
-#     .effect("user", |effect| {
-#         effect
-#             .trigger_expression("hz(10, hour)".to_string())
-#             .limit(NonZeroU64::new(20).unwrap())
-#             .generator(object().property("id", number().minimum(1).scale(0).step(1)))
-#     })
-#     .effect("post", |effect| {
-#         effect
-#             .trigger_expression("hz(10, hour)".to_string())
-#             .limit(NonZeroU64::new(20).unwrap())
-#             .generator(object().property("id", number().minimum(1).scale(0).step(1)))
-#     })
-#     .run_log_reader(run_log.clone())
-#     .build().unwrap();
-# let mut proxy = rngo::Proxy::builder()
-#     .channel("db", stdout())
-#     .channel("log", stdout())
-#     .effect_channels([("user", "db"), ("post", "db")])
-#     .run_log_writer(run_log.clone())
-#     .build().unwrap();
-for step in &mut simulation {
-    if let rngo::Step::Input(input) = step.unwrap() {
-        proxy.send(&input).unwrap();
-    }
-}
-
-proxy.finish().unwrap();
-# }
-```
-
-Then build an `Audit` and run it against the run log:
-
-```rust
-# use std::num::NonZeroU64;
-# use jiff::SignedDuration;
-# use rngo::build::*;
-# fn main() {
-# let dir = tempfile::tempdir().unwrap();
-# let run_log = rngo::SqliteRunLog::new(dir.path().to_path_buf()).unwrap();
-# let mut simulation = rngo::Simulation::builder()
-#     .start(Moment::Relative(SignedDuration::from_hours(-24)))
-#     .end(Moment::Relative(SignedDuration::ZERO))
-#     .effect("user", |effect| {
-#         effect
-#             .trigger_expression("hz(10, hour)".to_string())
-#             .limit(NonZeroU64::new(20).unwrap())
-#             .generator(object().property("id", number().minimum(1).scale(0).step(1)))
-#     })
-#     .effect("post", |effect| {
-#         effect
-#             .trigger_expression("hz(10, hour)".to_string())
-#             .limit(NonZeroU64::new(20).unwrap())
-#             .generator(object().property("id", number().minimum(1).scale(0).step(1)))
-#     })
-#     .run_log_reader(run_log.clone())
-#     .build().unwrap();
-# let mut proxy = rngo::Proxy::builder()
-#     .channel("db", stdout())
-#     .channel("log", stdout())
-#     .effect_channels([("user", "db"), ("post", "db")])
-#     .run_log_writer(run_log.clone())
-#     .build().unwrap();
-# for step in &mut simulation {
-#     if let rngo::Step::Input(input) = step.unwrap() {
-#         proxy.send(&input).unwrap();
-#     }
-# }
-#
-# proxy.finish().unwrap();
+// The audit checks patterns in the logged inputs and outputs.
 let audit = rngo::Audit::builder()
     .signal("some-inputs",
         sql_signal()
@@ -221,14 +114,23 @@ let audit = rngo::Audit::builder()
     .run_log(run_log)
     .build().unwrap();
 
+// To evaluate the spec, run the simulation against the proxy...
+for step in &mut simulation {
+    if let rngo::Step::Input(input) = step.unwrap() {
+        proxy.send(&input).unwrap();
+    }
+}
+
+proxy.finish().unwrap();
+
+// ...then run the audit against the run log.
 let audit_report = audit.run().unwrap();
 assert!(audit_report.passed());
-# }
 ```
 
 ## Spec
 
-You can also define the above in JSON (or YAML) spec - it would look like this:
+You can also define the above as a JSON (or YAML) spec:
 
 ```json
 {
@@ -246,7 +148,7 @@ You can also define the above in JSON (or YAML) spec - it would look like this:
         "user": {
             "channel": "db",
             "metadata": { "table": "USERS" },
-            "trigger": "hz(10, hour) * (offset * 0.0001)",
+            "trigger": "hz(10, hour) * (1.0 + offset * 0.0001)",
             "limit": 1000,
             "generator": {
                 "type": "object",
@@ -268,7 +170,7 @@ You can also define the above in JSON (or YAML) spec - it would look like this:
             "prototype": "recent",
             "channel": "db",
             "metadata": { "table": "POSTS" },
-            "trigger": "hz(100, hour) * (offset * 0.0001)",
+            "trigger": "hz(100, hour) * (1.0 + offset * 0.0001)",
             "generator": {
                 "type": "object",
                 "properties": {
@@ -329,17 +231,14 @@ You can also define the above in JSON (or YAML) spec - it would look like this:
 }
 ```
 
-You can parse and run like this:
+Then parse the simulation, proxy and audit and run them:
 
 ```rust,no_run
-# fn main() {
-# let readme = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"));
-# let raw = readme.split("```json\n").nth(1).unwrap().split("```").next().unwrap();
-# let dir = tempfile::tempdir().unwrap();
-let value: serde_json::Value = serde_json::from_str(raw).unwrap();
+let raw = std::fs::read_to_string("spec.json").unwrap();
+let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
 let spec = rngo::spec::from_value(value).unwrap();
 let dialect = rngo::Dialect::primitive();
-let run_log = rngo::SqliteRunLog::new(dir.path().to_path_buf()).unwrap();
+let run_log = rngo::SqliteRunLog::new("run".into()).unwrap();
 
 let mut simulation = dialect
     .parse_simulation(spec.clone()).unwrap()
@@ -357,6 +256,7 @@ let audit = dialect
     .run_log(run_log)
     .build().unwrap();
 
+// Run the simulation against the proxy, then audit the run log.
 for step in &mut simulation {
     if let rngo::Step::Input(input) = step.unwrap() {
         proxy.send(&input).unwrap();
@@ -367,5 +267,4 @@ proxy.finish().unwrap();
 
 let audit_report = audit.run().unwrap();
 assert!(audit_report.passed());
-# }
 ```
