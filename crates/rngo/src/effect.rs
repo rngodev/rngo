@@ -10,12 +10,13 @@ use crate::effect::bound::{Bound, BoundKind};
 use crate::effect::prototype::Prototype;
 use crate::error::{BuildError, EffectKey};
 use crate::log::{Metadata, RunLogReader, SimpleEventRunLog};
-use chrono::{DateTime, FixedOffset, TimeDelta, Utc};
+use crate::moment::offset_timestamp;
 use clock::Clock;
 use generator::{
     Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext,
     Metadata as GeneratorMetadata,
 };
+use jiff::{SignedDuration, Timestamp};
 use multi_try::MultiTry;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -36,9 +37,9 @@ pub struct Effect {
     end_offset: Option<i64>,
     limit: Option<u64>,
     produced: u64,
-    origin: DateTime<FixedOffset>,
-    pub start: DateTime<FixedOffset>,
-    pub end: Option<DateTime<FixedOffset>>,
+    origin: Timestamp,
+    pub start: Timestamp,
+    pub end: Option<Timestamp>,
     /// The name of the prototype the effect asked for; `None` for the default prototype.
     pub prototype: Option<String>,
     /// The channel the effect writes to: its own, else its prototype's.
@@ -51,10 +52,7 @@ impl Effect {
     }
 
     /// Moves the instant offsets are measured from, rebuilding the trigger around it; call before iterating, once every effect of the simulation is built and the earliest start is known.
-    pub fn set_origin(
-        &mut self,
-        origin: DateTime<FixedOffset>,
-    ) -> Result<&mut Self, Vec<BuildError>> {
+    pub fn set_origin(&mut self, origin: Timestamp) -> Result<&mut Self, Vec<BuildError>> {
         self.trigger = build_trigger(
             self.trigger_config.clone(),
             &self.key,
@@ -100,7 +98,10 @@ impl Iterator for Effect {
             trigger: &trigger_event,
             origin: self.origin,
         };
-        let timestamp = self.origin + TimeDelta::milliseconds(trigger_event.sim_offset);
+        let timestamp = offset_timestamp(
+            self.origin,
+            SignedDuration::from_millis(trigger_event.sim_offset),
+        );
 
         let result = self.generator.next(&context);
 
@@ -149,7 +150,7 @@ impl Step {
 pub struct Input {
     pub id: u64,
     pub effect: String,
-    pub timestamp: DateTime<FixedOffset>,
+    pub timestamp: Timestamp,
     pub data: Value,
     pub metadata: Vec<GeneratorMetadata>,
 }
@@ -157,7 +158,7 @@ pub struct Input {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkippedInput {
     pub effect: String,
-    pub timestamp: DateTime<FixedOffset>,
+    pub timestamp: Timestamp,
     pub metadata: Vec<GeneratorMetadata>,
 }
 
@@ -187,7 +188,7 @@ pub struct EffectBuilder {
     end: Option<Bound>,
     limit: Option<NonZeroU64>,
     channel: Option<String>,
-    now: Option<DateTime<FixedOffset>>,
+    now: Option<Timestamp>,
     prototype_key: Option<String>,
     prototype: Option<Prototype>,
     seed: Option<u64>,
@@ -247,7 +248,7 @@ impl EffectBuilder {
         self
     }
 
-    pub fn now(mut self, now: DateTime<FixedOffset>) -> Self {
+    pub fn now(mut self, now: Timestamp) -> Self {
         self.now = Some(now);
         self
     }
@@ -289,7 +290,7 @@ impl EffectBuilder {
 
     /// Lays the effect's own `start`, `end` and `limit` over its prototype's and builds it; errors unless the window has a `start` and an `end` or `limit`, and a `start` before any `end`.
     pub fn build(self) -> Result<Effect, Vec<BuildError>> {
-        let now = self.now.unwrap_or_else(|| Utc::now().fixed_offset());
+        let now = self.now.unwrap_or_else(Timestamp::now);
         let prototype = self.prototype.as_ref();
         let mut errors: Vec<BuildError> = vec![];
         let own_start =
@@ -418,16 +419,16 @@ impl EffectBuilder {
     }
 }
 
-fn offset_from(instant: DateTime<FixedOffset>, origin: DateTime<FixedOffset>) -> i64 {
-    (instant - origin).num_milliseconds().max(0)
+fn offset_from(instant: Timestamp, origin: Timestamp) -> i64 {
+    (instant.duration_since(origin).as_millis() as i64).max(0)
 }
 
 fn build_trigger(
     config: TriggerConfig,
     key: &str,
     seed: u64,
-    start: DateTime<FixedOffset>,
-    origin: DateTime<FixedOffset>,
+    start: Timestamp,
+    origin: Timestamp,
     run_log_reader: &Rc<dyn RunLogReader>,
 ) -> Result<Trigger, Vec<BuildError>> {
     let clock = |builder: clock::ClockBuilder| {
@@ -466,7 +467,7 @@ mod tests {
     };
     use crate::effect::prototype::Prototype;
     use crate::error::BuildError;
-    use chrono::{TimeDelta, Utc};
+    use jiff::{SignedDuration, Timestamp};
     use std::num::NonZeroU64;
 
     #[derive(Debug, Default)]
@@ -508,8 +509,8 @@ mod tests {
     }
 
     fn build(mut builder: EffectBuilder) -> Effect {
-        let now = Utc::now().fixed_offset();
-        let start = now - TimeDelta::days(30);
+        let now = Timestamp::now();
+        let start = now - SignedDuration::from_hours(24 * 30);
         let prototype = Prototype {
             start: Some(start),
             end: Some(now),
@@ -521,9 +522,9 @@ mod tests {
 
     #[test]
     fn channel_comes_from_the_effect_else_its_prototype() {
-        let now = Utc::now().fixed_offset();
+        let now = Timestamp::now();
         let prototype = Prototype {
-            start: Some(now - TimeDelta::days(1)),
+            start: Some(now - SignedDuration::from_hours(24)),
             end: Some(now),
             channel: Some("db".into()),
             ..Prototype::default()

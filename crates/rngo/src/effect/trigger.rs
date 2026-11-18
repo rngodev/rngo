@@ -2,7 +2,7 @@ use super::clock::Clock;
 use crate::RunError;
 use crate::effect::Input;
 use crate::log::RunLogReader;
-use chrono::{DateTime, FixedOffset};
+use jiff::Timestamp;
 use std::rc::Rc;
 
 #[derive(Clone, Debug)]
@@ -35,7 +35,7 @@ pub(super) enum Trigger {
     Effect {
         run_log_reader: Rc<dyn RunLogReader>,
         key: String,
-        sim_start: DateTime<FixedOffset>,
+        sim_start: Timestamp,
         last_offset: i64,
     },
     Clock {
@@ -59,7 +59,7 @@ impl Trigger {
                 last_offset,
             } => {
                 let input_event = event_run_log.last_for_effect(key)?;
-                let offset = (input_event.timestamp - *sim_start).num_milliseconds();
+                let offset = input_event.timestamp.duration_since(*sim_start).as_millis() as i64;
                 (offset > *last_offset).then_some(offset)
             }
         }
@@ -75,7 +75,8 @@ impl Trigger {
                 last_offset,
             } => {
                 if let Some(input_event) = event_run_log.last_for_effect(key) {
-                    let offset = (input_event.timestamp - *sim_start).num_milliseconds();
+                    let offset =
+                        input_event.timestamp.duration_since(*sim_start).as_millis() as i64;
                     *last_offset = offset;
                     Some(Ok(TriggerEvent {
                         sim_offset: offset,

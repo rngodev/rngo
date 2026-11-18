@@ -1,6 +1,6 @@
 use crate::effect::bound::{Bound, BoundKind};
 use crate::error::{BuildError, SimulationKey};
-use chrono::{DateTime, FixedOffset, Utc};
+use jiff::Timestamp;
 use std::num::NonZeroU64;
 
 /// A time window and an input cap, each optional; an effect takes the parts it doesn't set itself from its prototype.
@@ -8,8 +8,8 @@ use std::num::NonZeroU64;
 pub struct Prototype {
     /// The prototype's name; `None` for the default prototype and for an effect's own window.
     pub name: Option<String>,
-    pub start: Option<DateTime<FixedOffset>>,
-    pub end: Option<DateTime<FixedOffset>>,
+    pub start: Option<Timestamp>,
+    pub end: Option<Timestamp>,
     pub limit: Option<NonZeroU64>,
     /// The key of the channel effects on this prototype write to unless they set their own.
     pub channel: Option<String>,
@@ -29,7 +29,7 @@ pub struct PrototypeBuilder {
     end: Option<Bound>,
     limit: Option<NonZeroU64>,
     channel: Option<String>,
-    now: Option<DateTime<FixedOffset>>,
+    now: Option<Timestamp>,
     prototype: Option<Prototype>,
 }
 
@@ -61,7 +61,7 @@ impl PrototypeBuilder {
         self
     }
 
-    pub fn now(mut self, now: DateTime<FixedOffset>) -> Self {
+    pub fn now(mut self, now: Timestamp) -> Self {
         self.now = Some(now);
         self
     }
@@ -73,7 +73,7 @@ impl PrototypeBuilder {
 
     /// Resolves the prototype; errors if an expression doesn't parse or if `start` isn't before `end`.
     pub fn build(&self) -> Result<Prototype, Vec<BuildError>> {
-        let now = self.now.unwrap_or_else(|| Utc::now().fixed_offset());
+        let now = self.now.unwrap_or_else(Timestamp::now);
         let prototype = self.prototype.as_ref();
         let mut errors = vec![];
         let start = self
@@ -126,12 +126,12 @@ impl PrototypeBuilder {
 mod tests {
     use super::Prototype;
     use crate::moment::Moment;
-    use chrono::{DateTime, FixedOffset, TimeDelta, Utc};
+    use jiff::{SignedDuration, Timestamp};
     use std::num::NonZeroU64;
 
-    fn now() -> DateTime<FixedOffset> {
-        let now = Utc::now().fixed_offset();
-        now - TimeDelta::nanoseconds(now.timestamp_subsec_nanos().into())
+    fn now() -> Timestamp {
+        let now = Timestamp::now();
+        Timestamp::from_second(now.as_second()).unwrap()
     }
 
     #[test]
@@ -145,19 +145,22 @@ mod tests {
         let now = now();
         let prototype = Prototype::builder()
             .limit(NonZeroU64::new(3).unwrap())
-            .start(Moment::Relative(TimeDelta::days(-2)))
+            .start(Moment::Relative(SignedDuration::from_hours(24 * -2)))
             .end("prototype.end - days(1)")
             .now(now)
             .prototype(&Prototype {
-                start: Some(now - TimeDelta::days(30)),
+                start: Some(now - SignedDuration::from_hours(24 * 30)),
                 end: Some(now),
                 ..Prototype::default()
             })
             .build()
             .unwrap();
 
-        assert_eq!(prototype.start, Some(now - TimeDelta::days(2)));
-        assert_eq!(prototype.end, Some(now - TimeDelta::days(1)));
+        assert_eq!(
+            prototype.start,
+            Some(now - SignedDuration::from_hours(24 * 2))
+        );
+        assert_eq!(prototype.end, Some(now - SignedDuration::from_hours(24)));
         assert_eq!(prototype.limit, NonZeroU64::new(3));
     }
 
@@ -165,8 +168,8 @@ mod tests {
     fn a_prototype_ending_before_it_starts_is_an_error() {
         let errors = Prototype::builder()
             .name("backwards")
-            .start(Moment::Relative(TimeDelta::days(-1)))
-            .end(Moment::Relative(TimeDelta::days(-60)))
+            .start(Moment::Relative(SignedDuration::from_hours(-24)))
+            .end(Moment::Relative(SignedDuration::from_hours(24 * -60)))
             .build()
             .unwrap_err();
         assert!(errors[0].message().contains("backwards"));

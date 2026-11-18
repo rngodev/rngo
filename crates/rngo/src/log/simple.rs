@@ -82,7 +82,7 @@ impl RunLogWriter for SimpleEventRunLog {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
+    use jiff::Timestamp;
 
     fn rng(seed: u64) -> Rng {
         Rng::from_seed(&format!("{seed}-run_log"))
@@ -100,7 +100,7 @@ mod tests {
                 .push_input(Input {
                     id: i,
                     effect: "a".to_string(),
-                    timestamp: Utc::now().fixed_offset(),
+                    timestamp: Timestamp::now(),
                     data: serde_json::json!(i),
                     metadata: vec![],
                 })
@@ -136,7 +136,7 @@ mod tests {
                 .push_input(Input {
                     id: i,
                     effect: effect.to_string(),
-                    timestamp: Utc::now().fixed_offset(),
+                    timestamp: Timestamp::now(),
                     data: serde_json::json!(i),
                     metadata: vec![],
                 })
@@ -224,7 +224,7 @@ mod tests {
                 .push_input(Input {
                     id: i,
                     effect: effect.to_string(),
-                    timestamp: Utc::now().fixed_offset(),
+                    timestamp: Timestamp::now(),
                     data: serde_json::json!(i),
                     metadata: vec![],
                 })

@@ -11,10 +11,10 @@ pub(crate) mod select;
 pub(crate) mod string;
 
 pub(crate) use array::Array;
-use chrono::{DateTime, FixedOffset};
 pub(crate) use constant::Constant;
 pub(crate) use context::Context;
 pub(crate) use function::Function;
+use jiff::Timestamp;
 pub use json_pointer::{JsonPointer, JsonPointerPart};
 pub(crate) use number::Number;
 pub(crate) use object::Object;
@@ -44,7 +44,7 @@ pub struct GeneratorEdge {
 /// What a generator sees each time its effect fires.
 pub struct GeneratorContext<'a> {
     pub(crate) trigger: &'a TriggerEvent,
-    pub(crate) origin: DateTime<FixedOffset>,
+    pub(crate) origin: Timestamp,
 }
 
 impl GeneratorContext<'_> {
@@ -54,7 +54,7 @@ impl GeneratorContext<'_> {
     }
 
     /// The instant sim offsets are measured from.
-    pub fn origin(&self) -> DateTime<FixedOffset> {
+    pub fn origin(&self) -> Timestamp {
         self.origin
     }
 }

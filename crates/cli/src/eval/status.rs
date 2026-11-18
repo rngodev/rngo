@@ -1,5 +1,6 @@
-use chrono::{DateTime, FixedOffset, TimeDelta, Utc};
 use console::{Term, style};
+use jiff::tz::TimeZone;
+use jiff::{SignedDuration, Timestamp};
 use rngo::{Input, Metadata, Output, RunLogError, RunLogWriter};
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
@@ -19,8 +20,8 @@ pub struct StatusWriter {
     effect_channels: Rc<HashMap<String, String>>,
     term: Term,
     stats: RefCell<BTreeMap<String, ChannelStats>>,
-    last_timestamp: Cell<Option<DateTime<FixedOffset>>>,
-    waiting: Cell<Option<DateTime<FixedOffset>>>,
+    last_timestamp: Cell<Option<Timestamp>>,
+    waiting: Cell<Option<Timestamp>>,
     rendered_lines: Cell<usize>,
     last_render: Cell<Option<Instant>>,
     dirty: Cell<bool>,
@@ -51,7 +52,7 @@ impl StatusWriter {
     }
 
     /// Shows that the eval is waiting for an input due at `until`, until that time passes.
-    pub fn wait(&self, until: DateTime<FixedOffset>) {
+    pub fn wait(&self, until: Timestamp) {
         self.waiting.set(Some(until));
         self.dirty.set(true);
         self.render(false);
@@ -76,18 +77,15 @@ impl StatusWriter {
         self.last_render.set(Some(now));
         self.dirty.set(false);
 
-        let waiting = self
-            .waiting
-            .get()
-            .filter(|until| until.to_utc() > Utc::now());
+        let waiting = self.waiting.get().filter(|until| *until > Timestamp::now());
         let time_line = match (waiting, self.last_timestamp.get()) {
             (Some(until), _) => format!(
                 "waiting: next input at {} (in {})",
-                until.format("%Y-%m-%d %H:%M:%S"),
-                format_remaining(until.to_utc() - Utc::now())
+                format_time(until),
+                format_remaining(Timestamp::now().duration_until(until))
             ),
             (None, Some(timestamp)) => {
-                format!("time: {}", timestamp.format("%Y-%m-%d %H:%M:%S"))
+                format!("time: {}", format_time(timestamp))
             }
             (None, None) => "time: -".to_string(),
         };
@@ -129,8 +127,15 @@ fn channel_line(channel: &str, inputs: u64, outputs: u64) -> String {
     )
 }
 
-fn format_remaining(remaining: TimeDelta) -> String {
-    let secs = remaining.num_seconds().max(0);
+fn format_time(timestamp: Timestamp) -> String {
+    timestamp
+        .to_zoned(TimeZone::UTC)
+        .strftime("%Y-%m-%d %H:%M:%S")
+        .to_string()
+}
+
+fn format_remaining(remaining: SignedDuration) -> String {
+    let secs = remaining.as_secs().max(0);
     let (h, m, s) = (secs / 3_600, secs % 3_600 / 60, secs % 60);
     if h > 0 {
         format!("{h}h{m:02}m{s:02}s")

@@ -271,6 +271,7 @@ impl ChannelParser for StreamParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use jiff::Timestamp;
     use std::sync::mpsc;
 
     fn outputs() -> OutputSender {
@@ -322,7 +323,7 @@ mod tests {
         let input = Input {
             id: 1,
             effect: "ping".into(),
-            timestamp: chrono::Utc::now().fixed_offset(),
+            timestamp: Timestamp::now(),
             data: Value::String("x".into()),
             metadata: vec![],
         };

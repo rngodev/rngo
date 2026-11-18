@@ -1,6 +1,7 @@
 // Some tests rely on POSIX shell features and are unix-only, leaving their helpers unused on Windows.
 #![cfg_attr(windows, allow(dead_code))]
 
+use jiff::Timestamp;
 use rngo::StopHandle;
 use rngo_cli::eval::{EvalOptions, eval};
 use serde_json::json;
@@ -1216,16 +1217,13 @@ fn write_timed_spec(base: &Path, end: &str, sent_log: &Path) {
 }
 
 /// Each line is `(input timestamp, wall-clock second it was sent)`.
-fn read_sent_log(path: &Path) -> Vec<(chrono::DateTime<chrono::FixedOffset>, i64)> {
+fn read_sent_log(path: &Path) -> Vec<(Timestamp, i64)> {
     fs::read_to_string(path)
         .unwrap_or_default()
         .lines()
         .map(|line| {
             let (timestamp, sent) = line.split_once(' ').unwrap();
-            (
-                chrono::DateTime::parse_from_rfc3339(timestamp).unwrap(),
-                sent.parse().unwrap(),
-            )
+            (timestamp.parse().unwrap(), sent.parse().unwrap())
         })
         .collect()
 }
@@ -1258,7 +1256,7 @@ fn future_inputs_are_sent_once_their_time_arrives() {
     assert!(!sent.is_empty());
     for (timestamp, sent_at) in &sent {
         assert!(
-            timestamp.timestamp() <= *sent_at,
+            timestamp.as_second() <= *sent_at,
             "input at {timestamp} was sent early, at {sent_at}"
         );
     }
@@ -1288,7 +1286,7 @@ fn future_inputs_are_sent_right_away_by_default() {
     assert_eq!(sent.len(), 10);
     assert!(
         sent.iter()
-            .any(|(timestamp, sent_at)| timestamp.timestamp() > *sent_at),
+            .any(|(timestamp, sent_at)| timestamp.as_second() > *sent_at),
         "some inputs should have been sent before their time"
     );
 }

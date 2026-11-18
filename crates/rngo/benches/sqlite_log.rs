@@ -1,4 +1,5 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use jiff::Timestamp;
 use rngo::{Input, Rng, RunLogReader, RunLogWriter, SqliteRunLog};
 use std::hint::black_box;
 use std::rc::Rc;
@@ -10,7 +11,7 @@ fn input(id: u64, effect: &str) -> Input {
     Input {
         id,
         effect: effect.to_string(),
-        timestamp: chrono::Utc::now().fixed_offset(),
+        timestamp: Timestamp::now(),
         data: serde_json::json!({
             "id": id,
             "name": "Some User Name",

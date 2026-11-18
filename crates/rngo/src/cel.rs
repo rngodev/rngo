@@ -1,7 +1,7 @@
 use cel::extractors::This;
 use cel::objects::Map;
-use cel::{Context, Value};
-use chrono::{DateTime, Duration, FixedOffset};
+use cel::{Context, ExecutionError, Program, Value};
+use jiff::Timestamp;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -27,33 +27,58 @@ pub(crate) fn json_to_cel(value: serde_json::Value) -> Value {
     }
 }
 
-fn seconds(n: i64) -> Duration {
-    Duration::seconds(n)
+pub(crate) fn duration_value(seconds: i64) -> Value {
+    cel::functions::duration(Arc::new(format!("{seconds}s")))
+        .expect("whole seconds are a valid CEL duration")
 }
-fn minutes(n: i64) -> Duration {
-    Duration::seconds(n * 60)
-}
-fn hours(n: i64) -> Duration {
-    Duration::seconds(n * 3_600)
-}
-fn days(n: i64) -> Duration {
-    Duration::seconds(n * 86_400)
-}
-fn weeks(n: i64) -> Duration {
-    Duration::seconds(n * 604_800)
-}
-fn months(n: i64) -> Duration {
-    Duration::seconds(n * 2_419_200)
-} // 28 days
-fn years(n: i64) -> Duration {
-    Duration::seconds(n * 31_536_000)
-} // 365 days
 
-fn to_seconds(This(d): This<Duration>) -> f64 {
-    d.num_seconds() as f64
+/// Builds a CEL timestamp by evaluating `timestamp(..)` so no time crate has to be named here.
+pub(crate) fn timestamp_value(timestamp: Timestamp) -> Value {
+    let mut context = Context::default();
+    context.add_variable_from_value("rfc3339", Value::String(timestamp.to_string().into()));
+    Program::compile("timestamp(rfc3339)")
+        .expect("static expression compiles")
+        .execute(&context)
+        .expect("a jiff timestamp is a valid CEL timestamp")
 }
-fn hz(n: i64, d: Duration) -> f64 {
-    n as f64 / d.num_seconds() as f64
+
+fn seconds(n: i64) -> Result<Value, ExecutionError> {
+    Ok(duration_value(n))
+}
+fn minutes(n: i64) -> Result<Value, ExecutionError> {
+    Ok(duration_value(n * 60))
+}
+fn hours(n: i64) -> Result<Value, ExecutionError> {
+    Ok(duration_value(n * 3_600))
+}
+fn days(n: i64) -> Result<Value, ExecutionError> {
+    Ok(duration_value(n * 86_400))
+}
+fn weeks(n: i64) -> Result<Value, ExecutionError> {
+    Ok(duration_value(n * 604_800))
+}
+fn months(n: i64) -> Result<Value, ExecutionError> {
+    Ok(duration_value(n * 2_419_200))
+}
+fn years(n: i64) -> Result<Value, ExecutionError> {
+    Ok(duration_value(n * 31_536_000))
+}
+
+fn duration_seconds(function: &str, value: &Value) -> Result<i64, ExecutionError> {
+    match value {
+        Value::Duration(d) => Ok(d.num_seconds()),
+        _ => Err(ExecutionError::function_error(
+            function,
+            "expected a duration",
+        )),
+    }
+}
+
+fn to_seconds(This(d): This<Value>) -> Result<f64, ExecutionError> {
+    Ok(duration_seconds("toSeconds", &d)? as f64)
+}
+fn hz(n: i64, d: Value) -> Result<f64, ExecutionError> {
+    Ok(n as f64 / duration_seconds("hz", &d)? as f64)
 }
 
 fn join(This(list): This<Arc<Vec<Value>>>, separator: Arc<String>) -> String {
@@ -70,37 +95,33 @@ pub(crate) trait CelContextExt {
     fn with_time(&mut self) -> &mut Self;
     fn with_hertz(&mut self) -> &mut Self;
     fn with_strings(&mut self) -> &mut Self;
-    fn with_now(&mut self, now: DateTime<FixedOffset>) -> &mut Self;
-    fn with_prototype(
-        &mut self,
-        start: Option<DateTime<FixedOffset>>,
-        end: Option<DateTime<FixedOffset>>,
-    ) -> &mut Self;
+    fn with_now(&mut self, now: Timestamp) -> &mut Self;
+    fn with_prototype(&mut self, start: Option<Timestamp>, end: Option<Timestamp>) -> &mut Self;
     fn with_offset(&mut self, offset: f64) -> &mut Self;
 }
 
 impl CelContextExt for Context<'static> {
     fn with_time(&mut self) -> &mut Self {
         self.add_function("seconds", seconds);
-        let _ = self.add_variable("second", Value::Duration(Duration::seconds(1)));
+        let _ = self.add_variable("second", duration_value(1));
 
         self.add_function("minutes", minutes);
-        let _ = self.add_variable("minute", Value::Duration(Duration::seconds(60)));
+        let _ = self.add_variable("minute", duration_value(60));
 
         self.add_function("hours", hours);
-        let _ = self.add_variable("hour", Value::Duration(Duration::seconds(3_600)));
+        let _ = self.add_variable("hour", duration_value(3_600));
 
         self.add_function("days", days);
-        let _ = self.add_variable("day", Value::Duration(Duration::seconds(86_400)));
+        let _ = self.add_variable("day", duration_value(86_400));
 
         self.add_function("weeks", weeks);
-        let _ = self.add_variable("week", Value::Duration(Duration::seconds(604_800)));
+        let _ = self.add_variable("week", duration_value(604_800));
 
         self.add_function("months", months);
-        let _ = self.add_variable("month", Value::Duration(Duration::seconds(2_419_200)));
+        let _ = self.add_variable("month", duration_value(2_419_200));
 
         self.add_function("years", years);
-        let _ = self.add_variable("year", Value::Duration(Duration::seconds(31_536_000)));
+        let _ = self.add_variable("year", duration_value(31_536_000));
 
         self.add_function("toSeconds", to_seconds);
 
@@ -117,19 +138,15 @@ impl CelContextExt for Context<'static> {
         self
     }
 
-    fn with_now(&mut self, now: DateTime<FixedOffset>) -> &mut Self {
-        self.add_variable_from_value("now", Value::Timestamp(now));
+    fn with_now(&mut self, now: Timestamp) -> &mut Self {
+        self.add_variable_from_value("now", timestamp_value(now));
         self
     }
 
-    fn with_prototype(
-        &mut self,
-        start: Option<DateTime<FixedOffset>>,
-        end: Option<DateTime<FixedOffset>>,
-    ) -> &mut Self {
+    fn with_prototype(&mut self, start: Option<Timestamp>, end: Option<Timestamp>) -> &mut Self {
         let prototype: HashMap<String, Value> = [("start", start), ("end", end)]
             .into_iter()
-            .filter_map(|(key, timestamp)| Some((key.to_string(), Value::Timestamp(timestamp?))))
+            .filter_map(|(key, timestamp)| Some((key.to_string(), timestamp_value(timestamp?))))
             .collect();
         let _ = self.add_variable("prototype", Value::Map(Map::from(prototype)));
         self
@@ -145,7 +162,6 @@ impl CelContextExt for Context<'static> {
 mod tests {
     use super::*;
     use cel::Program;
-    use chrono::Utc;
 
     fn eval(ctx: &Context<'static>, expr: &str) -> Value {
         Program::compile(expr).unwrap().execute(ctx).unwrap()
@@ -158,9 +174,9 @@ mod tests {
         }
     }
 
-    fn duration(ctx: &Context<'static>, expr: &str) -> Duration {
+    fn duration(ctx: &Context<'static>, expr: &str) -> i64 {
         match eval(ctx, expr) {
-            Value::Duration(d) => d,
+            Value::Duration(d) => d.num_seconds(),
             v => panic!("expected duration, got {:?}", v),
         }
     }
@@ -184,13 +200,13 @@ mod tests {
         let mut ctx = Context::default();
         ctx.with_time();
 
-        assert_eq!(duration(&ctx, "second"), Duration::seconds(1));
-        assert_eq!(duration(&ctx, "minute"), Duration::seconds(60));
-        assert_eq!(duration(&ctx, "hour"), Duration::seconds(3_600));
-        assert_eq!(duration(&ctx, "day"), Duration::seconds(86_400));
-        assert_eq!(duration(&ctx, "week"), Duration::seconds(604_800));
-        assert_eq!(duration(&ctx, "month"), Duration::seconds(2_419_200));
-        assert_eq!(duration(&ctx, "year"), Duration::seconds(31_536_000));
+        assert_eq!(duration(&ctx, "second"), 1);
+        assert_eq!(duration(&ctx, "minute"), 60);
+        assert_eq!(duration(&ctx, "hour"), 3_600);
+        assert_eq!(duration(&ctx, "day"), 86_400);
+        assert_eq!(duration(&ctx, "week"), 604_800);
+        assert_eq!(duration(&ctx, "month"), 2_419_200);
+        assert_eq!(duration(&ctx, "year"), 31_536_000);
     }
 
     #[test]
@@ -198,13 +214,13 @@ mod tests {
         let mut ctx = Context::default();
         ctx.with_time();
 
-        assert_eq!(duration(&ctx, "seconds(90)"), Duration::seconds(90));
-        assert_eq!(duration(&ctx, "minutes(2)"), Duration::seconds(120));
-        assert_eq!(duration(&ctx, "hours(3)"), Duration::seconds(10_800));
-        assert_eq!(duration(&ctx, "days(1)"), Duration::seconds(86_400));
-        assert_eq!(duration(&ctx, "weeks(1)"), Duration::seconds(604_800));
-        assert_eq!(duration(&ctx, "months(1)"), Duration::seconds(2_419_200));
-        assert_eq!(duration(&ctx, "years(1)"), Duration::seconds(31_536_000));
+        assert_eq!(duration(&ctx, "seconds(90)"), 90);
+        assert_eq!(duration(&ctx, "minutes(2)"), 120);
+        assert_eq!(duration(&ctx, "hours(3)"), 10_800);
+        assert_eq!(duration(&ctx, "days(1)"), 86_400);
+        assert_eq!(duration(&ctx, "weeks(1)"), 604_800);
+        assert_eq!(duration(&ctx, "months(1)"), 2_419_200);
+        assert_eq!(duration(&ctx, "years(1)"), 31_536_000);
     }
 
     #[test]
@@ -240,16 +256,16 @@ mod tests {
 
     #[test]
     fn with_now_sets_timestamp() {
-        let now = Utc::now().fixed_offset();
+        let now = Timestamp::now();
         let mut ctx = Context::default();
         ctx.with_time().with_now(now);
 
-        assert_eq!(eval(&ctx, "now"), Value::Timestamp(now));
+        assert_eq!(eval(&ctx, "now"), timestamp_value(now));
     }
 
     #[test]
     fn now_arithmetic_with_durations() {
-        let now = Utc::now().fixed_offset();
+        let now = Timestamp::now();
         let mut ctx = Context::default();
         ctx.with_time().with_now(now);
 
@@ -259,22 +275,22 @@ mod tests {
 
     #[test]
     fn with_prototype_sets_map() {
-        let start = DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap();
-        let end = DateTime::parse_from_rfc3339("2024-12-31T00:00:00Z").unwrap();
+        let start = "2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap();
+        let end = "2024-12-31T00:00:00Z".parse::<Timestamp>().unwrap();
         let mut ctx = Context::default();
         ctx.with_prototype(Some(start), Some(end));
 
-        assert_eq!(eval(&ctx, "prototype.start"), Value::Timestamp(start));
-        assert_eq!(eval(&ctx, "prototype.end"), Value::Timestamp(end));
+        assert_eq!(eval(&ctx, "prototype.start"), timestamp_value(start));
+        assert_eq!(eval(&ctx, "prototype.end"), timestamp_value(end));
     }
 
     #[test]
     fn with_prototype_only_sets_the_bounds_it_has() {
-        let start = DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap();
+        let start = "2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap();
         let mut ctx = Context::default();
         ctx.with_prototype(Some(start), None);
 
-        assert_eq!(eval(&ctx, "prototype.start"), Value::Timestamp(start));
+        assert_eq!(eval(&ctx, "prototype.start"), timestamp_value(start));
         assert!(
             Program::compile("prototype.end")
                 .unwrap()
@@ -303,7 +319,7 @@ mod tests {
     #[test]
     fn now_timestamp_methods() {
         // 2024-03-15T10:30:45Z — a Friday, day 74 of year, month 2 (0-based)
-        let now = DateTime::parse_from_rfc3339("2024-03-15T10:30:45Z").unwrap();
+        let now = "2024-03-15T10:30:45Z".parse::<Timestamp>().unwrap();
         let mut ctx = Context::default();
         ctx.with_now(now);
 

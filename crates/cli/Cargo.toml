@@ -16,7 +16,7 @@ path = "src/main.rs"
 
 [dependencies]
 rngo = { version = "0.40.0", path = "../rngo" }
-chrono = "0.4"
+jiff = "0.2"
 dotenvy = "0.15"
 clap = { version = "4", features = ["derive"] }
 handlebars = "6"

@@ -96,14 +96,14 @@ impl FormatParser for TemplateFormatParser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
+    use jiff::Timestamp;
     use serde_json::Value;
 
     fn event(data: Value) -> Input {
         Input {
             id: 7,
             effect: "user".to_string(),
-            timestamp: Utc::now().fixed_offset(),
+            timestamp: Timestamp::now(),
             data,
             metadata: vec![],
         }

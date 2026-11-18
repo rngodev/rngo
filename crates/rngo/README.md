@@ -22,6 +22,7 @@ A **spec** describes the behavior of a system using the following components:
 
 These items are the supported public API; everything else is private and may change in any release. Each item has exactly one path:
 
+- Time: timestamps are [`jiff::Timestamp`](https://docs.rs/jiff) and durations are `jiff::SignedDuration`, so a caller depends on `jiff` directly
 - `build`: the builder DSL below, i.e. the generator, channel, format and signal constructors (`object()`, `stream()`, `sql_format()`, `sql_signal()`, ...), their builder types, and `EffectBuilder`, `PrototypeBuilder`, `Moment`, `Bound` (opaque; built from a `Moment`, a timestamp or a CEL expression string)
 - `generator`: the extension API for writing your own generators in Rust: implement `Generator` and `GeneratorBuilder`, then pass the builder to `EffectBuilder::generator` or nest it in another builder. It also holds the types those traits use: `GeneratorContext`, `GeneratorResult`, `GeneratorBuildVisitor`, `GeneratorEdge`, `Metadata`, `TriggerEvent` and `JsonPointer`. The built-in generators themselves are private; use their builders in `build`. To give a generator its own `type` in specs, implement `GeneratorParser` (it gets a `GeneratorParseVisitor` for the spec fields and error paths) and register it with `Dialect::primitive().with_generator_parser(...)`.
 - `signal`: the extension API for custom signals: implement `Signal` (and `SignalParser` to give it a `type` in specs, registered with `Dialect::with_signal_parser`), returning a `SignalOutcome` and optional `SignalEval`. `SignalBuilder` lets the `AuditBuilder` take a built signal directly. `SignalOutcome` is also what an `Audit` records for each signal.
@@ -56,17 +57,17 @@ Next a `Simulation`:
 # let dir = tempfile::tempdir().unwrap();
 # let run_log = rngo::SqliteRunLog::new(dir.path().to_path_buf()).unwrap();
 use std::num::NonZeroU64;
-use chrono::TimeDelta;
+use jiff::SignedDuration;
 use serde_json::Value;
 use rngo::build::*;
 let mut simulation = rngo::Simulation::builder()
     .seed(41)
-    .start(Moment::Relative(TimeDelta::days(-90)))
-    .end(Moment::Relative(TimeDelta::zero()))
+    .start(Moment::Relative(SignedDuration::from_hours(-2160)))
+    .end(Moment::Relative(SignedDuration::ZERO))
     .prototype("recent", |prototype| {
         prototype
-            .start(Moment::Relative(TimeDelta::days(-7)))
-            .end(Moment::Relative(TimeDelta::zero()))
+            .start(Moment::Relative(SignedDuration::from_hours(-168)))
+            .end(Moment::Relative(SignedDuration::ZERO))
     })
     .effect("user", |effect| {
         effect
@@ -145,14 +146,14 @@ To evaluate the spec, first run the `Simulation` against the `Proxy`:
 
 ```rust
 # use std::num::NonZeroU64;
-# use chrono::TimeDelta;
+# use jiff::SignedDuration;
 # use rngo::build::*;
 # fn main() {
 # let dir = tempfile::tempdir().unwrap();
 # let run_log = rngo::SqliteRunLog::new(dir.path().to_path_buf()).unwrap();
 # let mut simulation = rngo::Simulation::builder()
-#     .start(Moment::Relative(TimeDelta::days(-1)))
-#     .end(Moment::Relative(TimeDelta::zero()))
+#     .start(Moment::Relative(SignedDuration::from_hours(-24)))
+#     .end(Moment::Relative(SignedDuration::ZERO))
 #     .effect("user", |effect| {
 #         effect
 #             .trigger_expression("hz(10, hour)".to_string())
@@ -187,14 +188,14 @@ Then build an `Audit` and run it against the run log:
 
 ```rust
 # use std::num::NonZeroU64;
-# use chrono::TimeDelta;
+# use jiff::SignedDuration;
 # use rngo::build::*;
 # fn main() {
 # let dir = tempfile::tempdir().unwrap();
 # let run_log = rngo::SqliteRunLog::new(dir.path().to_path_buf()).unwrap();
 # let mut simulation = rngo::Simulation::builder()
-#     .start(Moment::Relative(TimeDelta::days(-1)))
-#     .end(Moment::Relative(TimeDelta::zero()))
+#     .start(Moment::Relative(SignedDuration::from_hours(-24)))
+#     .end(Moment::Relative(SignedDuration::ZERO))
 #     .effect("user", |effect| {
 #         effect
 #             .trigger_expression("hz(10, hour)".to_string())

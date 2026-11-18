@@ -1,11 +1,11 @@
-use chrono::TimeDelta;
+use jiff::SignedDuration;
 use rngo::build::*;
 use rngo::{Input, Metadata, RunLogWriter, Simulation, SimulationBuilder, SqliteRunLog, Step};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
 fn short_window() -> SimulationBuilder {
-    Simulation::builder().start(Moment::Relative(TimeDelta::seconds(-5)))
+    Simulation::builder().start(Moment::Relative(SignedDuration::from_secs(-5)))
 }
 
 fn log_all(simulation: Simulation, log: &impl RunLogWriter) -> Vec<Input> {

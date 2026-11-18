@@ -137,6 +137,7 @@ impl ChannelParser for ExecParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use jiff::Timestamp;
     use serde_json::json;
     use std::sync::mpsc;
 
@@ -144,7 +145,7 @@ mod tests {
         Input {
             id: 1,
             effect: "ping".into(),
-            timestamp: chrono::Utc::now().fixed_offset(),
+            timestamp: Timestamp::now(),
             data,
             metadata: vec![],
         }
