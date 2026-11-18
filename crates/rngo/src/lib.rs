@@ -1,8 +1,5 @@
-//! Core simulation library for rngo.
-//!
-//! The supported public API is the re-exports below plus the `build`, `generator`, `signal`, `channel`, `format`, `parsers` and `spec` modules;
-//! see the README for the list. Everything else is private.
 #![warn(unreachable_pub)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc(html_logo_url = "https://raw.githubusercontent.com/rngodev/rngo/main/assets/logo.svg")]
 #![doc = include_str!("../README.md")]
 mod audit;

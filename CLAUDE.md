@@ -27,6 +27,7 @@ just clippy                     # lint, matching CI (warnings are errors)
 just clippy-fix                 # lint and auto-fix clippy suggestions
 just deny                      # check dependencies for advisories, licenses, bans and sources (needs cargo-deny)
 just check-examples             # dry-run every examples/*/.rngo spec through the CLI
+just docs                       # build the rngo crate docs as docs.rs does (nightly, all features, feature badges) and open them
 cargo clippy --workspace --all-targets -- -D warnings  # lint (warnings are errors in CI)
 cargo build                     # build
 cargo run -p rngo-cli -- eval            # evaluate simulation (writes to .rngo/evals/<UUID>/, symlinked from .rngo/evals/last)

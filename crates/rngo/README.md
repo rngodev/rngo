@@ -1,5 +1,3 @@
-# rngo
-
 The `rngo` library lets you build a **spec** in Rust and evaluate it.
 
 A **spec** describes the behavior of a system using the following components:

@@ -9,6 +9,7 @@ Each release has a section named after its version. Changes that break existing 
 - A spec declares its format in a top-level `version` (currently 1), and `rngo` reports a spec in a format it doesn't read. JSON Schemas for editors are in `schema/v1/`, and `rngo init` adds the `$schema` line to a new `spec.yml`.
 - `rngo init` installs the agent skills release that matches the CLI version.
 - `exec` and `stream` channels work on Windows.
+- The docs on docs.rs include items behind the `schema` feature, such as `spec::json_schema`, marked with the feature they need.
 
 ### Changed
 

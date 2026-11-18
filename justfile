@@ -12,6 +12,9 @@ clippy-fix:
 deny:
     cargo deny check
 
+docs *args:
+    RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc -p rngo --no-deps --all-features --open {{args}}
+
 release version:
     bash scripts/release.sh {{version}}
 
