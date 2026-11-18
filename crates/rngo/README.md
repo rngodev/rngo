@@ -1,4 +1,14 @@
+<div align="center">
+
+<img src="https://raw.githubusercontent.com/rngodev/rngo/main/assets/logo.svg" alt="rngo logo" width="160" height="160">
+
 # rngo
+
+[![CI](https://github.com/rngodev/rngo/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/rngodev/rngo/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/rngo.svg)](https://crates.io/crates/rngo)
+[![Docs.rs](https://docs.rs/rngo/badge.svg)](https://docs.rs/rngo)
+
+</div>
 
 The `rngo` library lets you build a **spec** in Rust and evaluate it.
 

@@ -1,4 +1,14 @@
+<div align="center">
+
+<img src="assets/logo.svg" alt="rngo logo" width="160" height="160">
+
 # rngo
+
+[![CI](https://github.com/rngodev/rngo/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/rngodev/rngo/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/rngo.svg)](https://crates.io/crates/rngo)
+[![Docs.rs](https://docs.rs/rngo/badge.svg)](https://docs.rs/rngo)
+
+</div>
 
 rngo helps you learn what your code does by simulating usage and recording everything.
 
