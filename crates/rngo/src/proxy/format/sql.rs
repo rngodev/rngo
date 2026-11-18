@@ -112,14 +112,14 @@ impl FormatParser for SqlFormatParser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
+    use jiff::Timestamp;
     use serde_json::json;
 
     fn event(data: Value) -> Input {
         Input {
             id: 1,
             effect: "user".to_string(),
-            timestamp: Utc::now().fixed_offset(),
+            timestamp: Timestamp::now(),
             data,
             metadata: vec![],
         }

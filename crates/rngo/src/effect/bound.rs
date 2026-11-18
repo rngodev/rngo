@@ -1,7 +1,7 @@
 use crate::effect::prototype::Prototype;
 use crate::error::ParseError;
 use crate::moment::Moment;
-use chrono::{DateTime, FixedOffset};
+use jiff::Timestamp;
 
 /// Which end of a window a [`Bound`] sets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -42,8 +42,8 @@ impl From<Moment> for Bound {
     }
 }
 
-impl From<DateTime<FixedOffset>> for Bound {
-    fn from(timestamp: DateTime<FixedOffset>) -> Self {
+impl From<Timestamp> for Bound {
+    fn from(timestamp: Timestamp) -> Self {
         Bound {
             kind: None,
             value: BoundValue::Moment(timestamp.into()),
@@ -79,9 +79,9 @@ impl Bound {
     /// Resolves the bound at `now`; `prototype`'s start and end, when both are set, are what an expression sees as `prototype.start` and `prototype.end`. Parse errors name the bound by its `kind`.
     pub(crate) fn resolve(
         &self,
-        now: DateTime<FixedOffset>,
+        now: Timestamp,
         prototype: Option<&Prototype>,
-    ) -> Result<DateTime<FixedOffset>, Vec<ParseError>> {
+    ) -> Result<Timestamp, Vec<ParseError>> {
         let moment = match &self.value {
             BoundValue::Moment(moment) => moment.clone(),
             BoundValue::Expression(expression) => {

@@ -7,7 +7,7 @@ use crate::{
     BuildError, Input, Metadata, ProxyError, RunLogError, RunLogWriter, SimpleEventRunLog,
 };
 use channel::{Channel, ChannelBuilder};
-use chrono::{DateTime, FixedOffset, Utc};
+use jiff::Timestamp;
 use output::{Output, OutputSender};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -17,7 +17,7 @@ pub use stop::StopHandle;
 
 const WAIT_TICK: Duration = Duration::from_secs(1);
 
-type OnWait = Box<dyn FnMut(DateTime<FixedOffset>)>;
+type OnWait = Box<dyn FnMut(Timestamp)>;
 
 pub struct Proxy {
     run_log_writer: Rc<dyn RunLogWriter>,
@@ -73,15 +73,13 @@ impl Proxy {
 
     /// Blocks until `timestamp` has passed, calling `on_wait` about once a second meanwhile;
     /// returns `false` if stopped first.
-    fn wait_until(&mut self, timestamp: DateTime<FixedOffset>) -> bool {
+    fn wait_until(&mut self, timestamp: Timestamp) -> bool {
         loop {
-            let Some(remaining) = (timestamp.to_utc() - Utc::now())
-                .to_std()
-                .ok()
-                .filter(|d| !d.is_zero())
-            else {
+            let remaining = Timestamp::now().duration_until(timestamp);
+            if !remaining.is_positive() {
                 return true;
-            };
+            }
+            let remaining = remaining.unsigned_abs();
 
             if let Some(on_wait) = self.on_wait.as_mut() {
                 on_wait(timestamp);
@@ -113,7 +111,7 @@ impl Proxy {
             output_id: None,
             data: Some(serde_json::json!({
                 "key": key,
-                "timestamp": Utc::now().timestamp_millis(),
+                "timestamp": Timestamp::now().as_millisecond(),
             })),
             segment: None,
             timestamp: None,
@@ -162,7 +160,7 @@ impl ProxyBuilder {
 
     /// Called with the awaited timestamp when a realtime wait starts and about once a second
     /// while it lasts.
-    pub fn on_wait(mut self, f: impl FnMut(DateTime<FixedOffset>) + 'static) -> Self {
+    pub fn on_wait(mut self, f: impl FnMut(Timestamp) + 'static) -> Self {
         self.on_wait = Some(Box::new(f));
         self
     }
@@ -262,7 +260,7 @@ mod tests {
     use crate::proxy::channel::{Channel, ChannelBuilder, render};
     use crate::proxy::format::Format;
     use crate::proxy::output::{ChannelOutput, OutputSender};
-    use chrono::TimeDelta;
+    use jiff::{SignedDuration, Timestamp};
     use serde_json::{Value, json};
     use std::cell::RefCell;
     use std::time::Instant;
@@ -351,7 +349,7 @@ mod tests {
         Input {
             id,
             effect: "ping".into(),
-            timestamp: Utc::now().fixed_offset(),
+            timestamp: Timestamp::now(),
             data: json!(null),
             metadata: vec![],
         }
@@ -475,16 +473,16 @@ mod tests {
         let mut proxy = recording_proxy(builder, &sent);
 
         let mut past = input(1);
-        past.timestamp -= TimeDelta::seconds(10);
+        past.timestamp -= SignedDuration::from_secs(10);
         let mut future = input(2);
-        future.timestamp += TimeDelta::milliseconds(300);
+        future.timestamp += SignedDuration::from_millis(300);
 
         let started = Instant::now();
         proxy.send(&past).unwrap();
         assert!(waits.borrow().is_empty(), "past inputs aren't held");
         proxy.send(&future).unwrap();
 
-        assert!(Utc::now() >= future.timestamp.to_utc());
+        assert!(Timestamp::now() >= future.timestamp);
         assert!(started.elapsed() >= Duration::from_millis(250));
         assert_eq!(waits.borrow().first(), Some(&future.timestamp));
         assert_eq!(sent.borrow().len(), 2);
@@ -502,7 +500,7 @@ mod tests {
         });
 
         let mut future = input(1);
-        future.timestamp += TimeDelta::minutes(10);
+        future.timestamp += SignedDuration::from_mins(10);
         let started = Instant::now();
         proxy.send(&future).unwrap();
         stopper.join().unwrap();

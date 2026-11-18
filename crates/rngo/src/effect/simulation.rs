@@ -5,8 +5,8 @@ use crate::error::{BuildError, SimulationKey};
 use crate::log::SimpleEventRunLog;
 use crate::moment::Moment;
 use crate::{RunError, RunLogReader};
-use chrono::{DateTime, FixedOffset, TimeDelta, Utc};
 use indexmap::IndexMap;
+use jiff::{SignedDuration, Timestamp};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -82,7 +82,7 @@ pub struct SimulationBuilder {
     run_log_reader: Option<Rc<dyn RunLogReader>>,
     effect_builders: Vec<EffectBuilder>,
     seed: Option<u64>,
-    now: Option<DateTime<FixedOffset>>,
+    now: Option<Timestamp>,
     default_prototype: PrototypeBuilder,
     prototypes: IndexMap<String, PrototypeBuilder>,
     limit: Option<u64>,
@@ -96,8 +96,8 @@ impl SimulationBuilder {
             seed: None,
             now: None,
             default_prototype: PrototypeBuilder::default()
-                .start(Moment::Relative(TimeDelta::days(-30)))
-                .end(Moment::Relative(TimeDelta::zero())),
+                .start(Moment::Relative(SignedDuration::from_hours(24 * -30)))
+                .end(Moment::Relative(SignedDuration::ZERO)),
             prototypes: IndexMap::new(),
             limit: None,
         }
@@ -113,7 +113,7 @@ impl SimulationBuilder {
         self
     }
 
-    pub fn now(mut self, now: DateTime<FixedOffset>) -> Self {
+    pub fn now(mut self, now: Timestamp) -> Self {
         self.now = Some(now);
         self
     }
@@ -170,7 +170,7 @@ impl SimulationBuilder {
             return Err(errors);
         };
 
-        let now = self.now.unwrap_or_else(|| Utc::now().fixed_offset());
+        let now = self.now.unwrap_or_else(Timestamp::now);
         let default_prototype = self.default_prototype.clone().now(now).build()?;
         let (Some(start), Some(_)) = (default_prototype.start, default_prototype.end) else {
             return Err(vec![BuildError::simulation(

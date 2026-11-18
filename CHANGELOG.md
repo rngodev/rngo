@@ -14,6 +14,7 @@ Each release has a section named after its version. Changes that break existing 
 
 - **Breaking (spec):** keys from before versioning are rejected with a pointer to [MIGRATING.md](MIGRATING.md). Move `phases`, `schemas` and a channel's `target` as described there.
 - **Breaking (Rust API):** the public API of the `rngo` crate is smaller. Only the items listed in the crate README are public, and public enums and spec structs are `#[non_exhaustive]`, so match them with a wildcard arm.
+- **Breaking (Rust API):** `rngo` and `rngo-cli` use `jiff` instead of the unmaintained `chrono` (RUSTSEC-2026-0543). Timestamps (`Input::timestamp`, `Moment::Absolute`, `now`, `start`/`end`) are `jiff::Timestamp` instead of `DateTime<FixedOffset>`, and durations (`Moment::Relative`) are `jiff::SignedDuration` instead of `chrono::TimeDelta`. Timestamps in JSON and `context` generator output are written as UTC with a `Z` suffix (`2024-01-02T00:00:00Z`) instead of `+00:00`, and without trailing fractional zeros.
 - An invalid spec is reported as an error instead of panicking. A `number` generator without the bounds it needs is a parse error, and a trigger expression that stops returning a non-negative number ends the run with an error after logging what ran.
 - A `rngo-cli` build with a bumped `zip` fixes RUSTSEC-2026-0546, 0547 and 0548.
 

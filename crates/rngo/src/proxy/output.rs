@@ -1,5 +1,5 @@
 use crate::effect::generator::Metadata;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::Serialize;
 use std::sync::mpsc::Sender;
 
@@ -15,7 +15,7 @@ pub enum Level {
 #[derive(Clone, Debug, Serialize)]
 pub struct Output {
     pub input_id: Option<u64>,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     pub channel: String,
     pub level: Level,
     pub data: String,
@@ -41,7 +41,7 @@ impl ChannelOutput {
     pub(crate) fn into_output(self, channel: &str, input_id: Option<u64>) -> Output {
         Output {
             input_id,
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             channel: channel.to_string(),
             level: self.level,
             data: self.message,

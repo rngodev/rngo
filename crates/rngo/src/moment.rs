@@ -2,12 +2,25 @@ use crate::cel::CelContextExt;
 use crate::effect::prototype::Prototype;
 use crate::error::ParseError;
 use cel::{Context, Program, Value};
-use chrono::{DateTime, FixedOffset, NaiveDate, TimeDelta, TimeZone, Utc};
+use jiff::civil::Date;
+use jiff::tz::TimeZone;
+use jiff::{SignedDuration, Timestamp};
+
+/// Adds `delta` to `timestamp`, clamping to the earliest or latest representable instant instead of overflowing.
+pub(crate) fn offset_timestamp(timestamp: Timestamp, delta: SignedDuration) -> Timestamp {
+    timestamp
+        .checked_add(delta)
+        .unwrap_or(if delta.is_negative() {
+            Timestamp::MIN
+        } else {
+            Timestamp::MAX
+        })
+}
 
 #[derive(Clone, Debug)]
 pub enum Moment {
-    Absolute(DateTime<FixedOffset>),
-    Relative(TimeDelta),
+    Absolute(Timestamp),
+    Relative(SignedDuration),
 }
 
 impl Moment {
@@ -15,22 +28,22 @@ impl Moment {
         MomentParser { prototype: None }
     }
 
-    pub fn resolve(self, now: DateTime<FixedOffset>) -> DateTime<FixedOffset> {
+    pub fn resolve(self, now: Timestamp) -> Timestamp {
         match self {
             Moment::Absolute(date_time) => date_time,
-            Moment::Relative(time_delta) => now + time_delta,
+            Moment::Relative(delta) => offset_timestamp(now, delta),
         }
     }
 }
 
-impl From<DateTime<FixedOffset>> for Moment {
-    fn from(dt: DateTime<FixedOffset>) -> Self {
+impl From<Timestamp> for Moment {
+    fn from(dt: Timestamp) -> Self {
         Moment::Absolute(dt)
     }
 }
 
-impl From<TimeDelta> for Moment {
-    fn from(delta: TimeDelta) -> Self {
+impl From<SignedDuration> for Moment {
+    fn from(delta: SignedDuration) -> Self {
         Moment::Relative(delta)
     }
 }
@@ -47,18 +60,17 @@ impl<'a> MomentParser<'a> {
     }
 
     pub fn parse(&self, field_name: &str, expr: &str) -> Result<Moment, Vec<ParseError>> {
-        if let Ok(dt) = DateTime::parse_from_rfc3339(expr) {
-            return Ok(Moment::Absolute(dt));
+        if let Ok(timestamp) = expr.parse::<Timestamp>() {
+            return Ok(Moment::Absolute(timestamp));
         }
 
-        if let Ok(date) = NaiveDate::parse_from_str(expr, "%Y-%m-%d") {
-            let dt = Utc
-                .from_utc_datetime(&date.and_hms_opt(0, 0, 0).unwrap())
-                .fixed_offset();
-            return Ok(Moment::Absolute(dt));
+        if let Ok(date) = expr.parse::<Date>()
+            && let Ok(zoned) = date.to_zoned(TimeZone::UTC)
+        {
+            return Ok(Moment::Absolute(zoned.timestamp()));
         }
 
-        let now = Utc::now().fixed_offset();
+        let now = Timestamp::now();
         let mut context = Context::default();
         context.with_time().with_now(now);
 
@@ -91,7 +103,7 @@ impl<'a> MomentParser<'a> {
             Value::UInt(ui) => ui as i64,
             Value::Float(f) => f.round() as i64,
             Value::Timestamp(dt) => dt.timestamp(),
-            Value::Duration(d) => (now + d).timestamp(),
+            Value::Duration(d) => now.as_second().saturating_add(d.num_seconds()),
             _ => {
                 return Err(vec![ParseError::invalid(format!(
                         "{} expression must evaluate to a number or timestamp (seconds relative to now)",
@@ -100,8 +112,8 @@ impl<'a> MomentParser<'a> {
             }
         };
 
-        Ok(Moment::Relative(TimeDelta::seconds(
-            result_secs - now.timestamp(),
+        Ok(Moment::Relative(SignedDuration::from_secs(
+            result_secs.saturating_sub(now.as_second()),
         )))
     }
 }
@@ -116,14 +128,14 @@ mod tests {
 
     #[test]
     fn parses_rfc3339() {
-        let expected = DateTime::parse_from_rfc3339("2024-03-15T10:30:00Z").unwrap();
+        let expected = "2024-03-15T10:30:00Z".parse::<Timestamp>().unwrap();
         let moment = parse("2024-03-15T10:30:00Z").unwrap();
         assert!(matches!(moment, Moment::Absolute(dt) if dt == expected));
     }
 
     #[test]
     fn parses_date_only() {
-        let expected = DateTime::parse_from_rfc3339("2024-03-15T00:00:00Z").unwrap();
+        let expected = "2024-03-15T00:00:00Z".parse::<Timestamp>().unwrap();
         let moment = parse("2024-03-15").unwrap();
         assert!(matches!(moment, Moment::Absolute(dt) if dt == expected));
     }
@@ -132,32 +144,32 @@ mod tests {
     fn parses_cel_now() {
         // `now` evaluates to the current timestamp, so the delta from now is 0
         let moment = parse("now").unwrap();
-        assert!(matches!(moment, Moment::Relative(d) if d.num_seconds() == 0));
+        assert!(matches!(moment, Moment::Relative(d) if d.as_secs() == 0));
     }
 
     #[test]
     fn parses_cel_now_plus_duration() {
         let moment = parse("now + day").unwrap();
-        assert!(matches!(moment, Moment::Relative(d) if d.num_seconds() == 86_400));
+        assert!(matches!(moment, Moment::Relative(d) if d.as_secs() == 86_400));
     }
 
     #[test]
     fn parses_cel_bare_duration() {
         // a bare duration is equivalent to now + that duration
         let moment = parse("day").unwrap();
-        assert!(matches!(moment, Moment::Relative(d) if d.num_seconds() == 86_400));
+        assert!(matches!(moment, Moment::Relative(d) if d.as_secs() == 86_400));
     }
 
     #[test]
     fn parses_cel_now_minus_duration() {
         let moment = parse("now - weeks(2)").unwrap();
-        assert!(matches!(moment, Moment::Relative(d) if d.num_seconds() == -2 * 604_800));
+        assert!(matches!(moment, Moment::Relative(d) if d.as_secs() == -2 * 604_800));
     }
 
     #[test]
     fn parses_cel_with_prototype_range() {
-        let start_dt = DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap();
-        let end_dt = DateTime::parse_from_rfc3339("2024-12-31T00:00:00Z").unwrap();
+        let start_dt = "2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap();
+        let end_dt = "2024-12-31T00:00:00Z".parse::<Timestamp>().unwrap();
         let prototype = Prototype {
             start: Some(start_dt),
             end: Some(end_dt),
@@ -178,7 +190,7 @@ mod tests {
         // arithmetic with durations works naturally since they are timestamps
         let moment = parser.parse("field", "prototype.end + days(20)").unwrap();
         assert!(
-            matches!(moment, Moment::Relative(d) if d.num_seconds() == end_dt.timestamp() + 20 * 86_400 - Utc::now().fixed_offset().timestamp())
+            matches!(moment, Moment::Relative(d) if d.as_secs() == end_dt.as_second() + 20 * 86_400 - Timestamp::now().as_second())
         );
 
         // timestamp methods work on prototype bounds
@@ -198,7 +210,7 @@ mod tests {
 
     #[test]
     fn a_prototype_with_only_a_start_exposes_only_its_start() {
-        let start_dt = DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap();
+        let start_dt = "2024-01-01T00:00:00Z".parse::<Timestamp>().unwrap();
         let prototype = Prototype {
             start: Some(start_dt),
             ..Prototype::default()

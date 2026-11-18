@@ -1,15 +1,15 @@
-use chrono::{DateTime, FixedOffset, TimeDelta};
+use jiff::{SignedDuration, Timestamp};
 use rngo::build::*;
 use rngo::{BuildError, Dialect, EffectKey, Simulation, SimulationBuilder};
 use serde_json::Value;
 
-fn start() -> DateTime<FixedOffset> {
-    DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap()
+fn start() -> Timestamp {
+    "2024-01-01T00:00:00Z".parse().unwrap()
 }
 
 fn offsets_in_seconds(sim: Simulation, take: usize) -> Vec<i64> {
     sim.filter_map(|step| step.unwrap().into_input())
-        .map(|input| (input.timestamp - start()).num_seconds())
+        .map(|input| input.timestamp.duration_since(start()).as_secs())
         .take(take)
         .collect()
 }
@@ -17,7 +17,9 @@ fn offsets_in_seconds(sim: Simulation, take: usize) -> Vec<i64> {
 fn fixed_window() -> SimulationBuilder {
     Simulation::builder()
         .start(Moment::Absolute(start()))
-        .end(Moment::Absolute(start() + TimeDelta::days(30)))
+        .end(Moment::Absolute(
+            start() + SignedDuration::from_hours(24 * 30),
+        ))
 }
 
 /// The simulation window is 30 days.
@@ -59,8 +61,10 @@ fn simulation_respects_end_time() {
 fn effect_respects_start_time() {
     let mut builder = fixed_window();
     builder = builder.effect("events", |e| {
-        e.start(Moment::Absolute(start() + TimeDelta::days(15)))
-            .generator(constant().value(Value::Null))
+        e.start(Moment::Absolute(
+            start() + SignedDuration::from_hours(24 * 15),
+        ))
+        .generator(constant().value(Value::Null))
     });
 
     let offsets = offsets_in_seconds(
@@ -115,7 +119,7 @@ fn effect_respects_end_time_via_spec() {
 
     let offsets: Vec<i64> = sim
         .filter_map(|step| step.unwrap().into_input())
-        .map(|input| (input.timestamp - start()).num_seconds())
+        .map(|input| input.timestamp.duration_since(start()).as_secs())
         .collect();
 
     // 2024-01-01 to 2024-06-01 = 31+29+31+30+31 = 152 days (2024 is a leap year)
@@ -166,7 +170,7 @@ fn effect_respects_both_start_and_end() {
 
     let offsets: Vec<i64> = sim
         .filter_map(|step| step.unwrap().into_input())
-        .map(|input| (input.timestamp - start()).num_seconds())
+        .map(|input| input.timestamp.duration_since(start()).as_secs())
         .collect();
 
     // 2024 is a leap year.
@@ -217,7 +221,7 @@ fn an_effect_without_a_start_is_an_error() {
         .unwrap();
     builder = builder.effect("loose", |e| {
         e.prototype_key("nowhere")
-            .end(Moment::Relative(TimeDelta::zero()))
+            .end(Moment::Relative(SignedDuration::ZERO))
             .generator(constant().value(Value::Null))
     });
 
@@ -237,7 +241,7 @@ fn an_effect_without_an_end_or_limit_is_an_error() {
     let mut builder = Simulation::builder();
     builder = builder.effect("events", |e| {
         e.prototype_key("nowhere")
-            .start(Moment::Relative(TimeDelta::days(-1)))
+            .start(Moment::Relative(SignedDuration::from_hours(-24)))
             .generator(constant().value(Value::Null))
     });
 
@@ -260,7 +264,7 @@ fn an_effect_in_an_unknown_prototype_runs_on_its_own_values() {
     let mut builder = Simulation::builder();
     builder = builder.effect("events", |e| {
         e.prototype_key("nowhere")
-            .start(Moment::Relative(TimeDelta::days(-1)))
+            .start(Moment::Relative(SignedDuration::from_hours(-24)))
             .limit(std::num::NonZeroU64::new(2).unwrap())
             .generator(constant().value(Value::Null))
     });
@@ -308,10 +312,10 @@ fn context_sim_start_is_the_origin_and_clock_now_is_the_timestamp() {
 
     assert!(!inputs.is_empty());
     for input in inputs {
-        assert_eq!(input.data["start"], "2024-01-02T00:00:00+00:00");
+        assert_eq!(input.data["start"], "2024-01-02T00:00:00Z");
         assert_eq!(
             input.data["now"].as_str().unwrap(),
-            input.timestamp.to_rfc3339()
+            input.timestamp.to_string()
         );
     }
 }

@@ -50,7 +50,13 @@ fn dates(value: Value, effect: &str) -> Vec<String> {
     simulation
         .filter_map(|step| step.unwrap().into_input())
         .filter(|input| input.effect == effect)
-        .map(|input| input.timestamp.format("%Y-%m-%d").to_string())
+        .map(|input| {
+            input
+                .timestamp
+                .to_zoned(jiff::tz::TimeZone::UTC)
+                .strftime("%Y-%m-%d")
+                .to_string()
+        })
         .collect()
 }
 

@@ -1,7 +1,9 @@
 use super::{Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorResult};
 use crate::effect::generator::{GeneratorContext, Metadata};
 use crate::error::{BuildError, ParseError as Error};
+use crate::moment::offset_timestamp;
 use crate::parse::{GeneratorParseVisitor, GeneratorParser};
+use jiff::SignedDuration;
 
 #[derive(Debug)]
 pub(crate) struct Context {
@@ -36,14 +38,16 @@ impl Generator for Context {
                 metadata: vec![],
             },
             ContextPath::SimStart => GeneratorResult {
-                value: Some(context.origin.to_rfc3339().into()),
+                value: Some(context.origin.to_string().into()),
                 metadata: vec![],
             },
             ContextPath::ClockNow => {
-                let now =
-                    context.origin + chrono::Duration::milliseconds(context.trigger.sim_offset);
+                let now = offset_timestamp(
+                    context.origin,
+                    SignedDuration::from_millis(context.trigger.sim_offset),
+                );
                 GeneratorResult {
-                    value: Some(now.to_rfc3339().into()),
+                    value: Some(now.to_string().into()),
                     metadata: vec![],
                 }
             }

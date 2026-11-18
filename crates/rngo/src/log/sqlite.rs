@@ -2,7 +2,7 @@ use crate::effect::Input;
 use crate::log::pool::InputPool;
 use crate::log::{Metadata, RunLogReader, RunLogWriter};
 use crate::{Level, Output, Rng, RunLogError};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use rusqlite::types::Value as SqlValue;
 use rusqlite::{Connection, OptionalExtension};
 use std::cell::{Cell, RefCell, RefMut};
@@ -167,7 +167,7 @@ fn insert_metadata_row(
     output_id: Option<i64>,
     data: Option<&serde_json::Value>,
     segment: Option<&str>,
-    timestamp: Option<DateTime<chrono::FixedOffset>>,
+    timestamp: Option<Timestamp>,
 ) -> Result<(), RunLogError> {
     connection
         .prepare_cached(
@@ -179,7 +179,7 @@ fn insert_metadata_row(
             output_id,
             data.map(|v| v.to_string()),
             segment,
-            timestamp.map(|t| t.timestamp_millis()),
+            timestamp.map(|t| t.as_millisecond()),
         ])?;
     Ok(())
 }
@@ -207,7 +207,7 @@ impl RunLogWriter for SqliteRunLog {
             .execute(rusqlite::params![
                 input.id as i64,
                 input.effect,
-                input.timestamp.timestamp_millis(),
+                input.timestamp.as_millisecond(),
                 serde_json::to_string(&input.data)?,
                 serde_json::to_string(&input.metadata)?,
             ])?;
@@ -225,7 +225,7 @@ impl RunLogWriter for SqliteRunLog {
             )?
             .execute(rusqlite::params![
                 output.input_id.map(|id| id as i64),
-                output.timestamp.timestamp_millis(),
+                output.timestamp.as_millisecond(),
                 output.channel,
                 match output.level {
                     Level::Error => "error",
@@ -249,10 +249,8 @@ impl RunLogWriter for SqliteRunLog {
     }
 }
 
-fn timestamp_from_millis(millis: i64) -> DateTime<chrono::FixedOffset> {
-    DateTime::<Utc>::from_timestamp_millis(millis)
-        .unwrap_or(DateTime::<Utc>::UNIX_EPOCH)
-        .fixed_offset()
+fn timestamp_from_millis(millis: i64) -> Timestamp {
+    Timestamp::from_millisecond(millis).unwrap_or(Timestamp::UNIX_EPOCH)
 }
 
 fn sql_value_to_json(value: SqlValue) -> Result<serde_json::Value, RunLogError> {
@@ -418,7 +416,7 @@ mod tests {
     use super::*;
     use crate::effect::Input;
     use crate::effect::generator::Metadata as GeneratorMetadata;
-    use chrono::Utc;
+    use jiff::Timestamp;
     use tempfile::TempDir;
 
     fn open(directory: &std::path::Path) -> Connection {
@@ -429,9 +427,7 @@ mod tests {
     fn reads_back_input_timestamps_as_milliseconds() {
         let tmp = TempDir::new().unwrap();
         let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
-        let timestamp = DateTime::<Utc>::from_timestamp_millis(1_700_000_000_123)
-            .unwrap()
-            .fixed_offset();
+        let timestamp = Timestamp::from_millisecond(1_700_000_000_123).unwrap();
 
         run_log
             .push_input(Input {
@@ -465,7 +461,7 @@ mod tests {
             .push_input(Input {
                 id: 1,
                 effect: "ping".to_string(),
-                timestamp: Utc::now().fixed_offset(),
+                timestamp: Timestamp::now(),
                 data: serde_json::json!({ "a": 1 }),
                 metadata: vec![GeneratorMetadata {
                     mtype: "error".into(),
@@ -474,7 +470,7 @@ mod tests {
                 }],
             })
             .unwrap();
-        let output_timestamp = DateTime::<Utc>::from_timestamp_millis(1_700_000_000_456).unwrap();
+        let output_timestamp = Timestamp::from_millisecond(1_700_000_000_456).unwrap();
         run_log
             .push_output(Output {
                 input_id: Some(1),
@@ -541,11 +537,7 @@ mod tests {
                 output_id: None,
                 data: None,
                 segment: None,
-                timestamp: Some(
-                    DateTime::<Utc>::from_timestamp_millis(1_700_000_000_123)
-                        .unwrap()
-                        .fixed_offset(),
-                ),
+                timestamp: Some(Timestamp::from_millisecond(1_700_000_000_123).unwrap()),
             })
             .unwrap();
 
@@ -615,7 +607,7 @@ mod tests {
                 .push_input(Input {
                     id: (i + 1) as u64,
                     effect: "ping".to_string(),
-                    timestamp: Utc::now().fixed_offset(),
+                    timestamp: Timestamp::now(),
                     data: serde_json::json!(i),
                     metadata: vec![],
                 })
@@ -646,7 +638,7 @@ mod tests {
             .push_input(Input {
                 id: 1,
                 effect: "ping".to_string(),
-                timestamp: Utc::now().fixed_offset(),
+                timestamp: Timestamp::now(),
                 data: serde_json::json!(1),
                 metadata: vec![],
             })
@@ -660,7 +652,7 @@ mod tests {
             .push_input(Input {
                 id: 2,
                 effect: "ping".to_string(),
-                timestamp: Utc::now().fixed_offset(),
+                timestamp: Timestamp::now(),
                 data: serde_json::json!(2),
                 metadata: vec![],
             })
@@ -680,7 +672,7 @@ mod tests {
                 .push_input(Input {
                     id: i,
                     effect: effect.to_string(),
-                    timestamp: Utc::now().fixed_offset(),
+                    timestamp: Timestamp::now(),
                     data: serde_json::json!(i),
                     metadata: vec![],
                 })
@@ -709,7 +701,7 @@ mod tests {
                 .push_input(Input {
                     id: i,
                     effect: "a".to_string(),
-                    timestamp: Utc::now().fixed_offset(),
+                    timestamp: Timestamp::now(),
                     data: serde_json::json!(i),
                     metadata: vec![],
                 })
@@ -746,7 +738,7 @@ mod tests {
                 .push_input(Input {
                     id: i,
                     effect: effect.to_string(),
-                    timestamp: Utc::now().fixed_offset(),
+                    timestamp: Timestamp::now(),
                     data: serde_json::json!(i),
                     metadata: vec![],
                 })
