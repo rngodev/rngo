@@ -122,8 +122,8 @@ impl GeneratorParser for ReferenceParser {
             Some(Some(effect)) => {
                 builder = builder.effect(effect.to_string());
             }
-            Some(_) => errors.push(visitor.invalid("effect must be a string")),
-            None => errors.push(visitor.invalid("effect must be specified")),
+            Some(_) => errors.push(visitor.error("effect must be a string")),
+            None => errors.push(visitor.error("effect must be specified")),
         }
 
         if let Some(v) = visitor.spec().fields.get("cursor") {
@@ -135,7 +135,7 @@ impl GeneratorParser for ReferenceParser {
                     builder = builder.cursor(Cursor::Unique);
                 }
                 _ => errors.push(
-                    visitor.input_error("cursor", "cursor must be either \"random\" or \"unique\""),
+                    visitor.field_error("cursor", "cursor must be either \"random\" or \"unique\""),
                 ),
             }
         }

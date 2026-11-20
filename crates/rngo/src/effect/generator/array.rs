@@ -118,10 +118,10 @@ impl GeneratorParser for ArrayParser {
     ) -> Result<Box<dyn GeneratorBuilder>, ParseErrors> {
         let items_spec = match visitor.spec().fields.get("items") {
             Some(v) => serde_json::from_value::<spec::Generator>(v.clone()).map_err(|e| {
-                vec![visitor.input_error("items", format!("items parsing failed: {e}"))]
+                vec![visitor.field_error("items", format!("items parsing failed: {e}"))]
             })?,
             None => {
-                return Err(visitor.invalid("items must be specified").into());
+                return Err(visitor.error("items must be specified").into());
             }
         };
 
@@ -135,7 +135,7 @@ impl GeneratorParser for ArrayParser {
             match v.as_u64() {
                 Some(n) => min_items = n as usize,
                 None => errors.push(
-                    visitor.input_error("minItems", "minItems must be a non-negative integer"),
+                    visitor.field_error("minItems", "minItems must be a non-negative integer"),
                 ),
             }
         }
@@ -144,7 +144,7 @@ impl GeneratorParser for ArrayParser {
             match v.as_u64() {
                 Some(n) => max_items = n as usize,
                 None => errors.push(
-                    visitor.input_error("maxItems", "maxItems must be a non-negative integer"),
+                    visitor.field_error("maxItems", "maxItems must be a non-negative integer"),
                 ),
             }
         }

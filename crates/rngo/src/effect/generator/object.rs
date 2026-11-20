@@ -105,7 +105,7 @@ impl GeneratorParser for ObjectParser {
                 .map_err(|err| {
                     ParseErrors::from(
                         visitor
-                            .input_error("properties", format!("properties parsing failed: {err}")),
+                            .field_error("properties", format!("properties parsing failed: {err}")),
                     )
                 })
                 .and_then(|properties| {
@@ -131,7 +131,7 @@ impl GeneratorParser for ObjectParser {
                     }
                 })
         } else {
-            Err(visitor.input_error("properties", "not specified").into())
+            Err(visitor.field_error("properties", "not specified").into())
         }
     }
 }

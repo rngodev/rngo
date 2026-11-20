@@ -1,5 +1,5 @@
 use super::clock::Clock;
-use crate::RunError;
+use crate::SimulationError;
 use crate::effect::Input;
 use crate::log::RunLogReader;
 use jiff::Timestamp;
@@ -41,7 +41,7 @@ pub(super) enum Trigger {
     Clock {
         clock: Clock,
         /// The clock's next item: an offset, or the error computing it, which surfaces at the last offset.
-        next: Option<Result<i64, RunError>>,
+        next: Option<Result<i64, SimulationError>>,
     },
 }
 
@@ -66,7 +66,7 @@ impl Trigger {
     }
 
     /// Takes the next trigger event, or the error that stops this trigger for good.
-    pub(super) fn pull(&mut self) -> Option<Result<TriggerEvent, RunError>> {
+    pub(super) fn pull(&mut self) -> Option<Result<TriggerEvent, SimulationError>> {
         match self {
             Trigger::Effect {
                 run_log_reader: event_run_log,

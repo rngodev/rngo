@@ -121,16 +121,16 @@ impl GeneratorParser for SelectParser {
         let options_value = match visitor.spec().fields.get("options") {
             Some(v) => v.clone(),
             None => {
-                return Err(visitor.invalid("options must be specified").into());
+                return Err(visitor.error("options must be specified").into());
             }
         };
 
         let option_specs: Vec<OptionSpec> = serde_json::from_value(options_value).map_err(|e| {
-            vec![visitor.input_error("options", format!("options parsing failed: {e}"))]
+            vec![visitor.field_error("options", format!("options parsing failed: {e}"))]
         })?;
 
         if option_specs.is_empty() {
-            return Err(visitor.invalid("options must not be empty").into());
+            return Err(visitor.error("options must not be empty").into());
         }
 
         let mut errors = vec![];

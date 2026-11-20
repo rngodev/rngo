@@ -45,13 +45,15 @@ impl GeneratorParseVisitor {
         self.source_path.clone()
     }
 
-    pub fn invalid(&self, message: impl Into<String>) -> ParseError {
+    /// An error located at this generator's spec.
+    pub fn error(&self, message: impl Into<String>) -> ParseError {
         ParseError::invalid(message).at(self.source_path())
     }
 
-    pub fn input_error(&self, input: impl Into<String>, message: impl Into<String>) -> ParseError {
-        let mut path = self.source_path().clone();
-        path.push(input.into());
+    /// An error located at `field` of this generator's spec.
+    pub fn field_error(&self, field: impl Into<String>, message: impl Into<String>) -> ParseError {
+        let mut path = self.source_path();
+        path.push(field.into());
 
         ParseError::invalid(message).at(path)
     }

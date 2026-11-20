@@ -149,11 +149,11 @@ impl GeneratorParser for FunctionParser {
             Some(Some(expression)) => expression.to_string(),
             Some(_) => {
                 return Err(visitor
-                    .input_error("expression", "expression must be a string")
+                    .field_error("expression", "expression must be a string")
                     .into());
             }
             None => {
-                return Err(visitor.invalid("expression must be specified").into());
+                return Err(visitor.error("expression must be specified").into());
             }
         };
 
@@ -163,7 +163,7 @@ impl GeneratorParser for FunctionParser {
         if let Some(vars_value) = visitor.spec().fields.get("variables") {
             let vars: IndexMap<String, spec::Generator> =
                 serde_json::from_value(vars_value.clone()).map_err(|e| {
-                    vec![visitor.input_error("variables", format!("variables parsing failed: {e}"))]
+                    vec![visitor.field_error("variables", format!("variables parsing failed: {e}"))]
                 })?;
 
             let mut errors = vec![];

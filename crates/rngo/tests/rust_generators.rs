@@ -84,7 +84,7 @@ impl GeneratorParser for CounterParser {
     ) -> Result<Box<dyn GeneratorBuilder>, ParseErrors> {
         match visitor.spec().fields.get("step").and_then(Value::as_u64) {
             Some(step) => Ok(Box::new(CounterBuilder { step })),
-            None => Err(visitor.input_error("step", "step must be a number").into()),
+            None => Err(visitor.field_error("step", "step must be a number").into()),
         }
     }
 }

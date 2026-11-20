@@ -128,10 +128,10 @@ impl GeneratorParser for ContextParser {
     ) -> Result<Box<dyn GeneratorBuilder>, ParseErrors> {
         let path = match visitor.spec().fields.get("path") {
             Some(v) => serde_json::from_value::<Vec<String>>(v.clone()).map_err(|e| {
-                vec![visitor.input_error("path", format!("path parsing failed: {e}"))]
+                vec![visitor.field_error("path", format!("path parsing failed: {e}"))]
             })?,
             None => {
-                return Err(visitor.invalid("path must be specified").into());
+                return Err(visitor.error("path must be specified").into());
             }
         };
 

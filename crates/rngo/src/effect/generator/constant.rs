@@ -66,7 +66,7 @@ impl GeneratorParser for ConstantParser {
                 builder = builder.value(value.clone());
                 Ok(Box::new(builder))
             }
-            None => Err(visitor.invalid("value must be specified").into()),
+            None => Err(visitor.error("value must be specified").into()),
         }
     }
 }

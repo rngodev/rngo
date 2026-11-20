@@ -5,7 +5,7 @@ pub(crate) mod prototype;
 pub(crate) mod simulation;
 mod trigger;
 
-use crate::RunError;
+use crate::SimulationError;
 use crate::effect::bound::{Bound, BoundKind};
 use crate::effect::prototype::Prototype;
 use crate::error::{BuildError, BuildErrors, EffectKey};
@@ -85,7 +85,7 @@ impl Effect {
 }
 
 impl Iterator for Effect {
-    type Item = Result<Step, RunError>;
+    type Item = Result<Step, SimulationError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.next_offset()?;

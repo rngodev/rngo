@@ -15,14 +15,19 @@ pub struct ParseError {
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum ParseErrorKind {
+    /// A free-form problem, described by its message.
     #[error("{0}")]
     Invalid(String),
+    /// No parser matched the `type`; `kind` is what was being parsed (e.g. `generator`).
     #[error("unknown {kind} type")]
     UnknownType { kind: &'static str },
+    /// More than one parser matched the `type`; `count` is how many did.
     #[error("{count} {kind} parsers matched")]
     AmbiguousType { kind: &'static str, count: usize },
+    /// The spec names a channel it doesn't define.
     #[error("unknown channel: {0}")]
     UnknownChannel(String),
+    /// The spec's `version` is `found`, but this rngo reads only `supported`.
     #[error(
         "spec version {found} is not supported; this rngo reads version {supported} (see {})",
         crate::spec::MIGRATION_URL
@@ -59,6 +64,7 @@ impl ParseError {
         &self.path
     }
 
+    /// What went wrong.
     pub fn kind(&self) -> &ParseErrorKind {
         &self.kind
     }
@@ -106,6 +112,7 @@ pub enum BuildError {
 }
 
 impl BuildError {
+    /// An error in the simulation's own settings; `key` says which.
     pub fn simulation(key: SimulationKey, message: impl Into<String>) -> Self {
         BuildError::Simulation {
             key,
@@ -113,6 +120,7 @@ impl BuildError {
         }
     }
 
+    /// An error in effect `effect`; `key` is the part of its spec it concerns.
     pub fn effect(effect: impl Into<String>, key: EffectKey, message: impl Into<String>) -> Self {
         BuildError::Effect {
             effect: effect.into(),
@@ -121,6 +129,7 @@ impl BuildError {
         }
     }
 
+    /// An error in a generator of effect `effect`; `path` leads from the effect's generator to the failing one.
     pub fn generator(
         effect: impl Into<String>,
         path: Vec<GeneratorEdge>,
@@ -133,12 +142,14 @@ impl BuildError {
         }
     }
 
+    /// An error in the proxy as a whole.
     pub fn proxy(message: impl Into<String>) -> Self {
         BuildError::Proxy {
             message: message.into(),
         }
     }
 
+    /// An error in channel `channel`.
     pub fn channel(channel: impl Into<String>, message: impl Into<String>) -> Self {
         BuildError::Channel {
             channel: channel.into(),
@@ -146,6 +157,7 @@ impl BuildError {
         }
     }
 
+    /// An error in signal `signal`.
     pub fn signal(signal: impl Into<String>, message: impl Into<String>) -> Self {
         BuildError::Signal {
             signal: signal.into(),
@@ -153,6 +165,7 @@ impl BuildError {
         }
     }
 
+    /// An error in the audit as a whole.
     pub fn audit(message: impl Into<String>) -> Self {
         BuildError::Audit {
             message: message.into(),
@@ -295,11 +308,15 @@ impl ParseErrors {
     }
 }
 
+/// The part of a simulation's settings an error concerns.
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum SimulationKey {
+    /// The default prototype's `start`.
     Start,
+    /// The default prototype's `end`.
     End,
+    /// The run log the simulation reads earlier inputs from.
     RunLogReader,
 }
 
@@ -307,10 +324,15 @@ pub enum SimulationKey {
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum EffectKey {
+    /// The effect's `generator`.
     Generator,
+    /// The effect's `trigger`.
     Trigger,
+    /// The effect as a whole.
     Config,
+    /// The effect's `start`.
     Start,
+    /// The effect's `end`.
     End,
 }
 
@@ -327,22 +349,41 @@ impl EffectKey {
     }
 }
 
-/// A failure partway through a run, which stops it; inputs logged before it are kept.
+/// A spec problem a simulation finds partway through, which stops it; inputs logged before it are kept.
 #[derive(Error, Debug)]
-#[error("failed to run `effects.{effect}{}`: `{message}`", key.path_suffix())]
-pub struct RunError {
-    pub effect: String,
-    pub key: EffectKey,
-    pub message: String,
+#[error("simulation failed at `effects.{effect}{}`: `{message}`", key.path_suffix())]
+pub struct SimulationError {
+    effect: String,
+    key: EffectKey,
+    message: String,
 }
 
-impl RunError {
-    pub fn effect(effect: impl Into<String>, key: EffectKey, message: impl Into<String>) -> Self {
-        RunError {
+impl SimulationError {
+    pub(crate) fn new(
+        effect: impl Into<String>,
+        key: EffectKey,
+        message: impl Into<String>,
+    ) -> Self {
+        SimulationError {
             effect: effect.into(),
             key,
             message: message.into(),
         }
+    }
+
+    /// The key of the effect that failed.
+    pub fn effect(&self) -> &str {
+        &self.effect
+    }
+
+    /// The part of the effect's spec the error concerns.
+    pub fn key(&self) -> &EffectKey {
+        &self.key
+    }
+
+    /// The error's message, without the effect it concerns.
+    pub fn message(&self) -> &str {
+        &self.message
     }
 }
 
