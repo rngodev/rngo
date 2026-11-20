@@ -80,9 +80,9 @@ impl GeneratorParser for StrParser {
                 Ok(Box::new(builder))
             }
             Some(_) => Err(visitor
-                .input_error("pattern", "pattern must be a string")
+                .field_error("pattern", "pattern must be a string")
                 .into()),
-            None => Err(visitor.invalid("pattern must be specified").into()),
+            None => Err(visitor.error("pattern must be specified").into()),
         }
     }
 }

@@ -1,6 +1,6 @@
 use crate::cel::CelContextExt;
 use crate::error::BuildErrors;
-use crate::{BuildError, EffectKey, RunError};
+use crate::{BuildError, EffectKey, SimulationError};
 use cel::{Context, Program, Value};
 use rand::RngExt;
 use rand_pcg::Pcg32;
@@ -27,14 +27,14 @@ impl Clock {
 }
 
 impl Iterator for Clock {
-    type Item = Result<i64, RunError>;
+    type Item = Result<i64, SimulationError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let u: f64 = self.rng.random();
         let rate = match self.rate_function.offset_rate(self.last as f64 / 1000.0) {
             Ok(rate) => rate,
             Err(message) => {
-                return Some(Err(RunError::effect(
+                return Some(Err(SimulationError::new(
                     &self.key,
                     EffectKey::Trigger,
                     message,
@@ -42,7 +42,7 @@ impl Iterator for Clock {
             }
         };
         if rate.is_nan() || rate < 0.0 {
-            return Some(Err(RunError::effect(
+            return Some(Err(SimulationError::new(
                 &self.key,
                 EffectKey::Trigger,
                 format!("rate must be a non-negative number, got {rate}"),
@@ -285,8 +285,8 @@ mod tests {
         let mut clock = expression_clock("offset > 0.0 ? 'oops' : 1.0");
         assert!(clock.next().unwrap().is_ok());
         let error = clock.next().unwrap().unwrap_err();
-        assert!(matches!(error.key, EffectKey::Trigger));
-        assert!(error.message.contains("must return a number"));
+        assert!(matches!(error.key(), EffectKey::Trigger));
+        assert!(error.message().contains("must return a number"));
     }
 
     #[test]

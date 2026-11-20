@@ -4,7 +4,7 @@ use crate::effect::{Effect, EffectBuilder, Step};
 use crate::error::{BuildError, BuildErrors, SimulationKey};
 use crate::log::SimpleEventRunLog;
 use crate::moment::Moment;
-use crate::{RunError, RunLogReader};
+use crate::{RunLogReader, SimulationError};
 use indexmap::IndexMap;
 use jiff::{SignedDuration, Timestamp};
 use std::collections::HashMap;
@@ -33,7 +33,7 @@ impl Simulation {
 
 /// Yields each effect's steps in time order; an `Err` ends the effect that failed, and callers should stop there.
 impl Iterator for Simulation {
-    type Item = Result<Step, RunError>;
+    type Item = Result<Step, SimulationError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.limit.is_some_and(|limit| self.emitted >= limit) {
@@ -66,7 +66,7 @@ impl StandaloneSimulation {
 }
 
 impl Iterator for StandaloneSimulation {
-    type Item = Result<Step, RunError>;
+    type Item = Result<Step, SimulationError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let item = self.simulation.next()?;

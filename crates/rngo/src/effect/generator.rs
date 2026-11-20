@@ -160,6 +160,7 @@ impl GeneratorBuildVisitor {
         new_self
     }
 
+    /// An error located at this generator, by effect and path through the generator tree.
     pub fn error(&self, message: impl Into<String>) -> BuildError {
         BuildError::generator(self.effect_key.clone(), self.path.clone(), message.into())
     }

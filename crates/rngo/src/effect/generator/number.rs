@@ -202,7 +202,7 @@ impl GeneratorParser for NumberParser {
                 Some(minimum) => {
                     builder = builder.minimum(minimum);
                 }
-                None => errors.push(visitor.input_error("minimum", "minimum must be a number")),
+                None => errors.push(visitor.field_error("minimum", "minimum must be a number")),
             }
         }
 
@@ -211,7 +211,7 @@ impl GeneratorParser for NumberParser {
                 Some(maximum) => {
                     builder = builder.maximum(maximum);
                 }
-                None => errors.push(visitor.input_error("maximum", "maximum must be a number")),
+                None => errors.push(visitor.field_error("maximum", "maximum must be a number")),
             }
         }
 
@@ -221,7 +221,7 @@ impl GeneratorParser for NumberParser {
                     builder = builder.scale(scale as u32);
                 }
                 None => errors
-                    .push(visitor.input_error("scale", "scale must be a non-negative integer")),
+                    .push(visitor.field_error("scale", "scale must be a non-negative integer")),
             }
         }
 
@@ -230,7 +230,7 @@ impl GeneratorParser for NumberParser {
                 Some(step) => {
                     builder = builder.step(step);
                 }
-                None => errors.push(visitor.input_error("step", "step must be a number")),
+                None => errors.push(visitor.field_error("step", "step must be a number")),
             }
         }
 
@@ -238,8 +238,8 @@ impl GeneratorParser for NumberParser {
             && let Err((field, message)) = sampling(builder.minimum, builder.maximum, builder.step)
         {
             errors.push(match field {
-                Some(field) => visitor.input_error(field, message),
-                None => visitor.invalid(message),
+                Some(field) => visitor.field_error(field, message),
+                None => visitor.error(message),
             });
         }
 
