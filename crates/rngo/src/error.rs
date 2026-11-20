@@ -1,4 +1,6 @@
 use crate::effect::generator::GeneratorEdge;
+use std::fmt;
+use std::ops::Deref;
 use thiserror::Error;
 
 /// A problem found while parsing a spec, located by the path of the field it concerns.
@@ -179,6 +181,120 @@ impl BuildError {
     }
 }
 
+macro_rules! error_list {
+    ($(#[$meta:meta])* $name:ident, $item:ty) => {
+        $(#[$meta])*
+        #[derive(Debug, Default)]
+        pub struct $name(Vec<$item>);
+
+        impl $name {
+            /// The individual errors.
+            pub fn as_slice(&self) -> &[$item] {
+                &self.0
+            }
+
+            /// The individual errors, as an owned `Vec`.
+            pub fn into_vec(self) -> Vec<$item> {
+                self.0
+            }
+
+            /// Appends one error.
+            pub fn push(&mut self, error: $item) {
+                self.0.push(error);
+            }
+        }
+
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                for (i, error) in self.0.iter().enumerate() {
+                    if i > 0 {
+                        writeln!(f)?;
+                    }
+                    write!(f, "{error}")?;
+                }
+                Ok(())
+            }
+        }
+
+        impl std::error::Error for $name {}
+
+        impl Deref for $name {
+            type Target = [$item];
+
+            fn deref(&self) -> &[$item] {
+                &self.0
+            }
+        }
+
+        impl From<$item> for $name {
+            fn from(error: $item) -> Self {
+                $name(vec![error])
+            }
+        }
+
+        impl From<Vec<$item>> for $name {
+            fn from(errors: Vec<$item>) -> Self {
+                $name(errors)
+            }
+        }
+
+        impl From<$name> for Vec<$item> {
+            fn from(errors: $name) -> Self {
+                errors.0
+            }
+        }
+
+        impl FromIterator<$item> for $name {
+            fn from_iter<I: IntoIterator<Item = $item>>(iter: I) -> Self {
+                $name(iter.into_iter().collect())
+            }
+        }
+
+        impl Extend<$item> for $name {
+            fn extend<I: IntoIterator<Item = $item>>(&mut self, iter: I) {
+                self.0.extend(iter);
+            }
+        }
+
+        impl IntoIterator for $name {
+            type Item = $item;
+            type IntoIter = std::vec::IntoIter<$item>;
+
+            fn into_iter(self) -> Self::IntoIter {
+                self.0.into_iter()
+            }
+        }
+
+        impl<'a> IntoIterator for &'a $name {
+            type Item = &'a $item;
+            type IntoIter = std::slice::Iter<'a, $item>;
+
+            fn into_iter(self) -> Self::IntoIter {
+                self.0.iter()
+            }
+        }
+    };
+}
+
+error_list!(
+    /// Every problem found while parsing a spec, displayed one per line.
+    ParseErrors,
+    ParseError
+);
+
+error_list!(
+    /// Every problem found while building a simulation, proxy or audit, displayed one per line.
+    BuildErrors,
+    BuildError
+);
+
+impl ParseErrors {
+    /// Prepends `prefix` to every error's path; see [`ParseError::prefixed`].
+    pub fn prefixed(self, prefix: &[&str]) -> Self {
+        self.into_iter().map(|e| e.prefixed(prefix)).collect()
+    }
+}
+
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum SimulationKey {
@@ -313,4 +429,60 @@ pub enum SignalError {
     NotBool(String),
     #[error("query failed: {0}")]
     Query(#[from] RunLogError),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn two_errors() -> ParseErrors {
+        [
+            ParseError::invalid("first").at(["a"]),
+            ParseError::invalid("second").at(["b", "c"]),
+        ]
+        .into_iter()
+        .collect()
+    }
+
+    #[test]
+    fn displays_one_error_per_line() {
+        assert_eq!(
+            two_errors().to_string(),
+            "failed to parse `a`: `first`\nfailed to parse `b.c`: `second`"
+        );
+    }
+
+    #[test]
+    fn propagates_with_question_mark_into_box_dyn_error() {
+        fn parse() -> Result<(), Box<dyn std::error::Error>> {
+            Err(two_errors())?
+        }
+
+        assert_eq!(parse().unwrap_err().to_string(), two_errors().to_string());
+    }
+
+    #[test]
+    fn exposes_individual_errors() {
+        let errors = two_errors();
+        assert_eq!(errors.len(), 2);
+        assert_eq!(errors[1].path(), ["b", "c"]);
+        let messages: Vec<_> = errors.into_iter().map(|e| e.message()).collect();
+        assert_eq!(messages, ["first", "second"]);
+    }
+
+    #[test]
+    fn prefixes_every_error() {
+        let paths: Vec<_> = two_errors()
+            .prefixed(&["channels", "x"])
+            .iter()
+            .map(|e| e.path().join("."))
+            .collect();
+        assert_eq!(paths, ["channels.x.a", "channels.x.b.c"]);
+    }
+
+    #[test]
+    fn converts_a_single_build_error() {
+        let errors: BuildErrors = BuildError::proxy("broken").into();
+        assert_eq!(errors.to_string(), "failed to build proxy: `broken`");
+    }
 }

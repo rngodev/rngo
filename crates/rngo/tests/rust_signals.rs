@@ -1,5 +1,5 @@
 use rngo::signal::{Signal, SignalEval, SignalOutcome, SignalParser};
-use rngo::{Dialect, ParseError, RunLogReader};
+use rngo::{Dialect, ParseError, ParseErrors, RunLogReader};
 use serde_json::{Value, json};
 
 #[derive(Debug)]
@@ -35,12 +35,12 @@ impl SignalParser for LastIdAtLeastParser {
         &self,
         _key: &str,
         signal: &rngo::spec::Signal,
-    ) -> Result<Box<dyn Signal>, Vec<ParseError>> {
+    ) -> Result<Box<dyn Signal>, ParseErrors> {
         match signal.fields.get("min").and_then(Value::as_u64) {
             Some(min) => Ok(Box::new(LastIdAtLeast { min })),
-            None => Err(vec![
-                ParseError::invalid("min must be a number").at(["min"]),
-            ]),
+            None => Err(ParseError::invalid("min must be a number")
+                .at(["min"])
+                .into()),
         }
     }
 }

@@ -1,6 +1,6 @@
 use super::{Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorResult};
 use crate::effect::generator::{GeneratorContext, GeneratorParseVisitor, GeneratorParser};
-use crate::error::{BuildError, ParseError};
+use crate::error::{BuildErrors, ParseErrors};
 use serde_json::Value;
 
 #[derive(Debug)]
@@ -37,13 +37,13 @@ impl ConstantBuilder {
 }
 
 impl GeneratorBuilder for ConstantBuilder {
-    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, Vec<BuildError>> {
+    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, BuildErrors> {
         if let Some(value) = &self.value {
             Ok(Box::new(Constant {
                 value: value.clone(),
             }))
         } else {
-            Err(vec![visitor.error("value was not set")])
+            Err(visitor.error("value was not set").into())
         }
     }
 }
@@ -58,7 +58,7 @@ impl GeneratorParser for ConstantParser {
     fn parse(
         &self,
         visitor: GeneratorParseVisitor,
-    ) -> Result<Box<dyn GeneratorBuilder>, Vec<ParseError>> {
+    ) -> Result<Box<dyn GeneratorBuilder>, ParseErrors> {
         let mut builder = Constant::builder();
 
         match visitor.spec().fields.get("value") {
@@ -66,7 +66,7 @@ impl GeneratorParser for ConstantParser {
                 builder = builder.value(value.clone());
                 Ok(Box::new(builder))
             }
-            None => Err(vec![visitor.invalid("value must be specified")]),
+            None => Err(visitor.invalid("value must be specified").into()),
         }
     }
 }

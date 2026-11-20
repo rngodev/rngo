@@ -2,7 +2,7 @@ use super::{
     Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
 };
 use crate::effect::generator::{GeneratorEdge, GeneratorParseVisitor, GeneratorParser, Metadata};
-use crate::error::{BuildError, ParseError as Error};
+use crate::error::{BuildErrors, ParseErrors};
 use crate::spec;
 use rand::RngExt;
 use rand_pcg::Pcg32;
@@ -68,9 +68,9 @@ impl SelectBuilder {
 }
 
 impl GeneratorBuilder for SelectBuilder {
-    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, Vec<BuildError>> {
+    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, BuildErrors> {
         if self.option_builders.is_empty() {
-            return Err(vec![visitor.error("options must not be empty")]);
+            return Err(visitor.error("options must not be empty").into());
         }
 
         let mut errors = vec![];
@@ -86,7 +86,7 @@ impl GeneratorBuilder for SelectBuilder {
                     generator,
                     weight: *weight,
                 }),
-                Err(mut e) => errors.append(&mut e),
+                Err(e) => errors.extend(e),
             }
         }
 
@@ -96,7 +96,7 @@ impl GeneratorBuilder for SelectBuilder {
                 properties,
             }))
         } else {
-            Err(errors)
+            Err(errors.into())
         }
     }
 }
@@ -117,11 +117,11 @@ impl GeneratorParser for SelectParser {
     fn parse(
         &self,
         visitor: GeneratorParseVisitor,
-    ) -> Result<Box<dyn GeneratorBuilder>, Vec<Error>> {
+    ) -> Result<Box<dyn GeneratorBuilder>, ParseErrors> {
         let options_value = match visitor.spec().fields.get("options") {
             Some(v) => v.clone(),
             None => {
-                return Err(vec![visitor.invalid("options must be specified")]);
+                return Err(visitor.invalid("options must be specified").into());
             }
         };
 
@@ -130,7 +130,7 @@ impl GeneratorParser for SelectParser {
         })?;
 
         if option_specs.is_empty() {
-            return Err(vec![visitor.invalid("options must not be empty")]);
+            return Err(visitor.invalid("options must not be empty").into());
         }
 
         let mut errors = vec![];
@@ -142,14 +142,14 @@ impl GeneratorParser for SelectParser {
                 Ok(generator_builder) => {
                     builder = builder.option(option.weight.unwrap_or(1), generator_builder);
                 }
-                Err(mut e) => errors.append(&mut e),
+                Err(e) => errors.extend(e),
             }
         }
 
         if errors.is_empty() {
             Ok(Box::new(builder))
         } else {
-            Err(errors)
+            Err(errors.into())
         }
     }
 }

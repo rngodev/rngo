@@ -2,7 +2,7 @@ use super::{
     Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
 };
 use crate::effect::generator::{GeneratorEdge, GeneratorParseVisitor, GeneratorParser, Metadata};
-use crate::error::{BuildError, ParseError as Error};
+use crate::error::{BuildErrors, ParseErrors};
 use crate::spec;
 use indexmap::IndexMap;
 use serde_json::Map;
@@ -64,7 +64,7 @@ impl ObjectBuilder {
 }
 
 impl GeneratorBuilder for ObjectBuilder {
-    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, Vec<BuildError>> {
+    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, BuildErrors> {
         let mut errors = vec![];
         let mut properties = IndexMap::new();
 
@@ -77,14 +77,14 @@ impl GeneratorBuilder for ObjectBuilder {
                 Ok(generator) => {
                     properties.insert(key.into(), generator);
                 }
-                Err(mut e) => errors.append(&mut e),
+                Err(e) => errors.extend(e),
             }
         }
 
         if errors.is_empty() {
             Ok(Box::new(Object { properties }))
         } else {
-            Err(errors)
+            Err(errors.into())
         }
     }
 }
@@ -99,14 +99,14 @@ impl GeneratorParser for ObjectParser {
     fn parse(
         &self,
         visitor: GeneratorParseVisitor,
-    ) -> Result<Box<dyn GeneratorBuilder>, Vec<Error>> {
+    ) -> Result<Box<dyn GeneratorBuilder>, ParseErrors> {
         if let Some(input) = visitor.spec().fields.get("properties") {
             serde_json::from_value::<IndexMap<String, spec::Generator>>(input.clone())
                 .map_err(|err| {
-                    vec![
+                    ParseErrors::from(
                         visitor
                             .input_error("properties", format!("properties parsing failed: {err}")),
-                    ]
+                    )
                 })
                 .and_then(|properties| {
                     let mut errors = vec![];
@@ -120,18 +120,18 @@ impl GeneratorParser for ObjectParser {
                             Ok(stream) => {
                                 builder = builder.property(&key, stream);
                             }
-                            Err(mut e) => errors.append(&mut e),
+                            Err(e) => errors.extend(e),
                         };
                     }
 
                     if errors.is_empty() {
                         Ok(Box::new(builder) as Box<dyn GeneratorBuilder>)
                     } else {
-                        Err(errors)
+                        Err(errors.into())
                     }
                 })
         } else {
-            Err(vec![visitor.input_error("properties", "not specified")])
+            Err(visitor.input_error("properties", "not specified").into())
         }
     }
 }

@@ -11,8 +11,9 @@ pub use crate::proxy::output::{ChannelOutput, OutputSender};
 pub use parser::ChannelParser;
 
 use crate::effect::Input;
+use crate::error::BuildErrors;
 use crate::proxy::format::Format;
-use crate::{BuildError, ChannelError, Level};
+use crate::{ChannelError, Level};
 use serde_json::Value;
 use std::process::Command;
 
@@ -32,7 +33,7 @@ pub trait ChannelBuilder {
         &self,
         channel_key: &str,
         outputs: OutputSender,
-    ) -> Result<Box<dyn Channel>, Vec<BuildError>>;
+    ) -> Result<Box<dyn Channel>, BuildErrors>;
 }
 
 impl ChannelBuilder for Box<dyn ChannelBuilder> {
@@ -40,7 +41,7 @@ impl ChannelBuilder for Box<dyn ChannelBuilder> {
         &self,
         channel_key: &str,
         outputs: OutputSender,
-    ) -> Result<Box<dyn Channel>, Vec<BuildError>> {
+    ) -> Result<Box<dyn Channel>, BuildErrors> {
         self.as_ref().build(channel_key, outputs)
     }
 }

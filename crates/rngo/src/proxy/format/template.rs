@@ -1,3 +1,4 @@
+use crate::error::ParseErrors;
 use handlebars::{
     Context, Handlebars, Helper, HelperResult, Output, RenderContext, RenderError,
     RenderErrorReason,
@@ -76,8 +77,9 @@ impl FormatParser for TemplateFormatParser {
         &self,
         format: &spec::Format,
         _spec: &spec::Spec,
-    ) -> Result<Box<dyn Format>, Vec<ParseError>> {
-        let error = |message: String| vec![ParseError::invalid(message).at(["template"])];
+    ) -> Result<Box<dyn Format>, ParseErrors> {
+        let error =
+            |message: String| ParseErrors::from(ParseError::invalid(message).at(["template"]));
 
         let template = match format.fields.get("template") {
             Some(value) => value
@@ -112,7 +114,7 @@ mod tests {
         TemplateFormat::new(template).unwrap().format(&event(data))
     }
 
-    fn parse(format: Value) -> Result<Box<dyn Format>, Vec<ParseError>> {
+    fn parse(format: Value) -> Result<Box<dyn Format>, ParseErrors> {
         let format: spec::Format = serde_json::from_value(format).unwrap();
         let spec: spec::Spec = serde_json::from_value(json!({ "effects": {} })).unwrap();
         TemplateFormat::parser().parse(&format, &spec)

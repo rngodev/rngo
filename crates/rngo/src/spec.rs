@@ -1,4 +1,4 @@
-use crate::error::{ParseError, ParseErrorKind};
+use crate::error::{ParseError, ParseErrorKind, ParseErrors};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -11,38 +11,38 @@ pub const SPEC_VERSION: u32 = 1;
 pub const MIGRATION_URL: &str = "https://github.com/rngodev/rngo/blob/main/MIGRATING.md";
 
 /// Parses a spec from a JSON value, checking its `version` and flagging pre-versioning keys before the strict parse.
-pub fn from_value(value: serde_json::Value) -> Result<Spec, Vec<ParseError>> {
+pub fn from_value(value: serde_json::Value) -> Result<Spec, ParseErrors> {
     check_version(&value)?;
     let mut track = serde_path_to_error::Track::new();
     let deserializer = serde_path_to_error::Deserializer::new(value, &mut track);
     serde_path_to_error::deserialize(deserializer).map_err(|e| {
-        vec![ParseError::invalid(e.inner().to_string()).at(e.path().to_string().split('.'))]
+        ParseError::invalid(e.inner().to_string())
+            .at(e.path().to_string().split('.'))
+            .into()
     })
 }
 
-fn check_version(value: &Value) -> Result<(), Vec<ParseError>> {
+fn check_version(value: &Value) -> Result<(), ParseErrors> {
     match value.get("version") {
         Some(version) => match version.as_u64() {
             Some(found) if found == u64::from(SPEC_VERSION) => Ok(()),
-            Some(found) if found > 0 => Err(vec![
-                ParseError::new(ParseErrorKind::UnsupportedVersion {
-                    found,
-                    supported: SPEC_VERSION,
-                })
-                .at(["version"]),
-            ]),
-            _ => Err(vec![
-                ParseError::invalid("version must be a positive integer").at(["version"]),
-            ]),
+            Some(found) if found > 0 => Err(ParseError::new(ParseErrorKind::UnsupportedVersion {
+                found,
+                supported: SPEC_VERSION,
+            })
+            .at(["version"])
+            .into()),
+            _ => Err(ParseError::invalid("version must be a positive integer")
+                .at(["version"])
+                .into()),
         },
         None => match legacy_key(value) {
-            Some(path) => Err(vec![
-                ParseError::invalid(format!(
-                    "`{}` is from a spec format that predates versioning; see {MIGRATION_URL}",
-                    path.last().map_or("", String::as_str)
-                ))
-                .at(path),
-            ]),
+            Some(path) => Err(ParseError::invalid(format!(
+                "`{}` is from a spec format that predates versioning; see {MIGRATION_URL}",
+                path.last().map_or("", String::as_str)
+            ))
+            .at(path)
+            .into()),
             None => Ok(()),
         },
     }
@@ -124,7 +124,7 @@ pub struct Spec {
 
 impl Spec {
     /// Returns the spec with scenario `name` patched into every prototype that defines it; errors if no prototype does.
-    pub fn with_scenario(&self, name: &str) -> Result<Spec, Vec<ParseError>> {
+    pub fn with_scenario(&self, name: &str) -> Result<Spec, ParseErrors> {
         let mut spec = self.clone();
         let mut found = false;
         for prototype in spec.prototypes.values_mut() {
@@ -141,10 +141,11 @@ impl Spec {
         if found {
             Ok(spec)
         } else {
-            Err(vec![
+            Err(
                 ParseError::invalid(format!("no prototype defines scenario \"{name}\""))
-                    .at(["prototypes"]),
-            ])
+                    .at(["prototypes"])
+                    .into(),
+            )
         }
     }
 }
@@ -270,7 +271,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn parse(value: Value) -> Result<Spec, Vec<ParseError>> {
+    fn parse(value: Value) -> Result<Spec, ParseErrors> {
         from_value(value)
     }
 

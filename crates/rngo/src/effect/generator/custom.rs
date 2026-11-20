@@ -1,6 +1,7 @@
 use super::GeneratorBuilder;
 use crate::effect::generator::{GeneratorParseVisitor, GeneratorParser};
-use crate::{ParseError, spec};
+use crate::error::ParseErrors;
+use crate::spec;
 
 pub(crate) struct CustomParser {
     name: String,
@@ -24,7 +25,7 @@ impl GeneratorParser for CustomParser {
     fn parse(
         &self,
         visitor: GeneratorParseVisitor,
-    ) -> Result<Box<dyn GeneratorBuilder>, Vec<ParseError>> {
+    ) -> Result<Box<dyn GeneratorBuilder>, ParseErrors> {
         visitor.parse_custom_generator(self.name.clone(), self.generator_type.generator.clone())
     }
 }

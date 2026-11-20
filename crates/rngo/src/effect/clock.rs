@@ -1,4 +1,5 @@
 use crate::cel::CelContextExt;
+use crate::error::BuildErrors;
 use crate::{BuildError, EffectKey, RunError};
 use cel::{Context, Program, Value};
 use rand::RngExt;
@@ -104,7 +105,7 @@ impl ClockBuilder {
         self
     }
 
-    pub(super) fn build(self) -> Result<Clock, Vec<BuildError>> {
+    pub(super) fn build(self) -> Result<Clock, BuildErrors> {
         let rng: Pcg32 = Seeder::from(&format!("{}-{}", self.seed, self.key)).into_rng();
 
         let rate_function = match self.rate {
@@ -160,11 +161,12 @@ impl ClockBuilder {
                     match static_rate {
                         Some(rate) => RateFunction::Fixed(rate),
                         None => {
-                            return Err(vec![BuildError::effect(
+                            return Err(BuildError::effect(
                                 self.key,
                                 EffectKey::Trigger,
                                 format!("rate expression non-numeric: {expression}"),
-                            )]);
+                            )
+                            .into());
                         }
                     }
                 }
@@ -174,11 +176,12 @@ impl ClockBuilder {
         if let RateFunction::Fixed(rate) = rate_function
             && (rate.is_nan() || rate < 0.0)
         {
-            return Err(vec![BuildError::effect(
+            return Err(BuildError::effect(
                 self.key,
                 EffectKey::Trigger,
                 format!("rate must be a non-negative number, got {rate}"),
-            )]);
+            )
+            .into());
         }
 
         Ok(Clock {

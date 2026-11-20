@@ -1,6 +1,6 @@
 use super::{Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorResult};
 use crate::effect::generator::{GeneratorContext, GeneratorParseVisitor, GeneratorParser};
-use crate::error::{BuildError, ParseError as Error};
+use crate::error::{BuildErrors, ParseErrors};
 use rand::RngExt;
 use rand_pcg::Pcg32;
 
@@ -123,7 +123,7 @@ impl NumberBuilder {
 }
 
 impl GeneratorBuilder for NumberBuilder {
-    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, Vec<BuildError>> {
+    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, BuildErrors> {
         let sampling = sampling(self.minimum, self.maximum, self.step)
             .map_err(|(_, message)| vec![visitor.error(message)])?;
 
@@ -193,7 +193,7 @@ impl GeneratorParser for NumberParser {
     fn parse(
         &self,
         visitor: GeneratorParseVisitor,
-    ) -> Result<Box<dyn GeneratorBuilder>, Vec<Error>> {
+    ) -> Result<Box<dyn GeneratorBuilder>, ParseErrors> {
         let mut builder = Number::builder();
         let mut errors = vec![];
 
@@ -246,7 +246,7 @@ impl GeneratorParser for NumberParser {
         if errors.is_empty() {
             Ok(Box::new(builder))
         } else {
-            Err(errors)
+            Err(errors.into())
         }
     }
 }

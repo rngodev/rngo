@@ -1,4 +1,4 @@
-use crate::error::BuildError;
+use crate::error::{BuildError, BuildErrors};
 use crate::log::Metadata;
 pub mod signal;
 
@@ -98,7 +98,7 @@ impl AuditBuilder {
         self.run_log_reader(run_log.clone()).run_log_writer(run_log)
     }
 
-    pub fn build(self) -> Result<Audit, Vec<BuildError>> {
+    pub fn build(self) -> Result<Audit, BuildErrors> {
         let mut errors = vec![];
         let mut signals = IndexMap::new();
 
@@ -107,7 +107,7 @@ impl AuditBuilder {
                 Ok(signal) => {
                     signals.insert(key, signal);
                 }
-                Err(mut e) => errors.append(&mut e),
+                Err(e) => errors.extend(e),
             }
         }
 
@@ -124,7 +124,7 @@ impl AuditBuilder {
         };
 
         if !errors.is_empty() {
-            return Err(errors);
+            return Err(errors.into());
         }
 
         let (run_log_reader, run_log_writer) = run_log.expect("checked above");

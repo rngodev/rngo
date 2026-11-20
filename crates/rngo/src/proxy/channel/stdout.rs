@@ -1,8 +1,9 @@
 use crate::effect::Input;
+use crate::error::{BuildErrors, ParseErrors};
 use crate::proxy::channel::{Channel, ChannelBuilder, ChannelParser};
 use crate::proxy::format::{Format, FormatParseContext};
 use crate::proxy::output::{ChannelOutput, OutputSender};
-use crate::{BuildError, ChannelError, ParseError, spec};
+use crate::{ChannelError, spec};
 use serde_json::Value;
 use std::rc::Rc;
 
@@ -55,7 +56,7 @@ impl ChannelBuilder for StdoutBuilder {
         &self,
         _channel_key: &str,
         _outputs: OutputSender,
-    ) -> Result<Box<dyn Channel>, Vec<BuildError>> {
+    ) -> Result<Box<dyn Channel>, BuildErrors> {
         Ok(Box::new(Stdout {
             format: self.format.clone(),
         }))
@@ -73,7 +74,7 @@ impl ChannelParser for StdoutParser {
         &self,
         channel: &spec::Channel,
         formats: &FormatParseContext,
-    ) -> Result<Box<dyn ChannelBuilder>, Vec<ParseError>> {
+    ) -> Result<Box<dyn ChannelBuilder>, ParseErrors> {
         let mut builder = StdoutBuilder::default();
 
         if let Some(value) = channel.fields.get("format")

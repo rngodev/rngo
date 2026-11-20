@@ -3,7 +3,7 @@ use rngo::generator::{
     Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorParseVisitor,
     GeneratorParser, GeneratorResult,
 };
-use rngo::{BuildError, Dialect, Input, ParseError, Simulation};
+use rngo::{BuildErrors, Dialect, Input, ParseErrors, Simulation};
 use serde_json::{Value, json};
 use std::num::NonZeroU64;
 
@@ -27,9 +27,9 @@ struct CounterBuilder {
 }
 
 impl GeneratorBuilder for CounterBuilder {
-    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, Vec<BuildError>> {
+    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, BuildErrors> {
         if self.step == 0 {
-            return Err(vec![visitor.error("step must be positive")]);
+            return Err(visitor.error("step must be positive").into());
         }
         Ok(Box::new(Counter {
             next: 0,
@@ -38,7 +38,7 @@ impl GeneratorBuilder for CounterBuilder {
     }
 }
 
-fn run(builder: CounterBuilder) -> Result<Vec<Input>, Vec<BuildError>> {
+fn run(builder: CounterBuilder) -> Result<Vec<Input>, BuildErrors> {
     Ok(Simulation::builder()
         .effect("counter", |e| {
             e.trigger_hertz(1.0)
@@ -81,10 +81,10 @@ impl GeneratorParser for CounterParser {
     fn parse(
         &self,
         visitor: GeneratorParseVisitor,
-    ) -> Result<Box<dyn GeneratorBuilder>, Vec<ParseError>> {
+    ) -> Result<Box<dyn GeneratorBuilder>, ParseErrors> {
         match visitor.spec().fields.get("step").and_then(Value::as_u64) {
             Some(step) => Ok(Box::new(CounterBuilder { step })),
-            None => Err(vec![visitor.input_error("step", "step must be a number")]),
+            None => Err(visitor.input_error("step", "step must be a number").into()),
         }
     }
 }

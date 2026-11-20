@@ -1,5 +1,5 @@
 use crate::effect::prototype::Prototype;
-use crate::error::ParseError;
+use crate::error::ParseErrors;
 use crate::moment::Moment;
 use jiff::Timestamp;
 
@@ -81,7 +81,7 @@ impl Bound {
         &self,
         now: Timestamp,
         prototype: Option<&Prototype>,
-    ) -> Result<Timestamp, Vec<ParseError>> {
+    ) -> Result<Timestamp, ParseErrors> {
         let moment = match &self.value {
             BoundValue::Moment(moment) => moment.clone(),
             BoundValue::Expression(expression) => {

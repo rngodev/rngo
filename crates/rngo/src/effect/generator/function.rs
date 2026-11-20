@@ -3,7 +3,7 @@ use super::{
 };
 use crate::cel::{CelContextExt, json_to_cel};
 use crate::effect::generator::{GeneratorEdge, GeneratorParseVisitor, GeneratorParser, Metadata};
-use crate::error::{BuildError, ParseError as Error};
+use crate::error::{BuildErrors, ParseErrors};
 use crate::spec;
 use cel::{Context, Program};
 use indexmap::IndexMap;
@@ -101,10 +101,10 @@ impl FunctionBuilder {
 }
 
 impl GeneratorBuilder for FunctionBuilder {
-    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, Vec<BuildError>> {
+    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, BuildErrors> {
         let expression = match &self.expression {
             Some(e) => e,
-            None => return Err(vec![visitor.error("expression was not set")]),
+            None => return Err(visitor.error("expression was not set").into()),
         };
 
         let mut errors = vec![];
@@ -119,12 +119,12 @@ impl GeneratorBuilder for FunctionBuilder {
                 Ok(generator) => {
                     variables.insert(key.clone(), generator);
                 }
-                Err(mut e) => errors.append(&mut e),
+                Err(e) => errors.extend(e),
             }
         }
 
         if !errors.is_empty() {
-            return Err(errors);
+            return Err(errors.into());
         }
 
         let program = Program::compile(expression)
@@ -144,16 +144,16 @@ impl GeneratorParser for FunctionParser {
     fn parse(
         &self,
         visitor: GeneratorParseVisitor,
-    ) -> Result<Box<dyn GeneratorBuilder>, Vec<Error>> {
+    ) -> Result<Box<dyn GeneratorBuilder>, ParseErrors> {
         let expression = match visitor.spec().fields.get("expression").map(|v| v.as_str()) {
             Some(Some(expression)) => expression.to_string(),
             Some(_) => {
-                return Err(vec![
-                    visitor.input_error("expression", "expression must be a string"),
-                ]);
+                return Err(visitor
+                    .input_error("expression", "expression must be a string")
+                    .into());
             }
             None => {
-                return Err(vec![visitor.invalid("expression must be specified")]);
+                return Err(visitor.invalid("expression must be specified").into());
             }
         };
 
@@ -173,12 +173,12 @@ impl GeneratorParser for FunctionParser {
                     Ok(b) => {
                         builder = builder.variable(key, b);
                     }
-                    Err(mut e) => errors.append(&mut e),
+                    Err(e) => errors.extend(e),
                 }
             }
 
             if !errors.is_empty() {
-                return Err(errors);
+                return Err(errors.into());
             }
         }
 

@@ -1,5 +1,5 @@
 use crate::effect::bound::{Bound, BoundKind};
-use crate::error::{BuildError, SimulationKey};
+use crate::error::{BuildError, BuildErrors, SimulationKey};
 use jiff::Timestamp;
 use std::num::NonZeroU64;
 
@@ -72,7 +72,7 @@ impl PrototypeBuilder {
     }
 
     /// Resolves the prototype; errors if an expression doesn't parse or if `start` isn't before `end`.
-    pub fn build(&self) -> Result<Prototype, Vec<BuildError>> {
+    pub fn build(&self) -> Result<Prototype, BuildErrors> {
         let now = self.now.unwrap_or_else(Timestamp::now);
         let prototype = self.prototype.as_ref();
         let mut errors = vec![];
@@ -99,7 +99,7 @@ impl PrototypeBuilder {
                 )
             });
         let (Ok(start), Ok(end)) = (start, end) else {
-            return Err(errors);
+            return Err(errors.into());
         };
 
         if let (Some(start), Some(end)) = (start, end)
@@ -109,7 +109,7 @@ impl PrototypeBuilder {
                 Some(name) => format!("prototype \"{name}\": start must be before end"),
                 None => "start must be before end".into(),
             };
-            return Err(vec![BuildError::simulation(SimulationKey::Start, message)]);
+            return Err(BuildError::simulation(SimulationKey::Start, message).into());
         }
 
         Ok(Prototype {

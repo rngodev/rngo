@@ -8,7 +8,7 @@ mod trigger;
 use crate::RunError;
 use crate::effect::bound::{Bound, BoundKind};
 use crate::effect::prototype::Prototype;
-use crate::error::{BuildError, EffectKey};
+use crate::error::{BuildError, BuildErrors, EffectKey};
 use crate::log::{Metadata, RunLogReader, SimpleEventRunLog};
 use crate::moment::offset_timestamp;
 use clock::Clock;
@@ -52,7 +52,7 @@ impl Effect {
     }
 
     /// Moves the instant offsets are measured from, rebuilding the trigger around it; call before iterating, once every effect of the simulation is built and the earliest start is known.
-    pub fn set_origin(&mut self, origin: Timestamp) -> Result<&mut Self, Vec<BuildError>> {
+    pub fn set_origin(&mut self, origin: Timestamp) -> Result<&mut Self, BuildErrors> {
         self.trigger = build_trigger(
             self.trigger_config.clone(),
             &self.key,
@@ -289,7 +289,7 @@ impl EffectBuilder {
     }
 
     /// Lays the effect's own `start`, `end` and `limit` over its prototype's and builds it; errors unless the window has a `start` and an `end` or `limit`, and a `start` before any `end`.
-    pub fn build(self) -> Result<Effect, Vec<BuildError>> {
+    pub fn build(self) -> Result<Effect, BuildErrors> {
         let now = self.now.unwrap_or_else(Timestamp::now);
         let prototype = self.prototype.as_ref();
         let mut errors: Vec<BuildError> = vec![];
@@ -319,7 +319,7 @@ impl EffectBuilder {
             .ok()
             .flatten();
         if !errors.is_empty() {
-            return Err(errors);
+            return Err(errors.into());
         }
         let start = own_start.or(prototype.and_then(|p| p.start));
         let end = own_end.or(prototype.and_then(|p| p.end));
@@ -352,7 +352,7 @@ impl EffectBuilder {
             ));
         }
         let Some(start) = start.filter(|_| errors.is_empty()) else {
-            return Err(errors);
+            return Err(errors.into());
         };
 
         let seed = self.seed.unwrap_or(1);
@@ -372,11 +372,12 @@ impl EffectBuilder {
 
             generator_builder.build(visitor)
         } else {
-            Err(vec![BuildError::effect(
+            Err(BuildError::effect(
                 self.key.clone(),
                 EffectKey::Generator,
                 "generator was not set",
-            )])
+            )
+            .into())
         };
 
         let trigger_result = build_trigger(
@@ -410,10 +411,10 @@ impl EffectBuilder {
                     .channel
                     .or_else(|| prototype.and_then(|p| p.channel.clone())),
             }),
-            Ok(_) => Err(errors),
-            Err(mut e) => {
-                errors.append(&mut e);
-                Err(errors)
+            Ok(_) => Err(errors.into()),
+            Err(e) => {
+                errors.extend(e);
+                Err(errors.into())
             }
         }
     }
@@ -430,7 +431,7 @@ fn build_trigger(
     start: Timestamp,
     origin: Timestamp,
     run_log_reader: &Rc<dyn RunLogReader>,
-) -> Result<Trigger, Vec<BuildError>> {
+) -> Result<Trigger, BuildErrors> {
     let clock = |builder: clock::ClockBuilder| {
         builder
             .key(key.to_string())
@@ -466,7 +467,7 @@ mod tests {
         Metadata,
     };
     use crate::effect::prototype::Prototype;
-    use crate::error::BuildError;
+    use crate::error::BuildErrors;
     use jiff::{SignedDuration, Timestamp};
     use std::num::NonZeroU64;
 
@@ -503,7 +504,7 @@ mod tests {
         fn build(
             &self,
             _visitor: GeneratorBuildVisitor,
-        ) -> Result<Box<dyn Generator>, Vec<BuildError>> {
+        ) -> Result<Box<dyn Generator>, BuildErrors> {
             Ok(Box::new(AlternatingGenerator::default()))
         }
     }

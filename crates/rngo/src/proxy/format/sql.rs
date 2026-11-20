@@ -1,9 +1,10 @@
+use crate::error::ParseErrors;
 use serde_json::Value;
 use std::collections::HashMap;
 
 use crate::effect::Input;
 use crate::proxy::format::{Format, FormatParser};
-use crate::{FormatError, ParseError, spec};
+use crate::{FormatError, spec};
 
 #[derive(Debug)]
 pub struct SqlFormat {
@@ -94,7 +95,7 @@ impl FormatParser for SqlFormatParser {
         &self,
         _format: &spec::Format,
         spec: &spec::Spec,
-    ) -> Result<Box<dyn Format>, Vec<ParseError>> {
+    ) -> Result<Box<dyn Format>, ParseErrors> {
         let effect_tables = spec
             .effects
             .iter()

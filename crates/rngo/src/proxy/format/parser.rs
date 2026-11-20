@@ -1,4 +1,4 @@
-use crate::error::ParseError;
+use crate::error::{ParseError, ParseErrors};
 use crate::proxy::format::Format;
 use crate::spec;
 use serde_json::Value;
@@ -10,7 +10,7 @@ pub trait FormatParser {
         &self,
         format: &spec::Format,
         spec: &spec::Spec,
-    ) -> Result<Box<dyn Format>, Vec<ParseError>>;
+    ) -> Result<Box<dyn Format>, ParseErrors>;
 }
 
 /// Lets a channel parser build the optional `format` of its channel with the dialect's format parsers.
@@ -30,8 +30,10 @@ impl<'a> FormatParseContext<'a> {
         &self,
         path: &[&str],
         value: &Value,
-    ) -> Result<Option<Rc<dyn Format>>, Vec<ParseError>> {
-        let invalid = |message: String| vec![ParseError::invalid(message).at(path.iter().copied())];
+    ) -> Result<Option<Rc<dyn Format>>, ParseErrors> {
+        let invalid = |message: String| {
+            ParseErrors::from(ParseError::invalid(message).at(path.iter().copied()))
+        };
 
         let format: spec::Format =
             serde_json::from_value(value.clone()).map_err(|e| invalid(e.to_string()))?;

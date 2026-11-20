@@ -1,6 +1,6 @@
 use crate::cel::CelContextExt;
 use crate::effect::prototype::Prototype;
-use crate::error::ParseError;
+use crate::error::{ParseError, ParseErrors};
 use cel::{Context, Program, Value};
 use jiff::civil::Date;
 use jiff::tz::TimeZone;
@@ -59,7 +59,7 @@ impl<'a> MomentParser<'a> {
         self
     }
 
-    pub fn parse(&self, field_name: &str, expr: &str) -> Result<Moment, Vec<ParseError>> {
+    pub fn parse(&self, field_name: &str, expr: &str) -> Result<Moment, ParseErrors> {
         if let Ok(timestamp) = expr.parse::<Timestamp>() {
             return Ok(Moment::Absolute(timestamp));
         }
@@ -105,10 +105,10 @@ impl<'a> MomentParser<'a> {
             Value::Timestamp(dt) => dt.timestamp(),
             Value::Duration(d) => now.as_second().saturating_add(d.num_seconds()),
             _ => {
-                return Err(vec![ParseError::invalid(format!(
+                return Err(ParseError::invalid(format!(
                         "{} expression must evaluate to a number or timestamp (seconds relative to now)",
                         field_name
-                    )).at([field_name.to_string()])]);
+                    )).at([field_name.to_string()]).into());
             }
         };
 
@@ -122,7 +122,7 @@ impl<'a> MomentParser<'a> {
 mod tests {
     use super::*;
 
-    fn parse(expr: &str) -> Result<Moment, Vec<ParseError>> {
+    fn parse(expr: &str) -> Result<Moment, ParseErrors> {
         Moment::parser().parse("field", expr)
     }
 
