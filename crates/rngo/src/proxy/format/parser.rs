@@ -1,4 +1,4 @@
-use crate::error::{ParseError, ParseErrors};
+use crate::error::{ParseError, ParseErrorKind, ParseErrors};
 use crate::proxy::format::Format;
 use crate::spec;
 use serde_json::Value;
@@ -44,16 +44,23 @@ impl<'a> FormatParseContext<'a> {
 
         let matching: Vec<_> = self.parsers.iter().filter(|p| p.key() == ftype).collect();
 
+        let type_error = |kind: ParseErrorKind| {
+            ParseErrors::from(ParseError::new(kind).at(path.iter().copied().chain(["type"])))
+        };
+
         let result = match matching.as_slice() {
             [parser] => parser.parse(&format, self.spec),
             [] => {
-                return Err(invalid("unknown format type".into()));
+                return Err(type_error(ParseErrorKind::UnknownType {
+                    kind: "format",
+                    found: Some(ftype.to_string()),
+                }));
             }
             _ => {
-                return Err(invalid(format!(
-                    "{} format parsers matched",
-                    matching.len()
-                )));
+                return Err(type_error(ParseErrorKind::AmbiguousType {
+                    kind: "format",
+                    count: matching.len(),
+                }));
             }
         };
 

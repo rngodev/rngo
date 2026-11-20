@@ -47,6 +47,10 @@ fn builder() {
     assert_eq!(object_path.len(), 1);
     assert_eq!(object_path[0].kind, "property");
     assert_eq!(object_path[0].key, "age");
+    assert_eq!(
+        object_error.to_string(),
+        "failed to build `effects.object.generator.properties.age`: `minimum is greater than maximum`"
+    );
 
     let no_generator_error = errors
         .iter()
@@ -74,6 +78,43 @@ fn builder() {
     assert_eq!(nested_path[0].key, "score");
     assert_eq!(nested_path[1].kind, "option");
     assert_eq!(nested_path[1].key, "0");
+    assert_eq!(
+        nested_error.spec_path().unwrap().join("."),
+        "effects.nested.generator.properties.score.options.0.generator"
+    );
+}
+
+#[test]
+fn nested_build_error_displays_its_spec_path() {
+    let value = serde_json::json!({
+        "effects": {
+            "a": {
+                "generator": {
+                    "type": "object",
+                    "properties": {
+                        "x": {
+                            "type": "array",
+                            "items": { "type": "function", "expression": "1 +" }
+                        }
+                    }
+                }
+            }
+        }
+    });
+    let errors = Dialect::primitive()
+        .parse_simulation(rngo::spec::from_value(value).unwrap())
+        .unwrap()
+        .run_log_reader(rngo::SimpleEventRunLog::new())
+        .build()
+        .unwrap_err();
+
+    let message = errors.to_string();
+    assert!(
+        message.starts_with(
+            "failed to build `effects.a.generator.properties.x.items`: `expression compilation failed"
+        ),
+        "{message}"
+    );
 }
 
 #[test]
@@ -129,11 +170,15 @@ fn spec() {
         ["effects", "object", "generator", "properties"]
     );
 
-    let unknown_error = errors
-        .iter()
-        .find(|e| e.message() == "no generator parser matched")
-        .unwrap();
-    assert!(unknown_error.path().is_empty());
+    let unknown_error = errors.iter().find(by_effect("unknown")).unwrap();
+    assert_eq!(
+        unknown_error.message(),
+        "unknown generator type \"nonexistent\""
+    );
+    assert_eq!(
+        unknown_error.path(),
+        ["effects", "unknown", "generator", "type"]
+    );
 
     let reference_error = errors.iter().find(by_effect("reference")).unwrap();
     assert_eq!(

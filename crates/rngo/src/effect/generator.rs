@@ -43,6 +43,19 @@ pub struct GeneratorEdge {
     pub key: String,
 }
 
+impl GeneratorEdge {
+    /// The spec fields this step descends through, e.g. `properties.<key>` for a property.
+    pub fn spec_path(&self) -> Vec<String> {
+        match self.kind {
+            "property" => vec!["properties".into(), self.key.clone()],
+            "variable" => vec!["variables".into(), self.key.clone()],
+            "option" => vec!["options".into(), self.key.clone(), "generator".into()],
+            "items" => vec!["items".into()],
+            kind => vec![kind.into(), self.key.clone()],
+        }
+    }
+}
+
 /// What a generator sees each time its effect fires.
 pub struct GeneratorContext<'a> {
     pub(crate) trigger: &'a TriggerEvent,
@@ -110,6 +123,7 @@ pub struct GeneratorBuildVisitor {
     pub(crate) simulation_seed: u64,
     pub(crate) effect_key: String,
     pub(crate) path: Vec<GeneratorEdge>,
+    pub(crate) spec_path: Vec<String>,
 }
 
 impl Clone for GeneratorBuildVisitor {
@@ -119,6 +133,7 @@ impl Clone for GeneratorBuildVisitor {
             simulation_seed: self.simulation_seed,
             effect_key: self.effect_key.clone(),
             path: self.path.clone(),
+            spec_path: self.spec_path.clone(),
         }
     }
 }
@@ -156,12 +171,21 @@ impl GeneratorBuildVisitor {
 
     pub fn follow_edge(&self, edge: GeneratorEdge) -> GeneratorBuildVisitor {
         let mut new_self = self.clone();
+        new_self.spec_path.extend(edge.spec_path());
         new_self.path.push(edge);
+        new_self
+    }
+
+    /// This visitor for the root generator of custom type `name`, whose spec lives at `generators.<name>.generator`.
+    pub(crate) fn in_custom_type(&self, name: &str) -> GeneratorBuildVisitor {
+        let mut new_self = self.clone();
+        new_self.spec_path = vec!["generators".into(), name.into(), "generator".into()];
         new_self
     }
 
     /// An error located at this generator, by effect and path through the generator tree.
     pub fn error(&self, message: impl Into<String>) -> BuildError {
         BuildError::generator(self.effect_key.clone(), self.path.clone(), message.into())
+            .at_spec_path(self.spec_path.clone())
     }
 }

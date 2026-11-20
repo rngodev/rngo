@@ -1,6 +1,8 @@
 use super::GeneratorBuilder;
-use crate::effect::generator::{GeneratorParseVisitor, GeneratorParser};
-use crate::error::ParseErrors;
+use crate::effect::generator::{
+    Generator, GeneratorBuildVisitor, GeneratorParseVisitor, GeneratorParser,
+};
+use crate::error::{BuildErrors, ParseErrors};
 use crate::spec;
 
 pub(crate) struct CustomParser {
@@ -26,6 +28,23 @@ impl GeneratorParser for CustomParser {
         &self,
         visitor: GeneratorParseVisitor,
     ) -> Result<Box<dyn GeneratorBuilder>, ParseErrors> {
-        visitor.parse_custom_generator(self.name.clone(), self.generator_type.generator.clone())
+        let inner = visitor
+            .parse_custom_generator(self.name.clone(), self.generator_type.generator.clone())?;
+        Ok(Box::new(CustomBuilder {
+            name: self.name.clone(),
+            inner,
+        }))
+    }
+}
+
+#[derive(Debug)]
+struct CustomBuilder {
+    name: String,
+    inner: Box<dyn GeneratorBuilder>,
+}
+
+impl GeneratorBuilder for CustomBuilder {
+    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, BuildErrors> {
+        self.inner.build(visitor.in_custom_type(&self.name))
     }
 }

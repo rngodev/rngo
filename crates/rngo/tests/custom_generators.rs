@@ -164,17 +164,52 @@ fn malformed_custom_generator_errors() {
 }
 
 #[test]
-fn unknown_custom_generator_type_still_errors_like_before() {
+fn unknown_generator_type_names_the_type_and_its_path() {
     let json = r#"{
         "effects": {
             "a": { "generator": { "type": "nonexistent" } }
         }
     }"#;
 
-    let errors = parse_errors(json);
+    assert_eq!(
+        parse_errors(json).to_string(),
+        "failed to parse `effects.a.generator.type`: `unknown generator type \"nonexistent\"`"
+    );
+}
+
+#[test]
+fn unknown_type_inside_a_custom_generator_points_at_the_custom_generator() {
+    let json = r#"{
+        "generators": {
+            "user": { "generator": { "type": "object", "properties": { "x": { "type": "nope" } } } }
+        },
+        "effects": {
+            "a": { "generator": { "type": "user" } }
+        }
+    }"#;
+
+    assert_eq!(
+        parse_errors(json).to_string(),
+        "failed to parse `generators.user.generator.properties.x.type`: `unknown generator type \"nope\"`"
+    );
+}
+
+#[test]
+fn build_error_inside_a_custom_generator_points_at_the_custom_generator() {
+    let json = r#"{
+        "generators": {
+            "code": { "generator": { "type": "string", "pattern": "(" } }
+        },
+        "effects": {
+            "a": {
+                "generator": { "type": "object", "properties": { "x": { "type": "code" } } }
+            }
+        }
+    }"#;
+
+    let message = build(json).unwrap_err();
     assert!(
-        errors
-            .iter()
-            .any(|e| e.message() == "no generator parser matched")
+        message.starts_with("failed to build `generators.code.generator`: `invalid pattern"),
+        "{message}"
     );
 }
