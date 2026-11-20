@@ -1,10 +1,11 @@
-The `rngo` library lets you build a **spec** in Rust and evaluate it.
+The `rngo` library lets you build a [spec](https://rngo.dev/docs/spec) in Rust and evaluate it.
 
 A **spec** describes the behavior of a system using the following components:
-- a run log (`SqliteRunLog` or `SimpleEventRunLog`, read and written through `RunLogReader` and `RunLogWriter`) records inputs, outputs and metadata
 - a `Simulation` generates a deterministic stream of inputs
 - a `Proxy` routes inputs to the appropriate system interfaces and captures outputs
 - an `Audit` surfaces pattern in logged inputs and outputs and may set expectations
+
+Each is connected via a `Log` instance, which persists all input, outputs and metadata.
 
 ## DSL
 
