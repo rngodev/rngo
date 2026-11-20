@@ -1,5 +1,5 @@
-use crate::parse::FormatParseContext;
 use crate::proxy::channel::ChannelBuilder;
+use crate::proxy::format::FormatParseContext;
 use crate::{ParseError, spec};
 
 pub trait ChannelParser {

@@ -2,9 +2,8 @@ use super::{
     Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
 };
 use crate::cel::{CelContextExt, json_to_cel};
-use crate::effect::generator::{GeneratorEdge, Metadata};
+use crate::effect::generator::{GeneratorEdge, GeneratorParseVisitor, GeneratorParser, Metadata};
 use crate::error::{BuildError, ParseError as Error};
-use crate::parse::{GeneratorParseVisitor, GeneratorParser};
 use crate::spec;
 use cel::{Context, Program};
 use indexmap::IndexMap;

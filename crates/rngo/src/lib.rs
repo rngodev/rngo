@@ -5,17 +5,18 @@
 mod audit;
 pub mod build;
 mod cel;
+mod dialect;
 mod effect;
 mod error;
 mod log;
 mod moment;
-mod parse;
-pub mod parsers;
+pub mod parse;
 mod proxy;
 mod rng;
 pub mod spec;
 
 pub use audit::{Audit, AuditBuilder, AuditReport, signal};
+pub use dialect::Dialect;
 pub use effect::simulation::{Simulation, SimulationBuilder, StandaloneSimulation};
 pub use effect::{Input, SkippedInput, Step, generator};
 pub use error::{
@@ -23,7 +24,6 @@ pub use error::{
     RunError, RunLogError, SignalError, SimulationKey,
 };
 pub use log::{Metadata, RunLogReader, RunLogWriter, SimpleEventRunLog, SqliteRunLog};
-pub use parse::Dialect;
 pub use proxy::output::{Level, Output};
 pub use proxy::{Proxy, ProxyBuilder, StopHandle, channel, format};
 pub use rng::Rng;

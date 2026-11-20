@@ -1,8 +1,9 @@
 use super::{Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorResult};
-use crate::effect::generator::{GeneratorContext, Metadata};
+use crate::effect::generator::{
+    GeneratorContext, GeneratorParseVisitor, GeneratorParser, Metadata,
+};
 use crate::error::{BuildError, ParseError as Error};
 use crate::moment::offset_timestamp;
-use crate::parse::{GeneratorParseVisitor, GeneratorParser};
 use jiff::SignedDuration;
 
 #[derive(Debug)]

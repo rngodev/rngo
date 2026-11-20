@@ -5,7 +5,8 @@ use crate::FormatError;
 use crate::effect::Input;
 use std::fmt::Debug;
 
-pub use crate::parse::{FormatParseContext, FormatParser};
+mod parser;
+pub use parser::{FormatParseContext, FormatParser};
 pub use sql::SqlFormat;
 pub use template::TemplateFormat;
 

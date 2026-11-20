@@ -6,8 +6,7 @@ use handlebars::{
 use serde_json::json;
 
 use crate::effect::Input;
-use crate::parse::FormatParser;
-use crate::proxy::format::Format;
+use crate::proxy::format::{Format, FormatParser};
 use crate::{FormatError, ParseError, spec};
 
 const TEMPLATE_NAME: &str = "template";

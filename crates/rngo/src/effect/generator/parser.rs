@@ -21,7 +21,7 @@ pub struct GeneratorParseVisitor {
 }
 
 impl GeneratorParseVisitor {
-    pub(super) fn new(
+    pub(crate) fn new(
         primitive_generator_parsers: Rc<Vec<Box<dyn GeneratorParser>>>,
         custom_generator_parsers: Rc<Vec<CustomParser>>,
         spec: spec::Generator,

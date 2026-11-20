@@ -2,10 +2,9 @@ use super::{
     Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
 };
 use crate::Rng;
-use crate::effect::generator::Metadata;
+use crate::effect::generator::{GeneratorParseVisitor, GeneratorParser, Metadata};
 use crate::error::{BuildError, ParseError as Error};
 use crate::log::RunLogReader;
-use crate::parse::{GeneratorParseVisitor, GeneratorParser};
 use std::rc::Rc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

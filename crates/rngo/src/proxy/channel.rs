@@ -6,8 +6,9 @@ pub(crate) use exec::Exec;
 pub(crate) use stdout::Stdout;
 pub(crate) use stream::Stream;
 
-pub use crate::parse::ChannelParser;
+mod parser;
 pub use crate::proxy::output::{ChannelOutput, OutputSender};
+pub use parser::ChannelParser;
 
 use crate::effect::Input;
 use crate::proxy::format::Format;

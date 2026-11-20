@@ -2,7 +2,7 @@ use rngo::channel::{Channel, ChannelBuilder, ChannelOutput, ChannelParser, Outpu
 use rngo::format::{Format, FormatParseContext, FormatParser};
 use rngo::{
     BuildError, ChannelError, Dialect, FormatError, Input, Level, ParseError, SimpleEventRunLog,
-    parsers, spec,
+    parse, spec,
 };
 use serde_json::{Value, json};
 use std::cell::RefCell;
@@ -97,7 +97,7 @@ impl ChannelParser for MemoryParser {
 
 fn dialect(sink: &Sink) -> Dialect {
     Dialect::new(
-        vec![Box::new(parsers::constant())],
+        vec![Box::new(parse::constant())],
         vec![Box::new(UpperParser)],
         vec![Box::new(MemoryParser { sink: sink.clone() })],
         vec![],
