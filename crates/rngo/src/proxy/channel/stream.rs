@@ -1,4 +1,5 @@
 use crate::effect::Input;
+use crate::error::{BuildErrors, ParseErrors};
 use crate::proxy::channel::{Channel, ChannelBuilder, ChannelParser};
 use crate::proxy::format::{Format, FormatParseContext};
 use crate::proxy::output::{ChannelOutput, OutputSender};
@@ -154,12 +155,9 @@ impl ChannelBuilder for StreamBuilder {
         &self,
         channel_key: &str,
         outputs: OutputSender,
-    ) -> Result<Box<dyn Channel>, Vec<BuildError>> {
+    ) -> Result<Box<dyn Channel>, BuildErrors> {
         let Some(command) = self.command.clone() else {
-            return Err(vec![BuildError::channel(
-                channel_key,
-                "command not specified",
-            )]);
+            return Err(BuildError::channel(channel_key, "command not specified").into());
         };
 
         let mut child = super::shell(&command)
@@ -238,20 +236,20 @@ impl ChannelParser for StreamParser {
         &self,
         channel: &spec::Channel,
         formats: &FormatParseContext,
-    ) -> Result<Box<dyn ChannelBuilder>, Vec<ParseError>> {
+    ) -> Result<Box<dyn ChannelBuilder>, ParseErrors> {
         let command = match channel.fields.get("command") {
             Some(value) => match value.as_str() {
                 Some(command) => command,
                 None => {
-                    return Err(vec![
-                        ParseError::invalid("must be a string").at(["command"]),
-                    ]);
+                    return Err(ParseError::invalid("must be a string")
+                        .at(["command"])
+                        .into());
                 }
             },
             None => {
-                return Err(vec![
-                    ParseError::invalid("is required for a stream channel").at(["command"]),
-                ]);
+                return Err(ParseError::invalid("is required for a stream channel")
+                    .at(["command"])
+                    .into());
             }
         };
 

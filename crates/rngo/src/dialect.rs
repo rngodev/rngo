@@ -4,7 +4,7 @@ use crate::audit::{Audit, AuditBuilder};
 use crate::effect::generator::custom::CustomParser;
 use crate::effect::generator::{GeneratorParseVisitor, GeneratorParser};
 use crate::effect::simulation::{Simulation, SimulationBuilder};
-use crate::error::ParseError;
+use crate::error::{ParseError, ParseErrors};
 use crate::moment::Moment;
 use crate::proxy::channel::{ChannelBuilder, ChannelParser};
 use crate::proxy::format::{FormatParseContext, FormatParser};
@@ -88,7 +88,7 @@ impl Dialect {
         )
     }
 
-    pub fn parse_simulation(&self, spec: Spec) -> Result<SimulationBuilder, Vec<ParseError>> {
+    pub fn parse_simulation(&self, spec: Spec) -> Result<SimulationBuilder, ParseErrors> {
         let mut errors = vec![];
         let mut simulation_builder = Simulation::builder();
         let simulation_moment_parser = Moment::parser();
@@ -102,7 +102,7 @@ impl Dialect {
                 Ok(timestamp) => {
                     simulation_builder = simulation_builder.start(timestamp);
                 }
-                Err(mut e) => errors.append(&mut e),
+                Err(e) => errors.extend(e),
             };
         };
 
@@ -111,7 +111,7 @@ impl Dialect {
                 Ok(timestamp) => {
                     simulation_builder = simulation_builder.end(timestamp);
                 }
-                Err(mut e) => errors.append(&mut e),
+                Err(e) => errors.extend(e),
             };
         };
 
@@ -183,8 +183,8 @@ impl Dialect {
 
             let generator_builder = match visitor.parse() {
                 Ok(generator_builder) => generator_builder,
-                Err(mut e) => {
-                    errors.append(&mut e);
+                Err(e) => {
+                    errors.extend(e);
                     continue;
                 }
             };
@@ -230,13 +230,13 @@ impl Dialect {
         }
 
         if !errors.is_empty() {
-            Err(errors)
+            Err(errors.into())
         } else {
             Ok(simulation_builder)
         }
     }
 
-    pub fn parse_proxy(&self, spec: Spec) -> Result<ProxyBuilder, Vec<ParseError>> {
+    pub fn parse_proxy(&self, spec: Spec) -> Result<ProxyBuilder, ParseErrors> {
         let mut errors = vec![];
         let mut proxy_builder = Proxy::builder();
 
@@ -290,13 +290,13 @@ impl Dialect {
         }
 
         if !errors.is_empty() {
-            Err(errors)
+            Err(errors.into())
         } else {
             Ok(proxy_builder)
         }
     }
 
-    pub fn parse_audit(&self, spec: Spec) -> Result<AuditBuilder, Vec<ParseError>> {
+    pub fn parse_audit(&self, spec: Spec) -> Result<AuditBuilder, ParseErrors> {
         let mut errors = vec![];
         let mut audit_builder = Audit::builder();
 
@@ -305,12 +305,12 @@ impl Dialect {
                 Ok(built) => {
                     audit_builder = audit_builder.signal(key.clone(), built);
                 }
-                Err(mut e) => errors.append(&mut e),
+                Err(e) => errors.extend(e),
             }
         }
 
         if !errors.is_empty() {
-            Err(errors)
+            Err(errors.into())
         } else {
             Ok(audit_builder)
         }
@@ -320,7 +320,7 @@ impl Dialect {
         &self,
         key: &str,
         signal: &spec::Signal,
-    ) -> Result<Box<dyn Signal>, Vec<ParseError>> {
+    ) -> Result<Box<dyn Signal>, ParseErrors> {
         let matching: Vec<_> = self
             .signal_parsers
             .iter()
@@ -329,13 +329,12 @@ impl Dialect {
 
         match matching.as_slice() {
             [parser] => parser.parse(key, signal),
-            [] => Err(vec![ParseError::new(ParseErrorKind::UnknownType {
-                kind: "signal",
-            })]),
-            _ => Err(vec![ParseError::new(ParseErrorKind::AmbiguousType {
+            [] => Err(ParseError::new(ParseErrorKind::UnknownType { kind: "signal" }).into()),
+            _ => Err(ParseError::new(ParseErrorKind::AmbiguousType {
                 kind: "signal",
                 count: matching.len(),
-            })]),
+            })
+            .into()),
         }
     }
 
@@ -343,7 +342,7 @@ impl Dialect {
         &self,
         channel: &spec::Channel,
         formats: &FormatParseContext,
-    ) -> Result<Box<dyn ChannelBuilder>, Vec<ParseError>> {
+    ) -> Result<Box<dyn ChannelBuilder>, ParseErrors> {
         let matching: Vec<_> = self
             .channel_parsers
             .iter()
@@ -352,13 +351,16 @@ impl Dialect {
 
         match matching.as_slice() {
             [parser] => parser.parse(channel, formats),
-            [] => Err(vec![
-                ParseError::new(ParseErrorKind::UnknownType { kind: "channel" }).at(["type"]),
-            ]),
-            _ => Err(vec![ParseError::new(ParseErrorKind::AmbiguousType {
+            [] => Err(
+                ParseError::new(ParseErrorKind::UnknownType { kind: "channel" })
+                    .at(["type"])
+                    .into(),
+            ),
+            _ => Err(ParseError::new(ParseErrorKind::AmbiguousType {
                 kind: "channel",
                 count: matching.len(),
-            })]),
+            })
+            .into()),
         }
     }
 }
@@ -367,7 +369,7 @@ impl Dialect {
 mod tests {
     use super::*;
 
-    fn proxy_errors(channels: serde_json::Value) -> Vec<ParseError> {
+    fn proxy_errors(channels: serde_json::Value) -> ParseErrors {
         let spec =
             spec::from_value(serde_json::json!({ "effects": {}, "channels": channels })).unwrap();
         match Dialect::primitive().parse_proxy(spec) {

@@ -1,7 +1,7 @@
 use rngo::channel::{Channel, ChannelBuilder, ChannelOutput, ChannelParser, OutputSender};
 use rngo::format::{Format, FormatParseContext, FormatParser};
 use rngo::{
-    BuildError, ChannelError, Dialect, FormatError, Input, Level, ParseError, SimpleEventRunLog,
+    BuildErrors, ChannelError, Dialect, FormatError, Input, Level, ParseErrors, SimpleEventRunLog,
     parse, spec,
 };
 use serde_json::{Value, json};
@@ -30,7 +30,7 @@ impl FormatParser for UpperParser {
         &self,
         _format: &spec::Format,
         _spec: &spec::Spec,
-    ) -> Result<Box<dyn Format>, Vec<ParseError>> {
+    ) -> Result<Box<dyn Format>, ParseErrors> {
         Ok(Box::new(Upper))
     }
 }
@@ -62,7 +62,7 @@ impl ChannelBuilder for MemoryBuilder {
         &self,
         _channel_key: &str,
         _outputs: OutputSender,
-    ) -> Result<Box<dyn Channel>, Vec<BuildError>> {
+    ) -> Result<Box<dyn Channel>, BuildErrors> {
         Ok(Box::new(Memory {
             sink: self.sink.clone(),
             format: self.format.clone(),
@@ -83,7 +83,7 @@ impl ChannelParser for MemoryParser {
         &self,
         channel: &spec::Channel,
         formats: &FormatParseContext,
-    ) -> Result<Box<dyn ChannelBuilder>, Vec<ParseError>> {
+    ) -> Result<Box<dyn ChannelBuilder>, ParseErrors> {
         let format = match channel.fields.get("format") {
             Some(value) => formats.parse(&["format"], value)?,
             None => None,

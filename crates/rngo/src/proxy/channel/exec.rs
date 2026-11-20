@@ -1,8 +1,9 @@
 use crate::effect::Input;
+use crate::error::{BuildErrors, ParseErrors};
 use crate::proxy::channel::{Channel, ChannelBuilder, ChannelParser};
 use crate::proxy::format::{Format, FormatParseContext};
 use crate::proxy::output::{ChannelOutput, OutputSender};
-use crate::{BuildError, ChannelError, Level, ParseError, spec};
+use crate::{ChannelError, Level, ParseError, spec};
 use serde_json::Value;
 use std::io::{BufRead, BufReader};
 use std::process::Stdio;
@@ -91,7 +92,7 @@ impl ChannelBuilder for ExecBuilder {
         &self,
         channel_key: &str,
         _outputs: OutputSender,
-    ) -> Result<Box<dyn Channel>, Vec<BuildError>> {
+    ) -> Result<Box<dyn Channel>, BuildErrors> {
         Ok(Box::new(Exec {
             channel_key: channel_key.to_string(),
             format: self.format.clone(),
@@ -110,15 +111,14 @@ impl ChannelParser for ExecParser {
         &self,
         channel: &spec::Channel,
         formats: &FormatParseContext,
-    ) -> Result<Box<dyn ChannelBuilder>, Vec<ParseError>> {
+    ) -> Result<Box<dyn ChannelBuilder>, ParseErrors> {
         if channel.fields.contains_key("command") {
-            return Err(vec![
-                ParseError::invalid(
-                    "exec no longer takes a command; set the channel's format to a template \
+            return Err(ParseError::invalid(
+                "exec no longer takes a command; set the channel's format to a template \
                           format, or have the effect produce the command as a string, instead",
-                )
-                .at(["command"]),
-            ]);
+            )
+            .at(["command"])
+            .into());
         }
 
         let mut builder = ExecBuilder::default();

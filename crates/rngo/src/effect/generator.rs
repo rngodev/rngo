@@ -10,6 +10,7 @@ pub(crate) mod reference;
 pub(crate) mod select;
 pub(crate) mod string;
 
+use crate::error::BuildErrors;
 pub(crate) use array::Array;
 pub(crate) use constant::Constant;
 pub(crate) use context::Context;
@@ -93,11 +94,11 @@ impl Metadata {
 }
 
 pub trait GeneratorBuilder: std::fmt::Debug {
-    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, Vec<BuildError>>;
+    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, BuildErrors>;
 }
 
 impl GeneratorBuilder for Box<dyn GeneratorBuilder> {
-    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, Vec<BuildError>> {
+    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, BuildErrors> {
         self.as_ref().build(visitor)
     }
 }

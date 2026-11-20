@@ -2,7 +2,7 @@ use super::{Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorResult}
 use crate::effect::generator::{
     GeneratorContext, GeneratorParseVisitor, GeneratorParser, Metadata,
 };
-use crate::error::{BuildError, ParseError as Error};
+use crate::error::{BuildErrors, ParseErrors};
 use crate::moment::offset_timestamp;
 use jiff::SignedDuration;
 
@@ -103,15 +103,15 @@ impl ContextBuilder {
 }
 
 impl GeneratorBuilder for ContextBuilder {
-    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, Vec<BuildError>> {
+    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, BuildErrors> {
         let path = match &self.path {
             Some(p) => p.clone(),
-            None => return Err(vec![visitor.error("path was not set")]),
+            None => return Err(visitor.error("path was not set").into()),
         };
 
         ContextPath::try_from(path)
             .map(|p| Box::new(Context { path: p }) as Box<dyn Generator>)
-            .map_err(|e| vec![visitor.error(format!("invalid context path: {e}"))])
+            .map_err(|e| visitor.error(format!("invalid context path: {e}")).into())
     }
 }
 
@@ -125,13 +125,13 @@ impl GeneratorParser for ContextParser {
     fn parse(
         &self,
         visitor: GeneratorParseVisitor,
-    ) -> Result<Box<dyn GeneratorBuilder>, Vec<Error>> {
+    ) -> Result<Box<dyn GeneratorBuilder>, ParseErrors> {
         let path = match visitor.spec().fields.get("path") {
             Some(v) => serde_json::from_value::<Vec<String>>(v.clone()).map_err(|e| {
                 vec![visitor.input_error("path", format!("path parsing failed: {e}"))]
             })?,
             None => {
-                return Err(vec![visitor.invalid("path must be specified")]);
+                return Err(visitor.invalid("path must be specified").into());
             }
         };
 

@@ -6,9 +6,9 @@ use rngo::{Dialect, RunLogWriter, SqliteRunLog, Step, StopHandle, spec};
 use status::StatusWriter;
 use std::cell::RefCell;
 use std::error::Error;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::{fmt, fs};
 use uuid::Uuid;
 
 /// Options for a single `rngo eval`.
@@ -49,10 +49,7 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
 
     let dialect = Dialect::primitive();
 
-    let scenario_spec = scenario
-        .map(|name| spec.with_scenario(&name))
-        .transpose()
-        .map_err(join_errors)?;
+    let scenario_spec = scenario.map(|name| spec.with_scenario(&name)).transpose()?;
     let patched = scenario_spec.as_ref().unwrap_or(&spec);
 
     let rewritten = if stdout {
@@ -62,15 +59,11 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
     };
     let effective = rewritten.as_ref().unwrap_or(&spec);
 
-    let mut simulation_builder = dialect
-        .parse_simulation(patched.clone())
-        .map_err(join_errors)?;
+    let mut simulation_builder = dialect.parse_simulation(patched.clone())?;
 
-    let mut proxy_builder = dialect
-        .parse_proxy(effective.clone())
-        .map_err(join_errors)?;
+    let mut proxy_builder = dialect.parse_proxy(effective.clone())?;
 
-    let audit_builder = dialect.parse_audit(spec.clone()).map_err(join_errors)?;
+    let audit_builder = dialect.parse_audit(spec.clone())?;
 
     if let Some(limit) = limit {
         simulation_builder = simulation_builder.limit(limit.get());
@@ -79,8 +72,7 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
     if dry_run {
         simulation_builder
             .run_log_reader(rngo::SimpleEventRunLog::new())
-            .build()
-            .map_err(join_errors)?;
+            .build()?;
         return Ok(true);
     }
 
@@ -88,10 +80,7 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
 
     let sqlite_run_log = SqliteRunLog::new(eval_dir.clone())?;
     let reader = sqlite_run_log.clone();
-    let simulation = simulation_builder
-        .run_log_reader(reader.clone())
-        .build()
-        .map_err(join_errors)?;
+    let simulation = simulation_builder.run_log_reader(reader.clone()).build()?;
     let effect_channels = simulation.effect_channels();
     proxy_builder = proxy_builder.effect_channels(effect_channels.clone());
     let writer = StatusWriter::new(sqlite_run_log.clone(), effect_channels);
@@ -112,8 +101,7 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
     let mut proxy = proxy_builder
         .run_log_writer(writer.clone())
         .stop_handle(stop.clone())
-        .build()
-        .map_err(join_errors)?;
+        .build()?;
 
     let mut failure: Option<Box<dyn Error>> = None;
 
@@ -140,10 +128,7 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
         return Err(error);
     }
 
-    let audit = audit_builder
-        .run_log(sqlite_run_log.clone())
-        .build()
-        .map_err(join_errors)?;
+    let audit = audit_builder.run_log(sqlite_run_log.clone()).build()?;
 
     let audit_report = audit.run()?;
     sqlite_run_log.commit()?;
@@ -198,7 +183,7 @@ fn read_yaml(path: &Path) -> Result<serde_json::Value, Box<dyn Error>> {
 
 fn load_spec_file(path: &Path) -> Result<spec::Spec, Box<dyn Error>> {
     let value: serde_json::Value = read_yaml(path)?;
-    Ok(spec::from_value(value).map_err(join_errors)?)
+    Ok(spec::from_value(value)?)
 }
 
 /// Where an eval's spec comes from, and the directory its `.env` and `evals/` belong to.
@@ -263,7 +248,7 @@ fn load_spec(rngo_dir: &Path) -> Result<spec::Spec, Box<dyn Error>> {
         merge_section(&mut spec, rngo_dir, section)?;
     }
 
-    Ok(spec::from_value(spec).map_err(join_errors)?)
+    Ok(spec::from_value(spec)?)
 }
 
 fn merge_section(
@@ -354,12 +339,4 @@ fn update_last_symlink(rngo_dir: &Path, eval_dir: &Path) -> Result<(), Box<dyn E
     #[cfg(windows)]
     std::os::windows::fs::symlink_dir(target, &link)?;
     Ok(())
-}
-
-fn join_errors<E: fmt::Display>(errors: Vec<E>) -> String {
-    errors
-        .iter()
-        .map(|e| e.to_string())
-        .collect::<Vec<_>>()
-        .join("\n")
 }

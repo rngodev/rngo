@@ -1,6 +1,6 @@
 use super::{Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorResult};
 use crate::effect::generator::{GeneratorContext, GeneratorParseVisitor, GeneratorParser};
-use crate::error::{BuildError, ParseError as Error};
+use crate::error::{BuildErrors, ParseErrors};
 use rand::distr::Distribution;
 use rand_pcg::Pcg32;
 
@@ -50,7 +50,7 @@ impl StrBuilder {
 }
 
 impl GeneratorBuilder for StrBuilder {
-    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, Vec<BuildError>> {
+    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, BuildErrors> {
         let regex = rand_regex::Regex::compile(&self.pattern, 100)
             .map_err(|e| vec![visitor.error(format!("invalid pattern: {e}"))])?;
 
@@ -71,7 +71,7 @@ impl GeneratorParser for StrParser {
     fn parse(
         &self,
         visitor: GeneratorParseVisitor,
-    ) -> Result<Box<dyn GeneratorBuilder>, Vec<Error>> {
+    ) -> Result<Box<dyn GeneratorBuilder>, ParseErrors> {
         let mut builder = Str::builder();
 
         match visitor.spec().fields.get("pattern").map(|v| v.as_str()) {
@@ -79,10 +79,10 @@ impl GeneratorParser for StrParser {
                 builder = builder.pattern(pattern);
                 Ok(Box::new(builder))
             }
-            Some(_) => Err(vec![
-                visitor.input_error("pattern", "pattern must be a string"),
-            ]),
-            None => Err(vec![visitor.invalid("pattern must be specified")]),
+            Some(_) => Err(visitor
+                .input_error("pattern", "pattern must be a string")
+                .into()),
+            None => Err(visitor.invalid("pattern must be specified").into()),
         }
     }
 }

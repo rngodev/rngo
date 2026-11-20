@@ -1,7 +1,7 @@
 use super::{Signal, SignalBuilder, SignalOutcome};
 use crate::audit::signal::{CelExpectation, SignalEval, SignalParser};
 use crate::cel::json_to_cel;
-use crate::error::{BuildError, ParseError};
+use crate::error::{BuildError, BuildErrors, ParseError, ParseErrors};
 use crate::{RunLogReader, SignalError, spec};
 use cel::{Context, Program};
 
@@ -85,30 +85,29 @@ impl SignalParser for SqlSignalParser {
         "sql"
     }
 
-    fn parse(&self, key: &str, signal: &spec::Signal) -> Result<Box<dyn Signal>, Vec<ParseError>> {
+    fn parse(&self, key: &str, signal: &spec::Signal) -> Result<Box<dyn Signal>, ParseErrors> {
         let query = match signal.fields.get("query") {
             Some(value) => match value.as_str() {
                 Some(query) => query.to_string(),
                 None => {
-                    return Err(vec![
-                        ParseError::invalid("query must be a string").at(["signals", key, "query"]),
-                    ]);
+                    return Err(ParseError::invalid("query must be a string")
+                        .at(["signals", key, "query"])
+                        .into());
                 }
             },
             None => {
-                return Err(vec![
-                    ParseError::invalid("query is required").at(["signals", key, "query"]),
-                ]);
+                return Err(ParseError::invalid("query is required")
+                    .at(["signals", key, "query"])
+                    .into());
             }
         };
 
         let expectation = match signal.fields.get("expect") {
             Some(value) => {
                 let Some(source) = value.as_str() else {
-                    return Err(vec![
-                        ParseError::invalid("expect must be a string")
-                            .at(["signals", key, "expect"]),
-                    ]);
+                    return Err(ParseError::invalid("expect must be a string")
+                        .at(["signals", key, "expect"])
+                        .into());
                 };
 
                 let expectation = compile_expectation(source).map_err(|e| {
@@ -147,9 +146,9 @@ impl SqlSignalBuilder {
 }
 
 impl SignalBuilder for SqlSignalBuilder {
-    fn build(self: Box<Self>, key: &str) -> Result<Box<dyn Signal>, Vec<BuildError>> {
+    fn build(self: Box<Self>, key: &str) -> Result<Box<dyn Signal>, BuildErrors> {
         let Some(query) = self.query else {
-            return Err(vec![BuildError::signal(key, "query is required")]);
+            return Err(BuildError::signal(key, "query is required").into());
         };
 
         let expectation = match self.expect {

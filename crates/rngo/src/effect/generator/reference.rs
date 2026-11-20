@@ -3,7 +3,7 @@ use super::{
 };
 use crate::Rng;
 use crate::effect::generator::{GeneratorParseVisitor, GeneratorParser, Metadata};
-use crate::error::{BuildError, ParseError as Error};
+use crate::error::{BuildErrors, ParseErrors};
 use crate::log::RunLogReader;
 use std::rc::Rc;
 
@@ -87,7 +87,7 @@ impl ReferenceBuilder {
 }
 
 impl GeneratorBuilder for ReferenceBuilder {
-    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, Vec<BuildError>> {
+    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, BuildErrors> {
         if let Some(key) = &self.effect {
             let unique_cursor = matches!(self.cursor, Cursor::Unique).then(|| visitor.path_id());
 
@@ -99,7 +99,7 @@ impl GeneratorBuilder for ReferenceBuilder {
                 rng: visitor.rng(),
             }))
         } else {
-            Err(vec![visitor.error("config was not set")])
+            Err(visitor.error("config was not set").into())
         }
     }
 }
@@ -114,7 +114,7 @@ impl GeneratorParser for ReferenceParser {
     fn parse(
         &self,
         visitor: GeneratorParseVisitor,
-    ) -> Result<Box<dyn GeneratorBuilder>, Vec<Error>> {
+    ) -> Result<Box<dyn GeneratorBuilder>, ParseErrors> {
         let mut builder = Reference::builder();
         let mut errors = vec![];
 
@@ -143,7 +143,7 @@ impl GeneratorParser for ReferenceParser {
         if errors.is_empty() {
             Ok(Box::new(builder))
         } else {
-            Err(errors)
+            Err(errors.into())
         }
     }
 }

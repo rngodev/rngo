@@ -1,6 +1,7 @@
+use crate::error::ParseErrors;
 use crate::proxy::channel::ChannelBuilder;
 use crate::proxy::format::FormatParseContext;
-use crate::{ParseError, spec};
+use crate::spec;
 
 pub trait ChannelParser {
     fn key(&self) -> &str;
@@ -11,5 +12,5 @@ pub trait ChannelParser {
         &self,
         channel: &spec::Channel,
         formats: &FormatParseContext,
-    ) -> Result<Box<dyn ChannelBuilder>, Vec<ParseError>>;
+    ) -> Result<Box<dyn ChannelBuilder>, ParseErrors>;
 }

@@ -20,8 +20,8 @@ pub use dialect::Dialect;
 pub use effect::simulation::{Simulation, SimulationBuilder, StandaloneSimulation};
 pub use effect::{Input, SkippedInput, Step, generator};
 pub use error::{
-    BuildError, ChannelError, EffectKey, FormatError, ParseError, ParseErrorKind, ProxyError,
-    RunError, RunLogError, SignalError, SimulationKey,
+    BuildError, BuildErrors, ChannelError, EffectKey, FormatError, ParseError, ParseErrorKind,
+    ParseErrors, ProxyError, RunError, RunLogError, SignalError, SimulationKey,
 };
 pub use log::{Metadata, RunLogReader, RunLogWriter, SimpleEventRunLog, SqliteRunLog};
 pub use proxy::output::{Level, Output};

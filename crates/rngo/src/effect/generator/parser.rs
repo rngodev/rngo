@@ -1,6 +1,6 @@
 use crate::effect::generator::GeneratorBuilder;
 use crate::effect::generator::custom::CustomParser;
-use crate::error::ParseError;
+use crate::error::{ParseError, ParseErrors};
 use crate::spec;
 use std::rc::Rc;
 
@@ -9,7 +9,7 @@ pub trait GeneratorParser {
     fn parse(
         &self,
         visitor: GeneratorParseVisitor,
-    ) -> Result<Box<dyn GeneratorBuilder>, Vec<ParseError>>;
+    ) -> Result<Box<dyn GeneratorBuilder>, ParseErrors>;
 }
 
 pub struct GeneratorParseVisitor {
@@ -60,17 +60,16 @@ impl GeneratorParseVisitor {
         mut self,
         name: String,
         spec: spec::Generator,
-    ) -> Result<Box<dyn GeneratorBuilder>, Vec<ParseError>> {
+    ) -> Result<Box<dyn GeneratorBuilder>, ParseErrors> {
         if self.type_stack.contains(&name) {
             let mut cyclic_type_stack = self.type_stack.clone();
             cyclic_type_stack.push(name.clone());
-            return Err(vec![
-                ParseError::invalid(format!(
-                    "cyclical types: {}",
-                    cyclic_type_stack.join(" -> ")
-                ))
-                .at(["generators", name.as_str(), "generator"]),
-            ]);
+            return Err(ParseError::invalid(format!(
+                "cyclical types: {}",
+                cyclic_type_stack.join(" -> ")
+            ))
+            .at(["generators", name.as_str(), "generator"])
+            .into());
         }
 
         self.type_stack.push(name.clone());
@@ -84,7 +83,7 @@ impl GeneratorParseVisitor {
         &self,
         mut path: Vec<String>,
         spec: spec::Generator,
-    ) -> Result<Box<dyn GeneratorBuilder>, Vec<ParseError>> {
+    ) -> Result<Box<dyn GeneratorBuilder>, ParseErrors> {
         let mut new_path = self.source_path.clone();
         new_path.append(&mut path);
 
@@ -99,7 +98,7 @@ impl GeneratorParseVisitor {
         child.parse()
     }
 
-    pub(crate) fn parse(self) -> Result<Box<dyn GeneratorBuilder>, Vec<ParseError>> {
+    pub(crate) fn parse(self) -> Result<Box<dyn GeneratorBuilder>, ParseErrors> {
         let generator_parsers = Rc::clone(&self.primitive_generator_parsers);
         let custom_generators = Rc::clone(&self.custom_generator_parsers);
 
@@ -111,11 +110,9 @@ impl GeneratorParseVisitor {
             .collect();
 
         match matching.len() {
-            0 => Err(vec![ParseError::invalid("no generator parser matched")]),
+            0 => Err(ParseError::invalid("no generator parser matched").into()),
             1 => matching[0].parse(self),
-            total => Err(vec![ParseError::invalid(format!(
-                "{total} generator parsers matched"
-            ))]),
+            total => Err(ParseError::invalid(format!("{total} generator parsers matched")).into()),
         }
     }
 }

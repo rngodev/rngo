@@ -3,7 +3,7 @@ use super::{
     JsonPointerPart,
 };
 use crate::effect::generator::{GeneratorEdge, GeneratorParseVisitor, GeneratorParser, Metadata};
-use crate::error::{BuildError, ParseError as Error};
+use crate::error::{BuildErrors, ParseErrors};
 use crate::spec;
 use rand::RngExt;
 use rand_pcg::Pcg32;
@@ -58,14 +58,14 @@ impl GeneratorBuilder for ArrayBuilder {
     fn build(
         &self,
         generator_visitor: GeneratorBuildVisitor,
-    ) -> Result<Box<dyn Generator>, Vec<BuildError>> {
+    ) -> Result<Box<dyn Generator>, BuildErrors> {
         let items = if let Some(items_builder) = &self.items_builder {
             items_builder.build(generator_visitor.follow_edge(GeneratorEdge {
                 kind: "items",
                 key: "items".into(),
             }))?
         } else {
-            return Err(vec![generator_visitor.error("items was not set")]);
+            return Err(generator_visitor.error("items was not set").into());
         };
 
         Ok(Box::new(Array {
@@ -115,13 +115,13 @@ impl GeneratorParser for ArrayParser {
     fn parse(
         &self,
         visitor: GeneratorParseVisitor,
-    ) -> Result<Box<dyn GeneratorBuilder>, Vec<Error>> {
+    ) -> Result<Box<dyn GeneratorBuilder>, ParseErrors> {
         let items_spec = match visitor.spec().fields.get("items") {
             Some(v) => serde_json::from_value::<spec::Generator>(v.clone()).map_err(|e| {
                 vec![visitor.input_error("items", format!("items parsing failed: {e}"))]
             })?,
             None => {
-                return Err(vec![visitor.invalid("items must be specified")]);
+                return Err(visitor.invalid("items must be specified").into());
             }
         };
 
@@ -150,7 +150,7 @@ impl GeneratorParser for ArrayParser {
         }
 
         if !errors.is_empty() {
-            return Err(errors);
+            return Err(errors.into());
         }
 
         Ok(Box::new(

@@ -1,7 +1,7 @@
 use crate::effect::bound::Bound;
 use crate::effect::prototype::{Prototype, PrototypeBuilder};
 use crate::effect::{Effect, EffectBuilder, Step};
-use crate::error::{BuildError, SimulationKey};
+use crate::error::{BuildError, BuildErrors, SimulationKey};
 use crate::log::SimpleEventRunLog;
 use crate::moment::Moment;
 use crate::{RunError, RunLogReader};
@@ -153,13 +153,13 @@ impl SimulationBuilder {
     }
 
     /// Builds a [`StandaloneSimulation`] over a new in-memory log, replacing any run log reader set.
-    pub fn standalone(self) -> Result<StandaloneSimulation, Vec<BuildError>> {
+    pub fn standalone(self) -> Result<StandaloneSimulation, BuildErrors> {
         let log = SimpleEventRunLog::new();
         let simulation = self.run_log_reader(log.clone()).build()?;
         Ok(StandaloneSimulation { simulation, log })
     }
 
-    pub fn build(self) -> Result<Simulation, Vec<BuildError>> {
+    pub fn build(self) -> Result<Simulation, BuildErrors> {
         let mut errors = vec![];
 
         let Some(run_log_reader) = self.run_log_reader else {
@@ -167,16 +167,17 @@ impl SimulationBuilder {
                 SimulationKey::RunLogReader,
                 "run_log_reader was not set",
             ));
-            return Err(errors);
+            return Err(errors.into());
         };
 
         let now = self.now.unwrap_or_else(Timestamp::now);
         let default_prototype = self.default_prototype.clone().now(now).build()?;
         let (Some(start), Some(_)) = (default_prototype.start, default_prototype.end) else {
-            return Err(vec![BuildError::simulation(
+            return Err(BuildError::simulation(
                 SimulationKey::Start,
                 "the simulation must have a start and an end",
-            )]);
+            )
+            .into());
         };
 
         let mut prototypes = IndexMap::new();
@@ -190,11 +191,11 @@ impl SimulationBuilder {
                 Ok(prototype) => {
                     prototypes.insert(name.clone(), prototype);
                 }
-                Err(mut e) => errors.append(&mut e),
+                Err(e) => errors.extend(e),
             }
         }
         if !errors.is_empty() {
-            return Err(errors);
+            return Err(errors.into());
         }
 
         let empty_prototype = Prototype::default();
@@ -213,7 +214,7 @@ impl SimulationBuilder {
 
             match effect_builder.build() {
                 Ok(effect) => effects.push(effect),
-                Err(mut e) => errors.append(&mut e),
+                Err(e) => errors.extend(e),
             }
         }
 
@@ -222,8 +223,8 @@ impl SimulationBuilder {
             .map(|effect| effect.start)
             .fold(start, Ord::min);
         for effect in &mut effects {
-            if let Err(mut e) = effect.set_origin(origin) {
-                errors.append(&mut e);
+            if let Err(e) = effect.set_origin(origin) {
+                errors.extend(e);
             }
         }
 
@@ -234,7 +235,7 @@ impl SimulationBuilder {
                 emitted: 0,
             })
         } else {
-            Err(errors)
+            Err(errors.into())
         }
     }
 }
@@ -245,7 +246,7 @@ mod tests {
         Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
         Metadata,
     };
-    use crate::error::BuildError;
+    use crate::error::{BuildError, BuildErrors};
 
     #[derive(Debug, Default)]
     struct AlternatingGenerator {
@@ -280,7 +281,7 @@ mod tests {
         fn build(
             &self,
             _visitor: GeneratorBuildVisitor,
-        ) -> Result<Box<dyn Generator>, Vec<BuildError>> {
+        ) -> Result<Box<dyn Generator>, BuildErrors> {
             Ok(Box::new(AlternatingGenerator::default()))
         }
     }

@@ -3,6 +3,7 @@ pub mod format;
 pub(crate) mod output;
 mod stop;
 
+use crate::error::BuildErrors;
 use crate::{
     BuildError, Input, Metadata, ProxyError, RunLogError, RunLogWriter, SimpleEventRunLog,
 };
@@ -195,7 +196,7 @@ impl ProxyBuilder {
         self
     }
 
-    pub fn build(self) -> Result<Proxy, Vec<BuildError>> {
+    pub fn build(self) -> Result<Proxy, BuildErrors> {
         let mut errors = vec![];
         let mut channels = HashMap::new();
         let (output_tx, output_rx) = mpsc::channel::<Output>();
@@ -224,12 +225,12 @@ impl ProxyBuilder {
                 Ok(channel) => {
                     channels.insert(key, channel);
                 }
-                Err(mut e) => errors.append(&mut e),
+                Err(e) => errors.extend(e),
             };
         }
 
         if !errors.is_empty() {
-            return Err(errors);
+            return Err(errors.into());
         }
 
         Ok(Proxy {
@@ -337,7 +338,7 @@ mod tests {
             &self,
             _channel_key: &str,
             _outputs: OutputSender,
-        ) -> Result<Box<dyn Channel>, Vec<BuildError>> {
+        ) -> Result<Box<dyn Channel>, BuildErrors> {
             Ok(Box::new(RecordingSink {
                 sent: self.sent.clone(),
                 format: self.format.clone(),
@@ -434,7 +435,7 @@ mod tests {
                 &self,
                 channel_key: &str,
                 _outputs: OutputSender,
-            ) -> Result<Box<dyn Channel>, Vec<BuildError>> {
+            ) -> Result<Box<dyn Channel>, BuildErrors> {
                 *self.0.borrow_mut() = Some(channel_key.to_string());
                 Ok(Box::new(RecordingSink {
                     sent: Rc::new(RefCell::new(vec![])),
