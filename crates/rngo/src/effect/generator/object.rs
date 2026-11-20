@@ -57,7 +57,11 @@ pub struct ObjectBuilder {
 }
 
 impl ObjectBuilder {
-    pub fn property(mut self, key: &str, builder: impl GeneratorBuilder + 'static) -> Self {
+    pub fn property(
+        mut self,
+        key: impl Into<String>,
+        builder: impl GeneratorBuilder + 'static,
+    ) -> Self {
         self.property_builders.insert(key.into(), Box::new(builder));
         self
     }
