@@ -109,7 +109,7 @@ fn a_registered_generator_parser_handles_its_type_in_a_spec() {
     let inputs: Vec<Input> = Dialect::primitive()
         .with_generator_parser(CounterParser)
         .parse_simulation(
-            rngo::spec::from_value(counter_spec(json!({ "type": "counter", "step": 5 }))).unwrap(),
+            &rngo::spec::from_value(counter_spec(json!({ "type": "counter", "step": 5 }))).unwrap(),
         )
         .unwrap()
         .run_log_reader(rngo::SimpleEventRunLog::new())
@@ -127,7 +127,7 @@ fn a_registered_generator_parser_reports_errors_at_its_field() {
     let errors = Dialect::primitive()
         .with_generator_parser(CounterParser)
         .parse_simulation(
-            rngo::spec::from_value(counter_spec(json!({ "type": "counter" }))).unwrap(),
+            &rngo::spec::from_value(counter_spec(json!({ "type": "counter" }))).unwrap(),
         )
         .unwrap_err();
 
@@ -143,7 +143,7 @@ fn a_generator_type_is_unknown_without_its_parser() {
     assert!(
         Dialect::primitive()
             .parse_simulation(
-                rngo::spec::from_value(counter_spec(json!({ "type": "counter", "step": 5 })))
+                &rngo::spec::from_value(counter_spec(json!({ "type": "counter", "step": 5 })))
                     .unwrap()
             )
             .is_err()

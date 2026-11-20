@@ -64,7 +64,7 @@ fn spec(min: Value) -> rngo::spec::Spec {
 fn outcome(min: u64) -> SignalOutcome {
     let dialect = Dialect::primitive().with_signal_parser(LastIdAtLeastParser);
     let mut simulation = dialect
-        .parse_simulation(spec(json!(min)))
+        .parse_simulation(&spec(json!(min)))
         .unwrap()
         .standalone()
         .unwrap();
@@ -72,7 +72,7 @@ fn outcome(min: u64) -> SignalOutcome {
         step.unwrap();
     }
     let report = dialect
-        .parse_audit(spec(json!(min)))
+        .parse_audit(&spec(json!(min)))
         .unwrap()
         .run_log(simulation.run_log().clone())
         .build()
@@ -107,7 +107,7 @@ fn a_registered_signal_parser_evaluates_its_signal_in_an_audit() {
 fn a_registered_signal_parser_reports_parse_errors() {
     let errors = Dialect::primitive()
         .with_signal_parser(LastIdAtLeastParser)
-        .parse_audit(spec(json!("lots")))
+        .parse_audit(&spec(json!("lots")))
         .err()
         .unwrap();
 

@@ -111,7 +111,7 @@ fn effect_respects_end_time_via_spec() {
     });
 
     let sim = Dialect::primitive()
-        .parse_simulation(rngo::spec::from_value(spec).unwrap())
+        .parse_simulation(&rngo::spec::from_value(spec).unwrap())
         .unwrap()
         .run_log_reader(rngo::SimpleEventRunLog::new())
         .build()
@@ -162,7 +162,7 @@ fn effect_respects_both_start_and_end() {
     });
 
     let sim = Dialect::primitive()
-        .parse_simulation(rngo::spec::from_value(spec).unwrap())
+        .parse_simulation(&rngo::spec::from_value(spec).unwrap())
         .unwrap()
         .run_log_reader(rngo::SimpleEventRunLog::new())
         .build()
@@ -217,7 +217,7 @@ fn an_effect_without_a_start_is_an_error() {
         }
     });
     let mut builder = Dialect::primitive()
-        .parse_simulation(rngo::spec::from_value(spec).unwrap())
+        .parse_simulation(&rngo::spec::from_value(spec).unwrap())
         .unwrap();
     builder = builder.effect("loose", |e| {
         e.prototype_key("nowhere")
@@ -303,7 +303,7 @@ fn context_sim_start_is_the_origin_and_clock_now_is_the_timestamp() {
     }));
 
     let sim = Dialect::primitive()
-        .parse_simulation(rngo::spec::from_value(spec).unwrap())
+        .parse_simulation(&rngo::spec::from_value(spec).unwrap())
         .unwrap()
         .run_log_reader(rngo::SimpleEventRunLog::new())
         .build()
@@ -330,7 +330,7 @@ fn context_sim_end_is_no_longer_a_path() {
     }));
 
     let result = Dialect::primitive()
-        .parse_simulation(rngo::spec::from_value(spec).unwrap())
+        .parse_simulation(&rngo::spec::from_value(spec).unwrap())
         .unwrap()
         .run_log_reader(rngo::SimpleEventRunLog::new())
         .build();

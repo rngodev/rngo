@@ -129,13 +129,13 @@ fn a_custom_dialect_runs_custom_channels_and_formats() {
     let log = SimpleEventRunLog::new();
 
     let simulation = dialect
-        .parse_simulation(spec.clone())
+        .parse_simulation(&spec)
         .unwrap()
         .run_log_reader(log.clone())
         .build()
         .unwrap();
     let mut proxy = dialect
-        .parse_proxy(spec)
+        .parse_proxy(&spec)
         .unwrap()
         .effect_channels(simulation.effect_channels())
         .run_log_writer(log.clone())
@@ -156,5 +156,5 @@ fn a_custom_dialect_leaves_out_the_built_ins_it_does_not_list() {
     let sink = Sink::default();
     let spec = spec_with(json!({ "type": "number" }));
 
-    assert!(dialect(&sink).parse_simulation(spec).is_err());
+    assert!(dialect(&sink).parse_simulation(&spec).is_err());
 }

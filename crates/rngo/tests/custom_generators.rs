@@ -3,7 +3,7 @@ use rngo::{Dialect, ParseErrors, Simulation};
 fn build(json: &str) -> Result<Simulation, String> {
     let value: serde_json::Value = serde_json::from_str(json).unwrap();
     let simulation_builder = Dialect::primitive()
-        .parse_simulation(rngo::spec::from_value(value).unwrap())
+        .parse_simulation(&rngo::spec::from_value(value).unwrap())
         .map_err(|e| e.to_string())?;
     simulation_builder
         .run_log_reader(rngo::SimpleEventRunLog::new())
@@ -14,7 +14,7 @@ fn build(json: &str) -> Result<Simulation, String> {
 fn parse_errors(json: &str) -> ParseErrors {
     let value: serde_json::Value = serde_json::from_str(json).unwrap();
     Dialect::primitive()
-        .parse_simulation(rngo::spec::from_value(value).unwrap())
+        .parse_simulation(&rngo::spec::from_value(value).unwrap())
         .unwrap_err()
 }
 
