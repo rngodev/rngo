@@ -133,11 +133,14 @@ impl SimulationBuilder {
     /// Defines a named prototype; `f` configures its builder.
     pub fn prototype(
         mut self,
-        name: &str,
+        name: impl Into<String>,
         f: impl FnOnce(PrototypeBuilder) -> PrototypeBuilder,
     ) -> Self {
-        self.prototypes
-            .insert(name.into(), f(PrototypeBuilder::default().name(name)));
+        let name = name.into();
+        self.prototypes.insert(
+            name.clone(),
+            f(PrototypeBuilder::default().name(name.clone())),
+        );
         self
     }
 
@@ -147,8 +150,12 @@ impl SimulationBuilder {
     }
 
     /// Adds an effect; `f` configures its builder.
-    pub fn effect(mut self, key: &str, f: impl FnOnce(EffectBuilder) -> EffectBuilder) -> Self {
-        self.effect_builders.push(f(Effect::builder(key.into())));
+    pub fn effect(
+        mut self,
+        key: impl Into<String>,
+        f: impl FnOnce(EffectBuilder) -> EffectBuilder,
+    ) -> Self {
+        self.effect_builders.push(f(Effect::builder(key)));
         self
     }
 
@@ -338,7 +345,7 @@ mod tests {
                     .generator(AlternatingGeneratorBuilder)
             })
             .effect("downstream", |e| {
-                e.trigger_effect("upstream".into())
+                e.trigger_effect("upstream")
                     .generator(AlternatingGeneratorBuilder)
             });
 

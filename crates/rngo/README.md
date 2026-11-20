@@ -34,7 +34,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .effect("user", |effect| {
             effect
-                .trigger_expression("hz(10, hour) * (1.0 + offset * 0.0001)".to_string())
+                .trigger_expression("hz(10, hour) * (1.0 + offset * 0.0001)")
                 .limit(NonZeroU64::new(1000).unwrap())
                 .generator(
                     object()
@@ -52,7 +52,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .effect("post", |effect| {
             effect
                 .prototype_key("recent")
-                .trigger_expression("hz(100, hour) * (1.0 + offset * 0.0001)".to_string())
+                .trigger_expression("hz(100, hour) * (1.0 + offset * 0.0001)")
                 .generator(
                     object()
                         .property("id", number().minimum(1).scale(0).step(1))

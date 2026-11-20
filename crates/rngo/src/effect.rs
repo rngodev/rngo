@@ -47,8 +47,8 @@ pub struct Effect {
 }
 
 impl Effect {
-    pub fn builder(key: String) -> EffectBuilder {
-        EffectBuilder::new(key)
+    pub fn builder(key: impl Into<String>) -> EffectBuilder {
+        EffectBuilder::new(key.into())
     }
 
     /// Moves the instant offsets are measured from, rebuilding the trigger around it; call before iterating, once every effect of the simulation is built and the earliest start is known.
@@ -268,8 +268,8 @@ impl EffectBuilder {
         self
     }
 
-    pub fn trigger_effect(mut self, key: String) -> Self {
-        self.trigger = TriggerConfig::Effect { key };
+    pub fn trigger_effect(mut self, key: impl Into<String>) -> Self {
+        self.trigger = TriggerConfig::Effect { key: key.into() };
         self
     }
 
@@ -278,8 +278,8 @@ impl EffectBuilder {
         self
     }
 
-    pub fn trigger_expression(mut self, expression: String) -> Self {
-        self.trigger = TriggerConfig::ClockExpression(expression);
+    pub fn trigger_expression(mut self, expression: impl Into<String>) -> Self {
+        self.trigger = TriggerConfig::ClockExpression(expression.into());
         self
     }
 
@@ -532,7 +532,7 @@ mod tests {
             ..Prototype::default()
         };
         let built = |channel: Option<&str>| {
-            let mut builder = Effect::builder("ping".into()).generator(constant().value(1));
+            let mut builder = Effect::builder("ping").generator(constant().value(1));
             if let Some(channel) = channel {
                 builder = builder.channel(channel);
             }
@@ -547,7 +547,7 @@ mod tests {
     #[test]
     fn limit_caps_produced_inputs() {
         let effect = build(
-            Effect::builder("ping".into())
+            Effect::builder("ping")
                 .trigger_hertz(1000.0)
                 .limit(NonZeroU64::new(3).unwrap())
                 .generator(constant().value(1)),
@@ -566,7 +566,7 @@ mod tests {
     #[test]
     fn limit_does_not_count_skipped_inputs() {
         let effect = build(
-            Effect::builder("alternating".into())
+            Effect::builder("alternating")
                 .trigger_hertz(1000.0)
                 .limit(NonZeroU64::new(3).unwrap())
                 .generator(AlternatingGeneratorBuilder),

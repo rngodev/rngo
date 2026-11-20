@@ -23,6 +23,7 @@ Each release has a section named after its version. Changes that break existing 
 - **Breaking (Rust API):** `ParseErrorKind::UnknownType` has a `found` field with the `type` given. `BuildError::Generator` has a `spec_path` field, also readable with `BuildError::spec_path()`. A `SignalParser` returns error paths relative to the signal (`query`, not `signals.<key>.query`), and the dialect adds the `signals.<key>` prefix, as it already does for channels.
 - An invalid spec is reported as an error instead of panicking. A `number` generator without the bounds it needs is a parse error, and a trigger expression that stops returning a non-negative number ends the run with an error after logging what ran.
 - A `rngo-cli` build with a bumped `zip` fixes RUSTSEC-2026-0546, 0547 and 0548.
+- Builder methods that take a string accept `&str` and `String` alike: `Effect::builder`, `EffectBuilder::trigger_effect` and `trigger_expression`, `SimulationBuilder::effect` and `prototype`, and `ObjectBuilder::property`. Callers no longer need `.to_string()`, and existing calls keep compiling, except `.into()` on a literal passed to one of these, which now needs the `.into()` removed.
 
 ## 0.40.0 - 2026-11-10
 

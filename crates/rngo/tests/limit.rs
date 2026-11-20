@@ -19,7 +19,7 @@ fn unlimited_effect_keeps_running_after_limited_effect_stops() {
                 .generator(constant().value(1))
         })
         .effect("unlimited", |e| {
-            e.trigger_expression("hz(1, hour)".into())
+            e.trigger_expression("hz(1, hour)")
                 .generator(constant().value(1))
         });
 
@@ -46,13 +46,12 @@ fn unlimited_effect_keeps_running_after_limited_effect_stops() {
 fn dependent_effect_stops_after_upstream_limit() {
     let simulation_builder = Simulation::builder()
         .effect("upstream", |e| {
-            e.trigger_expression("hz(1, hour)".into())
+            e.trigger_expression("hz(1, hour)")
                 .limit(limit(4))
                 .generator(constant().value(1))
         })
         .effect("downstream", |e| {
-            e.trigger_effect("upstream".into())
-                .generator(constant().value(2))
+            e.trigger_effect("upstream").generator(constant().value(2))
         });
 
     let inputs: Vec<_> = simulation_builder
