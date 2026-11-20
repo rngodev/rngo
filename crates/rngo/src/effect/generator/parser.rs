@@ -1,6 +1,6 @@
 use crate::effect::generator::GeneratorBuilder;
 use crate::effect::generator::custom::CustomParser;
-use crate::error::{ParseError, ParseErrors};
+use crate::error::{ParseError, ParseErrorKind, ParseErrors};
 use crate::spec;
 use std::rc::Rc;
 
@@ -111,10 +111,19 @@ impl GeneratorParseVisitor {
             .filter(|p| self.spec.stype.as_deref() == Some(p.key()))
             .collect();
 
-        match matching.len() {
-            0 => Err(ParseError::invalid("no generator parser matched").into()),
-            1 => matching[0].parse(self),
-            total => Err(ParseError::invalid(format!("{total} generator parsers matched")).into()),
-        }
+        let kind = match matching.as_slice() {
+            [parser] => return parser.parse(self),
+            [] => ParseErrorKind::UnknownType {
+                kind: "generator",
+                found: self.spec.stype.clone(),
+            },
+            _ => ParseErrorKind::AmbiguousType {
+                kind: "generator",
+                count: matching.len(),
+            },
+        };
+        let mut path = self.source_path();
+        path.push("type".into());
+        Err(ParseError::new(kind).at(path).into())
     }
 }

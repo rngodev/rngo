@@ -91,13 +91,13 @@ impl SignalParser for SqlSignalParser {
                 Some(query) => query.to_string(),
                 None => {
                     return Err(ParseError::invalid("query must be a string")
-                        .at(["signals", key, "query"])
+                        .at(["query"])
                         .into());
                 }
             },
             None => {
                 return Err(ParseError::invalid("query is required")
-                    .at(["signals", key, "query"])
+                    .at(["query"])
                     .into());
             }
         };
@@ -106,13 +106,12 @@ impl SignalParser for SqlSignalParser {
             Some(value) => {
                 let Some(source) = value.as_str() else {
                     return Err(ParseError::invalid("expect must be a string")
-                        .at(["signals", key, "expect"])
+                        .at(["expect"])
                         .into());
                 };
 
-                let expectation = compile_expectation(source).map_err(|e| {
-                    vec![ParseError::invalid(e.to_string()).at(["signals", key, "expect"])]
-                })?;
+                let expectation = compile_expectation(source)
+                    .map_err(|e| vec![ParseError::invalid(e.to_string()).at(["expect"])])?;
 
                 Some(expectation)
             }

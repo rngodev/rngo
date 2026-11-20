@@ -18,9 +18,13 @@ pub enum ParseErrorKind {
     /// A free-form problem, described by its message.
     #[error("{0}")]
     Invalid(String),
-    /// No parser matched the `type`; `kind` is what was being parsed (e.g. `generator`).
-    #[error("unknown {kind} type")]
-    UnknownType { kind: &'static str },
+    /// No parser matched the `type`; `kind` is what was being parsed (e.g. `generator`) and `found`
+    /// the `type` given, `None` if there was none.
+    #[error("{}", display_unknown_type(kind, found.as_deref()))]
+    UnknownType {
+        kind: &'static str,
+        found: Option<String>,
+    },
     /// More than one parser matched the `type`; `count` is how many did.
     #[error("{count} {kind} parsers matched")]
     AmbiguousType { kind: &'static str, count: usize },
@@ -75,6 +79,13 @@ impl ParseError {
     }
 }
 
+fn display_unknown_type(kind: &str, found: Option<&str>) -> String {
+    match found {
+        Some(found) => format!("unknown {kind} type \"{found}\""),
+        None => format!("missing {kind} type"),
+    }
+}
+
 fn display_path(path: &[String]) -> String {
     if path.is_empty() {
         String::new()
@@ -95,10 +106,11 @@ pub enum BuildError {
         key: EffectKey,
         message: String,
     },
-    #[error("failed to build `effects.{effect}.generator`: `{message}`")]
+    #[error("failed to build `{}`: `{message}`", spec_path.join("."))]
     Generator {
         effect: String,
         path: Vec<GeneratorEdge>,
+        spec_path: Vec<String>,
         message: String,
     },
     #[error("failed to build proxy: `{message}`")]
@@ -135,11 +147,25 @@ impl BuildError {
         path: Vec<GeneratorEdge>,
         message: impl Into<String>,
     ) -> Self {
+        let effect = effect.into();
+        let spec_path = ["effects", effect.as_str(), "generator"]
+            .into_iter()
+            .map(String::from)
+            .chain(path.iter().flat_map(GeneratorEdge::spec_path))
+            .collect();
         BuildError::Generator {
-            effect: effect.into(),
+            effect,
             path,
+            spec_path,
             message: message.into(),
         }
+    }
+
+    pub(crate) fn at_spec_path(mut self, path: Vec<String>) -> Self {
+        if let BuildError::Generator { spec_path, .. } = &mut self {
+            *spec_path = path;
+        }
+        self
     }
 
     /// An error in the proxy as a whole.
@@ -189,6 +215,15 @@ impl BuildError {
     pub fn generator_path(&self) -> Option<&[GeneratorEdge]> {
         match self {
             BuildError::Generator { path, .. } => Some(path),
+            _ => None,
+        }
+    }
+
+    /// The spec path of the generator that failed, for generator errors; inside a custom type it is
+    /// under `generators.<name>.generator`.
+    pub fn spec_path(&self) -> Option<&[String]> {
+        match self {
+            BuildError::Generator { spec_path, .. } => Some(spec_path),
             _ => None,
         }
     }

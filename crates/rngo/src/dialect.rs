@@ -305,7 +305,7 @@ impl Dialect {
                 Ok(built) => {
                     audit_builder = audit_builder.signal(key.clone(), built);
                 }
-                Err(e) => errors.extend(e),
+                Err(e) => errors.extend(e.prefixed(&["signals", key])),
             }
         }
 
@@ -329,11 +329,17 @@ impl Dialect {
 
         match matching.as_slice() {
             [parser] => parser.parse(key, signal),
-            [] => Err(ParseError::new(ParseErrorKind::UnknownType { kind: "signal" }).into()),
+            [] => Err(ParseError::new(ParseErrorKind::UnknownType {
+                kind: "signal",
+                found: signal.stype.clone(),
+            })
+            .at(["type"])
+            .into()),
             _ => Err(ParseError::new(ParseErrorKind::AmbiguousType {
                 kind: "signal",
                 count: matching.len(),
             })
+            .at(["type"])
             .into()),
         }
     }
@@ -351,15 +357,17 @@ impl Dialect {
 
         match matching.as_slice() {
             [parser] => parser.parse(channel, formats),
-            [] => Err(
-                ParseError::new(ParseErrorKind::UnknownType { kind: "channel" })
-                    .at(["type"])
-                    .into(),
-            ),
+            [] => Err(ParseError::new(ParseErrorKind::UnknownType {
+                kind: "channel",
+                found: channel.ctype.clone(),
+            })
+            .at(["type"])
+            .into()),
             _ => Err(ParseError::new(ParseErrorKind::AmbiguousType {
                 kind: "channel",
                 count: matching.len(),
             })
+            .at(["type"])
             .into()),
         }
     }
@@ -424,7 +432,54 @@ mod tests {
     #[test]
     fn unknown_channel_type_names_the_type_field() {
         let errors = proxy_errors(serde_json::json!({ "logger": { "type": "nope" } }));
-        assert_eq!(paths(&errors), vec!["channels.logger.type"]);
+        assert_eq!(
+            errors.to_string(),
+            "failed to parse `channels.logger.type`: `unknown channel type \"nope\"`"
+        );
+    }
+
+    #[test]
+    fn unknown_format_type_names_the_type_field() {
+        let errors = proxy_errors(serde_json::json!({
+            "logger": { "type": "stdout", "format": { "type": "nope" } }
+        }));
+        assert_eq!(
+            errors.to_string(),
+            "failed to parse `channels.logger.format.type`: `unknown format type \"nope\"`"
+        );
+    }
+
+    fn audit_errors(signals: serde_json::Value) -> ParseErrors {
+        let spec =
+            spec::from_value(serde_json::json!({ "effects": {}, "signals": signals })).unwrap();
+        match Dialect::primitive().parse_audit(spec) {
+            Ok(_) => panic!("expected parse errors"),
+            Err(errors) => errors,
+        }
+    }
+
+    #[test]
+    fn unknown_signal_type_names_the_type_field() {
+        let errors = audit_errors(serde_json::json!({ "s": { "type": "nope" } }));
+        assert_eq!(
+            errors.to_string(),
+            "failed to parse `signals.s.type`: `unknown signal type \"nope\"`"
+        );
+    }
+
+    #[test]
+    fn missing_signal_type_names_the_type_field() {
+        let errors = audit_errors(serde_json::json!({ "s": { "query": "select 1" } }));
+        assert_eq!(
+            errors.to_string(),
+            "failed to parse `signals.s.type`: `missing signal type`"
+        );
+    }
+
+    #[test]
+    fn sql_signal_errors_name_the_signal() {
+        let errors = audit_errors(serde_json::json!({ "s": { "type": "sql" } }));
+        assert_eq!(paths(&errors), vec!["signals.s.query"]);
     }
 
     fn first_values(seed: Option<u64>) -> Vec<serde_json::Value> {

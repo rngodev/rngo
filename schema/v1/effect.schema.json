@@ -56,7 +56,8 @@
         {
           "$ref": "#/$defs/Trigger"
         }
-      ]
+      ],
+      "description": "An effect's `trigger`: a clock rate expression, or a `{ type, ... }` trigger object."
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",

@@ -184,13 +184,42 @@ pub enum Trigger {
     Effect { key: String },
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+/// An effect's `trigger`: a clock rate expression, or a `{ type, ... }` trigger object.
+#[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(untagged)]
 #[non_exhaustive]
 pub enum TriggerUnion {
     Shorthand(String),
     Full(Trigger),
+}
+
+impl<'de> Deserialize<'de> for TriggerUnion {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct TriggerVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for TriggerVisitor {
+            type Value = TriggerUnion;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a rate expression or a { type, ... } object")
+            }
+
+            fn visit_str<E: serde::de::Error>(self, rate: &str) -> Result<TriggerUnion, E> {
+                Ok(TriggerUnion::Shorthand(rate.to_string()))
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                map: A,
+            ) -> Result<TriggerUnion, A::Error> {
+                Trigger::deserialize(serde::de::value::MapAccessDeserializer::new(map))
+                    .map(TriggerUnion::Full)
+            }
+        }
+
+        deserializer.deserialize_any(TriggerVisitor)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -273,6 +302,48 @@ mod tests {
 
     fn parse(value: Value) -> Result<Spec, ParseErrors> {
         from_value(value)
+    }
+
+    #[test]
+    fn trigger_of_the_wrong_type_says_what_was_expected() {
+        let errors = parse(json!({
+            "effects": { "a": { "trigger": 1, "generator": { "type": "number" } } }
+        }))
+        .unwrap_err();
+        assert_eq!(
+            errors.to_string(),
+            "failed to parse `effects.a.trigger`: `invalid type: integer `1`, expected a rate expression or a { type, ... } object`"
+        );
+    }
+
+    #[test]
+    fn trigger_with_an_unknown_type_names_it() {
+        let errors = parse(json!({
+            "effects": { "a": { "trigger": { "type": "nope" }, "generator": { "type": "number" } } }
+        }))
+        .unwrap_err();
+        let message = errors.to_string();
+        assert!(message.contains("`effects.a.trigger.type`"), "{message}");
+        assert!(message.contains("unknown variant `nope`"), "{message}");
+    }
+
+    #[test]
+    fn triggers_parse_as_shorthand_or_full() {
+        let spec = parse(json!({
+            "effects": {
+                "a": { "trigger": "hz(1, day)", "generator": { "type": "number" } },
+                "b": { "trigger": { "type": "effect", "key": "a" }, "generator": { "type": "number" } }
+            }
+        }))
+        .unwrap();
+        assert!(matches!(
+            spec.effects["a"].trigger,
+            Some(TriggerUnion::Shorthand(_))
+        ));
+        assert!(matches!(
+            spec.effects["b"].trigger,
+            Some(TriggerUnion::Full(Trigger::Effect { .. }))
+        ));
     }
 
     #[test]

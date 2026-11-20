@@ -368,6 +368,7 @@ impl EffectBuilder {
                 simulation_seed: seed,
                 effect_key: self.key.clone(),
                 path: vec![],
+                spec_path: vec!["effects".into(), self.key.clone(), "generator".into()],
             };
 
             generator_builder.build(visitor)
