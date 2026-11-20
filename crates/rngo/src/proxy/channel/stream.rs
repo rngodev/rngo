@@ -1,7 +1,6 @@
 use crate::effect::Input;
-use crate::parse::{ChannelParser, FormatParseContext};
-use crate::proxy::channel::{Channel, ChannelBuilder};
-use crate::proxy::format::Format;
+use crate::proxy::channel::{Channel, ChannelBuilder, ChannelParser};
+use crate::proxy::format::{Format, FormatParseContext};
 use crate::proxy::output::{ChannelOutput, OutputSender};
 use crate::{BuildError, ChannelError, Level, ParseError, spec};
 use serde_json::Value;

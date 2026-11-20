@@ -1,9 +1,8 @@
 use super::{
     Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
 };
-use crate::effect::generator::{GeneratorEdge, Metadata};
+use crate::effect::generator::{GeneratorEdge, GeneratorParseVisitor, GeneratorParser, Metadata};
 use crate::error::{BuildError, ParseError as Error};
-use crate::parse::{GeneratorParseVisitor, GeneratorParser};
 use crate::spec;
 use indexmap::IndexMap;
 use serde_json::Map;

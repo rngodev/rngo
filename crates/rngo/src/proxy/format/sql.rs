@@ -2,8 +2,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 use crate::effect::Input;
-use crate::parse::FormatParser;
-use crate::proxy::format::Format;
+use crate::proxy::format::{Format, FormatParser};
 use crate::{FormatError, ParseError, spec};
 
 #[derive(Debug)]

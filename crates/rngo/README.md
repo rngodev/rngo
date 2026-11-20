@@ -1,65 +1,27 @@
-<div align="center">
-
-<img src="https://raw.githubusercontent.com/rngodev/rngo/main/assets/logo.svg" alt="rngo logo" width="160" height="160">
-
-# rngo
-
-[![CI](https://github.com/rngodev/rngo/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/rngodev/rngo/actions/workflows/ci.yml)
-[![Crates.io](https://img.shields.io/crates/v/rngo.svg)](https://crates.io/crates/rngo)
-[![Docs.rs](https://docs.rs/rngo/badge.svg)](https://docs.rs/rngo)
-
-</div>
-
-The `rngo` library lets you build a **spec** in Rust and evaluate it.
+The `rngo` library lets you build a [spec](https://rngo.dev/docs/spec) in Rust and evaluate it.
 
 A **spec** describes the behavior of a system using the following components:
-- a run log (`SqliteRunLog` or `SimpleEventRunLog`, read and written through `RunLogReader` and `RunLogWriter`) records inputs, outputs and metadata
 - a `Simulation` generates a deterministic stream of inputs
 - a `Proxy` routes inputs to the appropriate system interfaces and captures outputs
 - an `Audit` surfaces pattern in logged inputs and outputs and may set expectations
 
-## Public API
-
-These items are the supported public API; everything else is private and may change in any release. Each item has exactly one path:
-
-- Time: timestamps are [`jiff::Timestamp`](https://docs.rs/jiff) and durations are `jiff::SignedDuration`, so a caller depends on `jiff` directly
-- `build`: the builder DSL below, i.e. the generator, channel, format and signal constructors (`object()`, `stream()`, `sql_format()`, `sql_signal()`, ...), their builder types, and `EffectBuilder`, `PrototypeBuilder`, `Moment`, `Bound` (opaque; built from a `Moment`, a timestamp or a CEL expression string)
-- `generator`: the extension API for writing your own generators in Rust: implement `Generator` and `GeneratorBuilder`, then pass the builder to `EffectBuilder::generator` or nest it in another builder. It also holds the types those traits use: `GeneratorContext`, `GeneratorResult`, `GeneratorBuildVisitor`, `GeneratorEdge`, `Metadata`, `TriggerEvent` and `JsonPointer`. The built-in generators themselves are private; use their builders in `build`. To give a generator its own `type` in specs, implement `GeneratorParser` (it gets a `GeneratorParseVisitor` for the spec fields and error paths) and register it with `Dialect::primitive().with_generator_parser(...)`.
-- `signal`: the extension API for custom signals: implement `Signal` (and `SignalParser` to give it a `type` in specs, registered with `Dialect::with_signal_parser`), returning a `SignalOutcome` and optional `SignalEval`. `SignalBuilder` lets the `AuditBuilder` take a built signal directly. `SignalOutcome` is also what an `Audit` records for each signal.
-- `spec`: `Spec` and `from_value`, for JSON or YAML specs (`from_value` checks the spec's `version`, then `Dialect::parse_simulation` parses it), `SPEC_VERSION`, `MIGRATION_URL`, and with the `schema` feature `json_schema` and `SCHEMA_NAMES` for the spec's JSON Schemas
-- `Dialect`: parses a `Spec` into the builders below. `Dialect::primitive()` has every built-in parser, and `with_generator_parser`, `with_format_parser`, `with_channel_parser` and `with_signal_parser` add custom ones. For full control, `Dialect::new` takes exactly the parsers you list.
-- `parsers`: one function per built-in parser (`parsers::number()`, `parsers::stream()`, `parsers::sql_signal()`, ...), for building a dialect with `Dialect::new`
-- `channel`: the extension API for custom channels: `Channel`, `ChannelBuilder`, `ChannelParser`, `ChannelOutput` and `OutputSender`
-- `format`: the extension API for custom formats: `Format`, `FormatParser` and `FormatParseContext` (which a channel parser uses to parse its `format` field), plus the built-in `SqlFormat` and `TemplateFormat`
-- `SimulationBuilder`, `Simulation`, `StandaloneSimulation`, `ProxyBuilder`, `Proxy`, `StopHandle`, `AuditBuilder`, `Audit`, `AuditReport`
-- `SqliteRunLog`, `SimpleEventRunLog`, `RunLogReader`, `RunLogWriter`
-- `Input`, `SkippedInput`, `Step`, `Metadata`, `Output`, `Level`
-- `Rng`: the seeded RNG `RunLogReader::random_for_effect`/`unique_for_effect` and `GeneratorBuildVisitor::rng` use, so the API doesn't expose `rand_pcg`
-- the errors, at the crate root: `ParseError`, `ParseErrorKind`, `BuildError`, `RunError`, `RunLogError`, `FormatError`, `ChannelError`, `ProxyError`, `SignalError`, `EffectKey`, `SimulationKey`
-
-Public enums and spec structs are `#[non_exhaustive]`, so they can gain variants and fields without a breaking change. The types the crate hands to extensions (`GeneratorContext`, `GeneratorBuildVisitor`, `TriggerEvent`, `Bound`) have private fields and accessor methods, so their internals can change freely.
+Each is connected via a `Log` instance, which persists all input, outputs and metadata.
 
 ## DSL
 
-You can define a spec using a builder DSL. First we'll define a `SqliteRunLog`, which writes `log.sqlite` into the directory you give it:
+You can define a spec using a builder DSL:
 
-```rust
-# fn main() {
-# let dir = tempfile::tempdir().unwrap();
-let run_log = rngo::SqliteRunLog::new(dir.path().to_path_buf()).unwrap();
-# }
-```
-
-Next a `Simulation`:
-
-```rust
-# fn main() {
-# let dir = tempfile::tempdir().unwrap();
-# let run_log = rngo::SqliteRunLog::new(dir.path().to_path_buf()).unwrap();
+```rust,no_run
 use std::num::NonZeroU64;
 use jiff::SignedDuration;
 use serde_json::Value;
 use rngo::build::*;
+
+// The run log records inputs, outputs and metadata. `SqliteRunLog` writes
+// `log.sqlite` into the directory you give it.
+let run_log = rngo::SqliteRunLog::new("run".into()).unwrap();
+
+// The simulation generates a deterministic stream of inputs.
 let mut simulation = rngo::Simulation::builder()
     .seed(41)
     .start(Moment::Relative(SignedDuration::from_hours(-2160)))
@@ -71,7 +33,7 @@ let mut simulation = rngo::Simulation::builder()
     })
     .effect("user", |effect| {
         effect
-            .trigger_expression("hz(10, hour) * (offset * 0.0001)".to_string())
+            .trigger_expression("hz(10, hour) * (1.0 + offset * 0.0001)".to_string())
             .limit(NonZeroU64::new(1000).unwrap())
             .generator(
                 object()
@@ -89,7 +51,7 @@ let mut simulation = rngo::Simulation::builder()
     .effect("post", |effect| {
         effect
             .prototype_key("recent")
-            .trigger_expression("hz(100, hour) * (offset * 0.0001)".to_string())
+            .trigger_expression("hz(100, hour) * (1.0 + offset * 0.0001)".to_string())
             .generator(
                 object()
                     .property("id", number().minimum(1).scale(0).step(1))
@@ -113,17 +75,9 @@ let mut simulation = rngo::Simulation::builder()
     })
     .run_log_reader(run_log.clone())
     .build().unwrap();
-# }
-```
 
-And then the `Proxy`:
-
-```rust,no_run
-# use rngo::build::*;
-# fn main() {
-# let dir = tempfile::tempdir().unwrap();
-# let run_log = rngo::SqliteRunLog::new(dir.path().to_path_buf()).unwrap();
-let proxy = rngo::Proxy::builder()
+// The proxy routes inputs to the system's interfaces and captures outputs.
+let mut proxy = rngo::Proxy::builder()
     .channel(
         "db",
         stream()
@@ -138,91 +92,8 @@ let proxy = rngo::Proxy::builder()
     .channel("log", stream().command("tail -F logs/app.log"))
     .run_log_writer(run_log.clone())
     .build().unwrap();
-# let _ = &proxy;
-# }
-```
 
-To evaluate the spec, first run the `Simulation` against the `Proxy`: 
-
-```rust
-# use std::num::NonZeroU64;
-# use jiff::SignedDuration;
-# use rngo::build::*;
-# fn main() {
-# let dir = tempfile::tempdir().unwrap();
-# let run_log = rngo::SqliteRunLog::new(dir.path().to_path_buf()).unwrap();
-# let mut simulation = rngo::Simulation::builder()
-#     .start(Moment::Relative(SignedDuration::from_hours(-24)))
-#     .end(Moment::Relative(SignedDuration::ZERO))
-#     .effect("user", |effect| {
-#         effect
-#             .trigger_expression("hz(10, hour)".to_string())
-#             .limit(NonZeroU64::new(20).unwrap())
-#             .generator(object().property("id", number().minimum(1).scale(0).step(1)))
-#     })
-#     .effect("post", |effect| {
-#         effect
-#             .trigger_expression("hz(10, hour)".to_string())
-#             .limit(NonZeroU64::new(20).unwrap())
-#             .generator(object().property("id", number().minimum(1).scale(0).step(1)))
-#     })
-#     .run_log_reader(run_log.clone())
-#     .build().unwrap();
-# let mut proxy = rngo::Proxy::builder()
-#     .channel("db", stdout())
-#     .channel("log", stdout())
-#     .effect_channels([("user", "db"), ("post", "db")])
-#     .run_log_writer(run_log.clone())
-#     .build().unwrap();
-for step in &mut simulation {
-    if let rngo::Step::Input(input) = step.unwrap() {
-        proxy.send(&input).unwrap();
-    }
-}
-
-proxy.finish().unwrap();
-# }
-```
-
-Then build an `Audit` and run it against the run log:
-
-```rust
-# use std::num::NonZeroU64;
-# use jiff::SignedDuration;
-# use rngo::build::*;
-# fn main() {
-# let dir = tempfile::tempdir().unwrap();
-# let run_log = rngo::SqliteRunLog::new(dir.path().to_path_buf()).unwrap();
-# let mut simulation = rngo::Simulation::builder()
-#     .start(Moment::Relative(SignedDuration::from_hours(-24)))
-#     .end(Moment::Relative(SignedDuration::ZERO))
-#     .effect("user", |effect| {
-#         effect
-#             .trigger_expression("hz(10, hour)".to_string())
-#             .limit(NonZeroU64::new(20).unwrap())
-#             .generator(object().property("id", number().minimum(1).scale(0).step(1)))
-#     })
-#     .effect("post", |effect| {
-#         effect
-#             .trigger_expression("hz(10, hour)".to_string())
-#             .limit(NonZeroU64::new(20).unwrap())
-#             .generator(object().property("id", number().minimum(1).scale(0).step(1)))
-#     })
-#     .run_log_reader(run_log.clone())
-#     .build().unwrap();
-# let mut proxy = rngo::Proxy::builder()
-#     .channel("db", stdout())
-#     .channel("log", stdout())
-#     .effect_channels([("user", "db"), ("post", "db")])
-#     .run_log_writer(run_log.clone())
-#     .build().unwrap();
-# for step in &mut simulation {
-#     if let rngo::Step::Input(input) = step.unwrap() {
-#         proxy.send(&input).unwrap();
-#     }
-# }
-#
-# proxy.finish().unwrap();
+// The audit checks patterns in the logged inputs and outputs.
 let audit = rngo::Audit::builder()
     .signal("some-inputs",
         sql_signal()
@@ -242,14 +113,23 @@ let audit = rngo::Audit::builder()
     .run_log(run_log)
     .build().unwrap();
 
+// To evaluate the spec, run the simulation against the proxy...
+for step in &mut simulation {
+    if let rngo::Step::Input(input) = step.unwrap() {
+        proxy.send(&input).unwrap();
+    }
+}
+
+proxy.finish().unwrap();
+
+// ...then run the audit against the run log.
 let audit_report = audit.run().unwrap();
 assert!(audit_report.passed());
-# }
 ```
 
 ## Spec
 
-You can also define the above in JSON (or YAML) spec - it would look like this:
+You can also define the above as a JSON (or YAML) spec:
 
 ```json
 {
@@ -267,7 +147,7 @@ You can also define the above in JSON (or YAML) spec - it would look like this:
         "user": {
             "channel": "db",
             "metadata": { "table": "USERS" },
-            "trigger": "hz(10, hour) * (offset * 0.0001)",
+            "trigger": "hz(10, hour) * (1.0 + offset * 0.0001)",
             "limit": 1000,
             "generator": {
                 "type": "object",
@@ -289,7 +169,7 @@ You can also define the above in JSON (or YAML) spec - it would look like this:
             "prototype": "recent",
             "channel": "db",
             "metadata": { "table": "POSTS" },
-            "trigger": "hz(100, hour) * (offset * 0.0001)",
+            "trigger": "hz(100, hour) * (1.0 + offset * 0.0001)",
             "generator": {
                 "type": "object",
                 "properties": {
@@ -350,17 +230,14 @@ You can also define the above in JSON (or YAML) spec - it would look like this:
 }
 ```
 
-You can parse and run like this:
+Then parse the simulation, proxy and audit and run them:
 
 ```rust,no_run
-# fn main() {
-# let readme = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"));
-# let raw = readme.split("```json\n").nth(1).unwrap().split("```").next().unwrap();
-# let dir = tempfile::tempdir().unwrap();
-let value: serde_json::Value = serde_json::from_str(raw).unwrap();
+let raw = std::fs::read_to_string("spec.json").unwrap();
+let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
 let spec = rngo::spec::from_value(value).unwrap();
 let dialect = rngo::Dialect::primitive();
-let run_log = rngo::SqliteRunLog::new(dir.path().to_path_buf()).unwrap();
+let run_log = rngo::SqliteRunLog::new("run".into()).unwrap();
 
 let mut simulation = dialect
     .parse_simulation(spec.clone()).unwrap()
@@ -378,6 +255,7 @@ let audit = dialect
     .run_log(run_log)
     .build().unwrap();
 
+// Run the simulation against the proxy, then audit the run log.
 for step in &mut simulation {
     if let rngo::Step::Input(input) = step.unwrap() {
         proxy.send(&input).unwrap();
@@ -388,5 +266,4 @@ proxy.finish().unwrap();
 
 let audit_report = audit.run().unwrap();
 assert!(audit_report.passed());
-# }
 ```

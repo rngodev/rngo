@@ -1,5 +1,5 @@
 use super::GeneratorBuilder;
-use crate::parse::{GeneratorParseVisitor, GeneratorParser};
+use crate::effect::generator::{GeneratorParseVisitor, GeneratorParser};
 use crate::{ParseError, spec};
 
 pub(crate) struct CustomParser {

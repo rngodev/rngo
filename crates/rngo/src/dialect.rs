@@ -1,15 +1,13 @@
-use super::format::{FormatParseContext, FormatParser};
-use super::generator::{GeneratorParseVisitor, GeneratorParser};
-use super::signal::SignalParser;
 use crate::ParseErrorKind;
-use crate::audit::signal::Signal;
+use crate::audit::signal::{Signal, SignalParser};
 use crate::audit::{Audit, AuditBuilder};
 use crate::effect::generator::custom::CustomParser;
+use crate::effect::generator::{GeneratorParseVisitor, GeneratorParser};
 use crate::effect::simulation::{Simulation, SimulationBuilder};
 use crate::error::ParseError;
 use crate::moment::Moment;
-use crate::parse::ChannelParser;
-use crate::proxy::channel::ChannelBuilder;
+use crate::proxy::channel::{ChannelBuilder, ChannelParser};
+use crate::proxy::format::{FormatParseContext, FormatParser};
 use crate::proxy::{Proxy, ProxyBuilder};
 use crate::spec::{self, Spec};
 use std::rc::Rc;
@@ -22,7 +20,7 @@ pub struct Dialect {
 }
 
 impl Dialect {
-    /// A dialect with exactly these parsers; see [`crate::parsers`] for the built-in ones.
+    /// A dialect with exactly these parsers; see [`crate::parse`] for the built-in ones.
     pub fn new(
         generator_parsers: Vec<Box<dyn GeneratorParser>>,
         format_parsers: Vec<Box<dyn FormatParser>>,
@@ -71,7 +69,7 @@ impl Dialect {
 
     /// The built-in generator, format, channel and signal parsers.
     pub fn primitive() -> Self {
-        use crate::parsers::*;
+        use crate::parse::*;
         Dialect::new(
             vec![
                 Box::new(array()),

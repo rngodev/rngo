@@ -3,7 +3,8 @@ pub(crate) mod sql;
 use cel::Program;
 pub(crate) use sql::SqlSignal;
 
-pub use crate::parse::SignalParser;
+mod parser;
+pub use parser::SignalParser;
 
 use crate::RunLogReader;
 use crate::error::BuildError;
