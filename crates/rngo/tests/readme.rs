@@ -18,13 +18,13 @@ fn readme_spec_is_valid() {
     let dialect = Dialect::primitive();
 
     dialect
-        .parse_simulation(spec.clone())
+        .parse_simulation(&spec)
         .unwrap()
         .run_log_reader(SimpleEventRunLog::new())
         .build()
         .unwrap();
-    dialect.parse_proxy(spec.clone()).unwrap();
-    dialect.parse_audit(spec).unwrap();
+    dialect.parse_proxy(&spec).unwrap();
+    dialect.parse_audit(&spec).unwrap();
 }
 
 /// The README's run loop and audit pass on its spec, with every channel swapped for `stdout` since the samples themselves are `no_run` (they spawn `psql` and `tail`).
@@ -45,7 +45,7 @@ fn readme_spec_runs_and_passes_audit() {
     let run_log = SqliteRunLog::new(dir.path().to_path_buf()).unwrap();
 
     let mut simulation = dialect
-        .parse_simulation(spec.clone())
+        .parse_simulation(&spec)
         .unwrap()
         .limit(200)
         .run_log_reader(run_log.clone())
@@ -53,7 +53,7 @@ fn readme_spec_runs_and_passes_audit() {
         .unwrap();
 
     let mut proxy = dialect
-        .parse_proxy(spec.clone())
+        .parse_proxy(&spec)
         .unwrap()
         .effect_channels(simulation.effect_channels())
         .run_log_writer(run_log.clone())
@@ -61,7 +61,7 @@ fn readme_spec_runs_and_passes_audit() {
         .unwrap();
 
     let audit = dialect
-        .parse_audit(spec)
+        .parse_audit(&spec)
         .unwrap()
         .run_log(run_log)
         .build()

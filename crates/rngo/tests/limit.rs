@@ -120,7 +120,7 @@ fn spec_limit_is_applied() {
     });
 
     let inputs: Vec<_> = Dialect::primitive()
-        .parse_simulation(rngo::spec::from_value(value).unwrap())
+        .parse_simulation(&rngo::spec::from_value(value).unwrap())
         .unwrap()
         .run_log_reader(rngo::SimpleEventRunLog::new())
         .build()

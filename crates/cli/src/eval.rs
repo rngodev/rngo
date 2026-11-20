@@ -52,18 +52,15 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
     let scenario_spec = scenario.map(|name| spec.with_scenario(&name)).transpose()?;
     let patched = scenario_spec.as_ref().unwrap_or(&spec);
 
-    let rewritten = if stdout {
-        Some(to_stdout_channels(patched))
-    } else {
-        scenario_spec.clone()
-    };
-    let effective = rewritten.as_ref().unwrap_or(&spec);
+    let stdout_spec = stdout.then(|| to_stdout_channels(patched));
+    let effective = stdout_spec.as_ref().unwrap_or(patched);
+    let rewritten = stdout_spec.as_ref().or(scenario_spec.as_ref());
 
-    let mut simulation_builder = dialect.parse_simulation(patched.clone())?;
+    let mut simulation_builder = dialect.parse_simulation(patched)?;
 
-    let mut proxy_builder = dialect.parse_proxy(effective.clone())?;
+    let mut proxy_builder = dialect.parse_proxy(effective)?;
 
-    let audit_builder = dialect.parse_audit(spec.clone())?;
+    let audit_builder = dialect.parse_audit(&spec)?;
 
     if let Some(limit) = limit {
         simulation_builder = simulation_builder.limit(limit.get());
@@ -76,7 +73,7 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
         return Ok(true);
     }
 
-    let eval_dir = prepare_eval_dir(&rngo_dir, &spec, rewritten.as_ref())?;
+    let eval_dir = prepare_eval_dir(&rngo_dir, &spec, rewritten)?;
 
     let sqlite_run_log = SqliteRunLog::new(eval_dir.clone())?;
     let reader = sqlite_run_log.clone();

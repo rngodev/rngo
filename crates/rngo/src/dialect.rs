@@ -88,7 +88,8 @@ impl Dialect {
         )
     }
 
-    pub fn parse_simulation(&self, spec: Spec) -> Result<SimulationBuilder, ParseErrors> {
+    /// Parses the spec's seed, time window, prototypes and effects into a simulation builder.
+    pub fn parse_simulation(&self, spec: &Spec) -> Result<SimulationBuilder, ParseErrors> {
         let mut errors = vec![];
         let mut simulation_builder = Simulation::builder();
         let simulation_moment_parser = Moment::parser();
@@ -236,7 +237,8 @@ impl Dialect {
         }
     }
 
-    pub fn parse_proxy(&self, spec: Spec) -> Result<ProxyBuilder, ParseErrors> {
+    /// Parses the spec's channels, and checks the channels its effects and prototypes name.
+    pub fn parse_proxy(&self, spec: &Spec) -> Result<ProxyBuilder, ParseErrors> {
         let mut errors = vec![];
         let mut proxy_builder = Proxy::builder();
 
@@ -268,7 +270,7 @@ impl Dialect {
             }
         }
 
-        let formats = FormatParseContext::new(&self.format_parsers, &spec);
+        let formats = FormatParseContext::new(&self.format_parsers, spec);
 
         for (key, channel) in &spec.channels {
             if channel.fields.contains_key("target") {
@@ -296,7 +298,8 @@ impl Dialect {
         }
     }
 
-    pub fn parse_audit(&self, spec: Spec) -> Result<AuditBuilder, ParseErrors> {
+    /// Parses the spec's signals into an audit builder.
+    pub fn parse_audit(&self, spec: &Spec) -> Result<AuditBuilder, ParseErrors> {
         let mut errors = vec![];
         let mut audit_builder = Audit::builder();
 
@@ -380,7 +383,7 @@ mod tests {
     fn proxy_errors(channels: serde_json::Value) -> ParseErrors {
         let spec =
             spec::from_value(serde_json::json!({ "effects": {}, "channels": channels })).unwrap();
-        match Dialect::primitive().parse_proxy(spec) {
+        match Dialect::primitive().parse_proxy(&spec) {
             Ok(_) => panic!("expected parse errors"),
             Err(errors) => errors,
         }
@@ -452,7 +455,7 @@ mod tests {
     fn audit_errors(signals: serde_json::Value) -> ParseErrors {
         let spec =
             spec::from_value(serde_json::json!({ "effects": {}, "signals": signals })).unwrap();
-        match Dialect::primitive().parse_audit(spec) {
+        match Dialect::primitive().parse_audit(&spec) {
             Ok(_) => panic!("expected parse errors"),
             Err(errors) => errors,
         }
@@ -497,7 +500,7 @@ mod tests {
             value["seed"] = serde_json::json!(seed);
         }
         Dialect::primitive()
-            .parse_simulation(spec::from_value(value).unwrap())
+            .parse_simulation(&spec::from_value(value).unwrap())
             .unwrap()
             .standalone()
             .unwrap()

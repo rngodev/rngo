@@ -245,18 +245,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let run_log = rngo::SqliteRunLog::new("run".into())?;
 
     let mut simulation = dialect
-        .parse_simulation(spec.clone())?
+        .parse_simulation(&spec)?
         .run_log_reader(run_log.clone())
         .build()?;
 
     let mut proxy = dialect
-        .parse_proxy(spec.clone())?
+        .parse_proxy(&spec)?
         .effect_channels(simulation.effect_channels())
         .run_log_writer(run_log.clone())
         .build()?;
 
     let audit = dialect
-        .parse_audit(spec)?
+        .parse_audit(&spec)?
         .run_log(run_log)
         .build()?;
 

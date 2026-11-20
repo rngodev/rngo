@@ -102,7 +102,7 @@ fn nested_build_error_displays_its_spec_path() {
         }
     });
     let errors = Dialect::primitive()
-        .parse_simulation(rngo::spec::from_value(value).unwrap())
+        .parse_simulation(&rngo::spec::from_value(value).unwrap())
         .unwrap()
         .run_log_reader(rngo::SimpleEventRunLog::new())
         .build()
@@ -151,7 +151,7 @@ fn spec() {
 
     let value: serde_json::Value = serde_json::from_str(json).unwrap();
     let errors = Dialect::primitive()
-        .parse_simulation(rngo::spec::from_value(value).unwrap())
+        .parse_simulation(&rngo::spec::from_value(value).unwrap())
         .unwrap_err();
 
     let by_effect =
@@ -214,7 +214,7 @@ fn spec() {
 fn number_bounds() {
     let parse = |generator: serde_json::Value| {
         Dialect::primitive().parse_simulation(
-            rngo::spec::from_value(
+            &rngo::spec::from_value(
                 serde_json::json!({ "effects": { "a": { "generator": generator } } }),
             )
             .unwrap(),
