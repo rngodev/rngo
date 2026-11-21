@@ -12,7 +12,6 @@ Each is connected via a `Log` instance, which persists all input, outputs and me
 You can define a spec using a builder DSL:
 
 ```rust,no_run
-use std::num::NonZeroU64;
 use std::sync::Arc;
 use jiff::SignedDuration;
 use serde_json::Value;
@@ -36,7 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .effect("user", |effect| {
             effect
                 .trigger_expression("hz(10, hour) * (1.0 + offset * 0.0001)")
-                .limit(NonZeroU64::new(1000).unwrap())
+                .limit(1000)
                 .generator(
                     object()
                         .property("id", number().minimum(1).scale(0).step(1))

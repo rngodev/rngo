@@ -146,6 +146,7 @@ impl SimulationBuilder {
         self
     }
 
+    /// The most inputs the whole simulation produces; skipped attempts don't count. Must be at least 1.
     pub fn limit(mut self, limit: u64) -> Self {
         self.limit = Some(limit);
         self
@@ -171,6 +172,13 @@ impl SimulationBuilder {
     pub fn build(self) -> Result<Simulation, BuildErrors> {
         let mut errors = vec![];
 
+        if self.limit == Some(0) {
+            errors.push(BuildError::simulation(
+                SimulationKey::Limit,
+                "limit must be at least 1",
+            ));
+        }
+
         let Some(run_log_reader) = self.run_log_reader else {
             errors.push(BuildError::simulation(
                 SimulationKey::RunLogReader,
@@ -180,13 +188,19 @@ impl SimulationBuilder {
         };
 
         let now = self.now.unwrap_or_else(Timestamp::now);
-        let default_prototype = self.default_prototype.clone().now(now).build()?;
+        let default_prototype = match self.default_prototype.clone().now(now).build() {
+            Ok(prototype) => prototype,
+            Err(e) => {
+                errors.extend(e);
+                return Err(errors.into());
+            }
+        };
         let (Some(start), Some(_)) = (default_prototype.start, default_prototype.end) else {
-            return Err(BuildError::simulation(
+            errors.push(BuildError::simulation(
                 SimulationKey::Start,
                 "the simulation must have a start and an end",
-            )
-            .into());
+            ));
+            return Err(errors.into());
         };
 
         let mut prototypes = IndexMap::new();
@@ -344,7 +358,7 @@ mod tests {
         let simulation_builder = super::Simulation::builder()
             .effect("upstream", |e| {
                 e.trigger_hertz(1.0)
-                    .limit(std::num::NonZeroU64::new(3).unwrap())
+                    .limit(3)
                     .generator(AlternatingGeneratorBuilder)
             })
             .effect("downstream", |e| {

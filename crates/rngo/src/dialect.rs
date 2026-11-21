@@ -133,7 +133,7 @@ impl Dialect {
                 }
 
                 if let Some(limit) = prototype.limit {
-                    prototype_builder = prototype_builder.limit(limit);
+                    prototype_builder = prototype_builder.limit(limit.get());
                 }
 
                 if let Some(channel) = &prototype.channel {
@@ -205,7 +205,7 @@ impl Dialect {
                 }
 
                 if let Some(limit) = effect.limit {
-                    effect_builder = effect_builder.limit(limit);
+                    effect_builder = effect_builder.limit(limit.get());
                 }
 
                 if let Some(channel) = &effect.channel {

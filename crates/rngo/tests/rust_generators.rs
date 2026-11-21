@@ -5,7 +5,6 @@ use rngo::generator::{
 };
 use rngo::{BuildErrors, Dialect, Input, ParseErrors, Simulation};
 use serde_json::{Value, json};
-use std::num::NonZeroU64;
 
 #[derive(Debug)]
 struct Counter {
@@ -42,7 +41,7 @@ fn run(builder: CounterBuilder) -> Result<Vec<Input>, BuildErrors> {
     Ok(Simulation::builder()
         .effect("counter", |e| {
             e.trigger_hertz(1.0)
-                .limit(NonZeroU64::new(3).unwrap())
+                .limit(3)
                 .generator(object().property("counter", builder))
         })
         .run_log_reader(std::sync::Arc::new(rngo::SimpleEventRunLog::new()))

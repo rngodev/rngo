@@ -20,7 +20,6 @@ use jiff::{SignedDuration, Timestamp};
 use multi_try::MultiTry;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::num::NonZeroU64;
 use std::sync::Arc;
 use trigger::{Trigger, TriggerConfig};
 
@@ -192,7 +191,7 @@ pub struct EffectBuilder {
     key: String,
     start: Option<Bound>,
     end: Option<Bound>,
-    limit: Option<NonZeroU64>,
+    limit: Option<u64>,
     channel: Option<String>,
     prototype_key: Option<String>,
     trigger: TriggerConfig,
@@ -227,8 +226,8 @@ impl EffectBuilder {
         self
     }
 
-    /// The most inputs the effect produces, overriding its prototype's limit; skipped attempts don't count.
-    pub fn limit(mut self, limit: NonZeroU64) -> Self {
+    /// The most inputs the effect produces, overriding its prototype's limit; skipped attempts don't count. Must be at least 1.
+    pub fn limit(mut self, limit: u64) -> Self {
         self.limit = Some(limit);
         self
     }
@@ -274,7 +273,7 @@ impl EffectBuilder {
         self
     }
 
-    /// Lays the effect's own `start`, `end` and `limit` over its prototype's and builds it; errors unless the window has a `start` and an `end` or `limit`, and a `start` before any `end`.
+    /// Lays the effect's own `start`, `end` and `limit` over its prototype's and builds it; errors unless the window has a `start` and an `end` or `limit`, a `start` before any `end`, and a nonzero `limit`.
     pub(crate) fn build(self, context: EffectContext) -> Result<Effect, BuildErrors> {
         let EffectContext {
             now,
@@ -283,6 +282,13 @@ impl EffectBuilder {
             run_log_reader,
         } = context;
         let mut errors: Vec<BuildError> = vec![];
+        if self.limit == Some(0) {
+            errors.push(BuildError::effect(
+                self.key.clone(),
+                EffectKey::Limit,
+                "limit must be at least 1",
+            ));
+        }
         let own_start =
             self.start
                 .as_ref()
@@ -313,7 +319,7 @@ impl EffectBuilder {
         }
         let start = own_start.or(prototype.start);
         let end = own_end.or(prototype.end);
-        let limit = self.limit.or(prototype.limit).map(NonZeroU64::get);
+        let limit = self.limit.or(prototype.limit);
 
         if start.is_none() {
             errors.push(BuildError::effect(
@@ -450,7 +456,6 @@ mod tests {
     use crate::error::BuildErrors;
     use crate::log::SimpleEventRunLog;
     use jiff::{SignedDuration, Timestamp};
-    use std::num::NonZeroU64;
     use std::sync::Arc;
 
     fn context(prototype: &Prototype) -> EffectContext<'_> {
@@ -537,7 +542,7 @@ mod tests {
         let effect = build(
             Effect::builder("ping")
                 .trigger_hertz(1000.0)
-                .limit(NonZeroU64::new(3).unwrap())
+                .limit(3)
                 .generator(constant().value(1)),
         );
 
@@ -556,7 +561,7 @@ mod tests {
         let effect = build(
             Effect::builder("alternating")
                 .trigger_hertz(1000.0)
-                .limit(NonZeroU64::new(3).unwrap())
+                .limit(3)
                 .generator(AlternatingGeneratorBuilder),
         );
 

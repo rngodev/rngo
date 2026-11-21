@@ -1,14 +1,13 @@
 use crate::effect::bound::{Bound, BoundKind};
 use crate::error::{BuildError, BuildErrors, SimulationKey};
 use jiff::Timestamp;
-use std::num::NonZeroU64;
 
 /// A time window and an input cap, each optional; an effect takes the parts it doesn't set itself from its prototype.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Prototype {
     pub(crate) start: Option<Timestamp>,
     pub(crate) end: Option<Timestamp>,
-    pub(crate) limit: Option<NonZeroU64>,
+    pub(crate) limit: Option<u64>,
     /// The key of the channel effects on this prototype write to unless they set their own.
     pub(crate) channel: Option<String>,
 }
@@ -26,7 +25,7 @@ pub struct PrototypeBuilder {
     name: Option<String>,
     start: Option<Bound>,
     end: Option<Bound>,
-    limit: Option<NonZeroU64>,
+    limit: Option<u64>,
     channel: Option<String>,
     now: Option<Timestamp>,
     prototype: Option<Prototype>,
@@ -52,8 +51,8 @@ impl PrototypeBuilder {
         self
     }
 
-    /// The most inputs each effect on this prototype produces, unless it sets its own limit.
-    pub fn limit(mut self, limit: NonZeroU64) -> Self {
+    /// The most inputs each effect on this prototype produces, unless it sets its own limit; must be at least 1.
+    pub fn limit(mut self, limit: u64) -> Self {
         self.limit = Some(limit);
         self
     }
@@ -74,11 +73,24 @@ impl PrototypeBuilder {
         self
     }
 
-    /// Resolves the prototype; errors if an expression doesn't parse or if `start` isn't before `end`.
+    fn message(&self, message: &str) -> String {
+        match &self.name {
+            Some(name) => format!("prototype \"{name}\": {message}"),
+            None => message.into(),
+        }
+    }
+
+    /// Resolves the prototype; errors if an expression doesn't parse, if `start` isn't before `end`, or if `limit` is 0.
     pub(crate) fn build(&self) -> Result<Prototype, BuildErrors> {
         let now = self.now.unwrap_or_else(Timestamp::now);
         let prototype = self.prototype.as_ref();
         let mut errors = vec![];
+        if self.limit == Some(0) {
+            errors.push(BuildError::simulation(
+                SimulationKey::Limit,
+                self.message("limit must be at least 1"),
+            ));
+        }
         let start = self
             .start
             .as_ref()
@@ -108,11 +120,13 @@ impl PrototypeBuilder {
         if let (Some(start), Some(end)) = (start, end)
             && start >= end
         {
-            let message = match &self.name {
-                Some(name) => format!("prototype \"{name}\": start must be before end"),
-                None => "start must be before end".into(),
-            };
-            return Err(BuildError::simulation(SimulationKey::Start, message).into());
+            errors.push(BuildError::simulation(
+                SimulationKey::Start,
+                self.message("start must be before end"),
+            ));
+        }
+        if !errors.is_empty() {
+            return Err(errors.into());
         }
 
         Ok(Prototype {
@@ -129,7 +143,6 @@ mod tests {
     use super::Prototype;
     use crate::moment::Moment;
     use jiff::{SignedDuration, Timestamp};
-    use std::num::NonZeroU64;
 
     fn now() -> Timestamp {
         let now = Timestamp::now();
@@ -146,7 +159,7 @@ mod tests {
     fn resolves_moments_expressions_and_limit() {
         let now = now();
         let prototype = Prototype::builder()
-            .limit(NonZeroU64::new(3).unwrap())
+            .limit(3)
             .start(Moment::Relative(SignedDuration::from_hours(24 * -2)))
             .end("prototype.end - days(1)")
             .now(now)
@@ -163,7 +176,7 @@ mod tests {
             Some(now - SignedDuration::from_hours(24 * 2))
         );
         assert_eq!(prototype.end, Some(now - SignedDuration::from_hours(24)));
-        assert_eq!(prototype.limit, NonZeroU64::new(3));
+        assert_eq!(prototype.limit, Some(3));
     }
 
     #[test]
