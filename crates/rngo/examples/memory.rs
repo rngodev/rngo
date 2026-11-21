@@ -77,7 +77,7 @@ fn spec() -> serde_json::Value {
 /// produced and the peak heap bytes allocated during the run (excluding setup).
 fn measure(limit: u64) -> (usize, usize) {
     let tmp = TempDir::new().unwrap();
-    let log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
+    let log = std::sync::Arc::new(SqliteRunLog::new(tmp.path().to_path_buf()).unwrap());
     let simulation = Dialect::primitive()
         .parse_simulation(&rngo::spec::from_value(spec()).unwrap())
         .unwrap()

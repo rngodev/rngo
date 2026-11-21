@@ -5,7 +5,7 @@ use crate::Rng;
 use crate::effect::generator::{GeneratorParseVisitor, GeneratorParser, Metadata};
 use crate::error::{BuildErrors, ParseErrors};
 use crate::log::RunLogReader;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Cursor {
@@ -15,7 +15,7 @@ pub enum Cursor {
 
 #[derive(Debug)]
 pub(crate) struct Reference {
-    event_run_log: Rc<dyn RunLogReader>,
+    event_run_log: Arc<dyn RunLogReader>,
     key: String,
     cursor: Cursor,
     unique_cursor: Option<String>,

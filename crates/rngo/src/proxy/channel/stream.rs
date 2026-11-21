@@ -8,7 +8,6 @@ use serde_json::Value;
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Stdio};
-use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
@@ -23,7 +22,7 @@ const STDERR_TAIL_LINES: usize = 5;
 #[derive(Debug)]
 pub(crate) struct Stream {
     channel_key: String,
-    format: Option<Rc<dyn Format>>,
+    format: Option<Arc<dyn Format>>,
     child: Child,
     stdin: Option<ChildStdin>,
     reader_threads: Vec<JoinHandle<()>>,
@@ -135,12 +134,12 @@ impl Drop for Stream {
 #[derive(Default)]
 pub struct StreamBuilder {
     command: Option<String>,
-    format: Option<Rc<dyn Format>>,
+    format: Option<Arc<dyn Format>>,
 }
 
 impl StreamBuilder {
     pub fn format(mut self, format: impl Format + 'static) -> Self {
-        self.format = Some(Rc::new(format));
+        self.format = Some(Arc::new(format));
         self
     }
 

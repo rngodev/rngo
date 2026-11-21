@@ -5,23 +5,28 @@ use crate::{Level, Output, Rng, RunLogError};
 use jiff::Timestamp;
 use rusqlite::types::Value as SqlValue;
 use rusqlite::{Connection, OptionalExtension};
-use std::cell::{Cell, RefCell, RefMut};
 use std::path::PathBuf;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 const BATCH_SIZE: usize = 500;
 
+/// A run log persisted to `log.sqlite`, buffering writes in batched transactions.
 #[derive(Debug)]
 pub struct SqliteRunLog {
-    connection: RefCell<Connection>,
-    pending: Cell<usize>,
-    pool: RefCell<InputPool<u64>>,
-    failure: RefCell<Option<RunLogError>>,
+    state: Mutex<State>,
+}
+
+#[derive(Debug)]
+struct State {
+    connection: Connection,
+    pending: usize,
+    pool: InputPool<u64>,
+    failure: Option<RunLogError>,
 }
 
 impl SqliteRunLog {
     /// Opens (creating if needed) `log.sqlite` in `directory`.
-    pub fn new(directory: PathBuf) -> Result<Rc<Self>, RunLogError> {
+    pub fn new(directory: PathBuf) -> Result<Self, RunLogError> {
         let connection = Connection::open(directory.join("log.sqlite"))?;
 
         connection.execute_batch(
@@ -68,50 +73,65 @@ impl SqliteRunLog {
                 ",
         )?;
 
-        Ok(Rc::new(SqliteRunLog {
-            connection: RefCell::new(connection),
-            pending: Cell::new(0),
-            pool: RefCell::new(InputPool::default()),
-            failure: RefCell::new(None),
-        }))
+        Ok(SqliteRunLog {
+            state: Mutex::new(State {
+                connection,
+                pending: 0,
+                pool: InputPool::default(),
+                failure: None,
+            }),
+        })
+    }
+
+    fn state(&self) -> MutexGuard<'_, State> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Commits pending writes, or returns the first failure a lookup has hit since the last check.
     pub fn commit(&self) -> Result<(), RunLogError> {
-        self.check()?;
-        commit(&self.connection, &self.pending)
+        let mut state = self.state();
+        state.check()?;
+        state.commit()
     }
+}
 
-    fn check(&self) -> Result<(), RunLogError> {
-        match self.failure.borrow_mut().take() {
+impl State {
+    fn check(&mut self) -> Result<(), RunLogError> {
+        match self.failure.take() {
             Some(error) => Err(error),
             None => Ok(()),
         }
     }
 
-    fn lookup<T>(&self, result: Result<Option<T>, RunLogError>) -> Option<T> {
+    fn lookup<T>(&mut self, result: Result<Option<T>, RunLogError>) -> Option<T> {
         match result {
             Ok(found) => found,
             Err(error) => {
-                self.failure.borrow_mut().get_or_insert(error);
+                self.failure.get_or_insert(error);
                 None
             }
         }
     }
 
-    /// The input pool, with `effect` tracked.
-    fn pool(&self, effect: &str) -> Result<RefMut<'_, InputPool<u64>>, RunLogError> {
-        let mut pool = self.pool.borrow_mut();
-        if !pool.is_tracked(effect) {
-            load_effect(&self.connection.borrow(), &mut pool, effect)?;
+    fn track(&mut self, effect: &str) -> Result<(), RunLogError> {
+        if !self.pool.is_tracked(effect) {
+            load_effect(&self.connection, &mut self.pool, effect)?;
         }
-        Ok(pool)
+        Ok(())
     }
 
-    fn record(&self) -> Result<(), RunLogError> {
-        self.pending.set(self.pending.get() + 1);
-        if self.pending.get() >= BATCH_SIZE {
-            commit(&self.connection, &self.pending)?;
+    fn record(&mut self) -> Result<(), RunLogError> {
+        self.pending += 1;
+        if self.pending >= BATCH_SIZE {
+            self.commit()?;
+        }
+        Ok(())
+    }
+
+    fn commit(&mut self) -> Result<(), RunLogError> {
+        if self.pending > 0 {
+            self.connection.execute_batch("COMMIT; BEGIN;")?;
+            self.pending = 0;
         }
         Ok(())
     }
@@ -119,7 +139,8 @@ impl SqliteRunLog {
 
 impl Drop for SqliteRunLog {
     fn drop(&mut self) {
-        let _ = self.connection.borrow().execute_batch("COMMIT;");
+        let state = self.state.get_mut().unwrap_or_else(PoisonError::into_inner);
+        let _ = state.connection.execute_batch("COMMIT;");
     }
 }
 
@@ -148,14 +169,6 @@ fn load_effect(
     for row in rows {
         let (cursor, id) = row?;
         pool.mark(effect, &cursor, &(id as u64));
-    }
-    Ok(())
-}
-
-fn commit(connection: &RefCell<Connection>, pending: &Cell<usize>) -> Result<(), RunLogError> {
-    if pending.get() > 0 {
-        connection.borrow().execute_batch("COMMIT; BEGIN;")?;
-        pending.set(0);
     }
     Ok(())
 }
@@ -198,9 +211,10 @@ fn insert_metadata(connection: &Connection, metadata: &Metadata) -> Result<(), R
 
 impl RunLogWriter for SqliteRunLog {
     fn push_input(&self, input: Input) -> Result<(), RunLogError> {
-        self.check()?;
-        self.connection
-            .borrow()
+        let mut state = self.state();
+        state.check()?;
+        state
+            .connection
             .prepare_cached(
                 "INSERT INTO inputs (id, effect, timestamp, data, metadata) VALUES (?1, ?2, ?3, ?4, ?5)",
             )?
@@ -212,14 +226,15 @@ impl RunLogWriter for SqliteRunLog {
                 serde_json::to_string(&input.metadata)?,
             ])?;
 
-        self.pool.borrow_mut().push(&input.effect, input.id);
-        self.record()
+        state.pool.push(&input.effect, input.id);
+        state.record()
     }
 
     fn push_output(&self, output: Output) -> Result<(), RunLogError> {
-        self.check()?;
-        self.connection
-            .borrow()
+        let mut state = self.state();
+        state.check()?;
+        state
+            .connection
             .prepare_cached(
                 "INSERT INTO outputs (input_id, timestamp, channel, level, data, metadata) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             )?
@@ -235,13 +250,14 @@ impl RunLogWriter for SqliteRunLog {
                 output.data,
                 serde_json::to_string(&output.metadata)?,
             ])?;
-        self.record()
+        state.record()
     }
 
     fn push_metadata(&self, metadata: Metadata) -> Result<(), RunLogError> {
-        self.check()?;
-        insert_metadata(&self.connection.borrow(), &metadata)?;
-        self.record()
+        let mut state = self.state();
+        state.check()?;
+        insert_metadata(&state.connection, &metadata)?;
+        state.record()
     }
 
     fn flush(&self) -> Result<(), RunLogError> {
@@ -265,7 +281,7 @@ fn sql_value_to_json(value: SqlValue) -> Result<serde_json::Value, RunLogError> 
     })
 }
 
-fn query_last(connection: &Connection) -> Result<Option<Rc<Input>>, RunLogError> {
+fn query_last(connection: &Connection) -> Result<Option<Arc<Input>>, RunLogError> {
     let row = connection
         .prepare_cached(
             "SELECT id, effect, timestamp, data, metadata FROM inputs ORDER BY id DESC LIMIT 1",
@@ -284,7 +300,7 @@ fn query_last(connection: &Connection) -> Result<Option<Rc<Input>>, RunLogError>
         return Ok(None);
     };
 
-    Ok(Some(Rc::new(Input {
+    Ok(Some(Arc::new(Input {
         id: id as u64,
         effect,
         timestamp: timestamp_from_millis(timestamp),
@@ -296,7 +312,7 @@ fn query_last(connection: &Connection) -> Result<Option<Rc<Input>>, RunLogError>
 fn query_last_for_effect(
     connection: &Connection,
     key: &str,
-) -> Result<Option<Rc<Input>>, RunLogError> {
+) -> Result<Option<Arc<Input>>, RunLogError> {
     let row = connection
         .prepare_cached(
             "SELECT id, timestamp, data, metadata FROM inputs WHERE effect = ?1 ORDER BY id DESC LIMIT 1",
@@ -314,7 +330,7 @@ fn query_last_for_effect(
         return Ok(None);
     };
 
-    Ok(Some(Rc::new(Input {
+    Ok(Some(Arc::new(Input {
         id: id as u64,
         effect: key.to_string(),
         timestamp: timestamp_from_millis(timestamp),
@@ -347,11 +363,11 @@ fn query_random_for_effect(
     pool: &InputPool<u64>,
     key: &str,
     rng: &mut Rng,
-) -> Result<Option<Rc<Input>>, RunLogError> {
+) -> Result<Option<Arc<Input>>, RunLogError> {
     let Some(id) = pool.random(key, rng) else {
         return Ok(None);
     };
-    Ok(Some(Rc::new(query_by_id(connection, key, id)?)))
+    Ok(Some(Arc::new(query_by_id(connection, key, id)?)))
 }
 
 fn query_unique_for_effect(
@@ -360,7 +376,7 @@ fn query_unique_for_effect(
     key: &str,
     cursor: &str,
     rng: &mut Rng,
-) -> Result<Option<Rc<Input>>, RunLogError> {
+) -> Result<Option<Arc<Input>>, RunLogError> {
     let Some(id) = pool.take(key, cursor, rng) else {
         return Ok(None);
     };
@@ -376,36 +392,43 @@ fn query_unique_for_effect(
         None,
     )?;
 
-    Ok(Some(Rc::new(input)))
+    Ok(Some(Arc::new(input)))
 }
 
 impl RunLogReader for SqliteRunLog {
-    fn last(&self) -> Option<Rc<Input>> {
-        self.lookup(query_last(&self.connection.borrow()))
+    fn last(&self) -> Option<Arc<Input>> {
+        let mut state = self.state();
+        let result = query_last(&state.connection);
+        state.lookup(result)
     }
 
-    fn last_for_effect(&self, key: &str) -> Option<Rc<Input>> {
-        self.lookup(query_last_for_effect(&self.connection.borrow(), key))
+    fn last_for_effect(&self, key: &str) -> Option<Arc<Input>> {
+        let mut state = self.state();
+        let result = query_last_for_effect(&state.connection, key);
+        state.lookup(result)
     }
 
-    fn random_for_effect(&self, key: &str, rng: &mut Rng) -> Option<Rc<Input>> {
-        let result = self
-            .pool(key)
-            .and_then(|pool| query_random_for_effect(&self.connection.borrow(), &pool, key, rng));
-        self.lookup(result)
+    fn random_for_effect(&self, key: &str, rng: &mut Rng) -> Option<Arc<Input>> {
+        let mut state = self.state();
+        let result = state
+            .track(key)
+            .and_then(|()| query_random_for_effect(&state.connection, &state.pool, key, rng));
+        state.lookup(result)
     }
 
-    fn unique_for_effect(&self, key: &str, cursor: &str, rng: &mut Rng) -> Option<Rc<Input>> {
-        let result = self.pool(key).and_then(|mut pool| {
-            query_unique_for_effect(&self.connection.borrow(), &mut pool, key, cursor, rng)
+    fn unique_for_effect(&self, key: &str, cursor: &str, rng: &mut Rng) -> Option<Arc<Input>> {
+        let mut state = self.state();
+        let state_ref = &mut *state;
+        let result = state_ref.track(key).and_then(|()| {
+            query_unique_for_effect(&state_ref.connection, &mut state_ref.pool, key, cursor, rng)
         });
-        self.lookup(result)
+        state.lookup(result)
     }
 
     fn query(&self, query: &str) -> Result<serde_json::Value, RunLogError> {
         let value = self
+            .state()
             .connection
-            .borrow()
             .query_row(query, [], |row| row.get::<_, rusqlite::types::Value>(0))?;
         sql_value_to_json(value)
     }

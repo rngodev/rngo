@@ -14,7 +14,7 @@ fn builders_accept_str_and_string() {
             e.trigger_effect(String::from("upstream"))
                 .generator(object().property(String::from("b"), constant().value(1)))
         })
-        .run_log_reader(SimpleEventRunLog::new())
+        .run_log_reader(std::sync::Arc::new(SimpleEventRunLog::new()))
         .build();
     assert!(simulation.is_ok());
 }

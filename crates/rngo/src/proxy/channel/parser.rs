@@ -3,7 +3,7 @@ use crate::proxy::channel::ChannelBuilder;
 use crate::proxy::format::FormatParseContext;
 use crate::spec;
 
-pub trait ChannelParser {
+pub trait ChannelParser: Send + Sync {
     fn key(&self) -> &str;
 
     /// Parses `channel` into a channel builder; `formats` parses its `format` field for channels that

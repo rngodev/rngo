@@ -8,7 +8,7 @@ use crate::{RunLogReader, SimulationError};
 use indexmap::IndexMap;
 use jiff::{SignedDuration, Timestamp};
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct Simulation {
@@ -55,12 +55,12 @@ impl Iterator for Simulation {
 #[derive(Debug)]
 pub struct StandaloneSimulation {
     simulation: Simulation,
-    log: Rc<SimpleEventRunLog>,
+    log: Arc<SimpleEventRunLog>,
 }
 
 impl StandaloneSimulation {
     /// The log the inputs are written to, which the simulation's effects read from.
-    pub fn run_log(&self) -> &Rc<SimpleEventRunLog> {
+    pub fn run_log(&self) -> &Arc<SimpleEventRunLog> {
         &self.log
     }
 }
@@ -79,7 +79,7 @@ impl Iterator for StandaloneSimulation {
 
 #[derive(Debug)]
 pub struct SimulationBuilder {
-    run_log_reader: Option<Rc<dyn RunLogReader>>,
+    run_log_reader: Option<Arc<dyn RunLogReader>>,
     effect_builders: Vec<EffectBuilder>,
     seed: Option<u64>,
     now: Option<Timestamp>,
@@ -103,8 +103,8 @@ impl SimulationBuilder {
         }
     }
 
-    pub fn run_log_reader<T: RunLogReader + 'static>(mut self, reader: Rc<T>) -> Self {
-        self.run_log_reader = Some(reader as Rc<dyn RunLogReader>);
+    pub fn run_log_reader<T: RunLogReader + 'static>(mut self, reader: Arc<T>) -> Self {
+        self.run_log_reader = Some(reader as Arc<dyn RunLogReader>);
         self
     }
 
@@ -161,7 +161,7 @@ impl SimulationBuilder {
 
     /// Builds a [`StandaloneSimulation`] over a new in-memory log, replacing any run log reader set.
     pub fn standalone(self) -> Result<StandaloneSimulation, BuildErrors> {
-        let log = SimpleEventRunLog::new();
+        let log = Arc::new(SimpleEventRunLog::new());
         let simulation = self.run_log_reader(log.clone()).build()?;
         Ok(StandaloneSimulation { simulation, log })
     }
@@ -295,8 +295,8 @@ mod tests {
 
     #[test]
     fn limit_counts_only_inputs() {
-        let mut simulation_builder =
-            super::Simulation::builder().run_log_reader(crate::SimpleEventRunLog::new());
+        let mut simulation_builder = super::Simulation::builder()
+            .run_log_reader(std::sync::Arc::new(crate::SimpleEventRunLog::new()));
 
         simulation_builder = simulation_builder.effect("alternating", |e| {
             e.trigger_hertz(1000.0)

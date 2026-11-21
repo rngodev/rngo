@@ -25,7 +25,7 @@ fn builder() {
         });
 
     let errors = simulation_builder
-        .run_log_reader(rngo::SimpleEventRunLog::new())
+        .run_log_reader(std::sync::Arc::new(rngo::SimpleEventRunLog::new()))
         .build()
         .unwrap_err();
 
@@ -104,7 +104,7 @@ fn nested_build_error_displays_its_spec_path() {
     let errors = Dialect::primitive()
         .parse_simulation(&rngo::spec::from_value(value).unwrap())
         .unwrap()
-        .run_log_reader(rngo::SimpleEventRunLog::new())
+        .run_log_reader(std::sync::Arc::new(rngo::SimpleEventRunLog::new()))
         .build()
         .unwrap_err();
 
@@ -240,7 +240,7 @@ fn number_bounds() {
         .effect("equal", |e| e.generator(number().minimum(1).maximum(1)))
         .effect("stepped", |e| e.generator(number().maximum(1).step(1)));
     let errors = simulation_builder
-        .run_log_reader(rngo::SimpleEventRunLog::new())
+        .run_log_reader(std::sync::Arc::new(rngo::SimpleEventRunLog::new()))
         .build()
         .unwrap_err();
     let messages: Vec<_> = errors.iter().map(|e| e.message()).collect();

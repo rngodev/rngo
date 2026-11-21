@@ -21,7 +21,7 @@ use multi_try::MultiTry;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::num::NonZeroU64;
-use std::rc::Rc;
+use std::sync::Arc;
 use trigger::{Trigger, TriggerConfig};
 
 pub use trigger::TriggerEvent;
@@ -29,7 +29,7 @@ pub use trigger::TriggerEvent;
 #[derive(Debug)]
 pub struct Effect {
     pub key: String,
-    run_log_reader: Rc<dyn RunLogReader>,
+    run_log_reader: Arc<dyn RunLogReader>,
     trigger: Trigger,
     trigger_config: TriggerConfig,
     seed: u64,
@@ -193,7 +193,7 @@ pub struct EffectBuilder {
     prototype: Option<Prototype>,
     seed: Option<u64>,
     // TODO: get rid of this --->
-    event_run_log: Option<Rc<dyn RunLogReader>>,
+    event_run_log: Option<Arc<dyn RunLogReader>>,
     trigger: TriggerConfig,
     generator_builder: Option<Box<dyn GeneratorBuilder>>,
 }
@@ -263,7 +263,7 @@ impl EffectBuilder {
         self.prototype_key.as_deref()
     }
 
-    pub fn event_run_log(mut self, event_run_log: Rc<dyn RunLogReader>) -> Self {
+    pub fn event_run_log(mut self, event_run_log: Arc<dyn RunLogReader>) -> Self {
         self.event_run_log = Some(event_run_log);
         self
     }
@@ -358,9 +358,9 @@ impl EffectBuilder {
         let seed = self.seed.unwrap_or(1);
         let origin = start;
 
-        let run_log_reader: Rc<dyn RunLogReader> = self
+        let run_log_reader: Arc<dyn RunLogReader> = self
             .event_run_log
-            .unwrap_or_else(|| SimpleEventRunLog::new());
+            .unwrap_or_else(|| Arc::new(SimpleEventRunLog::new()));
 
         let generator_result = if let Some(generator_builder) = self.generator_builder {
             let visitor = GeneratorBuildVisitor {
@@ -431,7 +431,7 @@ fn build_trigger(
     seed: u64,
     start: Timestamp,
     origin: Timestamp,
-    run_log_reader: &Rc<dyn RunLogReader>,
+    run_log_reader: &Arc<dyn RunLogReader>,
 ) -> Result<Trigger, BuildErrors> {
     let clock = |builder: clock::ClockBuilder| {
         builder

@@ -10,13 +10,13 @@ use crate::proxy::channel::{ChannelBuilder, ChannelParser};
 use crate::proxy::format::{FormatParseContext, FormatParser};
 use crate::proxy::{Proxy, ProxyBuilder};
 use crate::spec::{self, Spec};
-use std::rc::Rc;
+use std::sync::Arc;
 
 pub struct Dialect {
-    generator_parsers: Rc<Vec<Box<dyn GeneratorParser>>>,
-    format_parsers: Rc<Vec<Box<dyn FormatParser>>>,
-    channel_parsers: Rc<Vec<Box<dyn ChannelParser>>>,
-    signal_parsers: Rc<Vec<Box<dyn SignalParser>>>,
+    generator_parsers: Arc<Vec<Box<dyn GeneratorParser>>>,
+    format_parsers: Arc<Vec<Box<dyn FormatParser>>>,
+    channel_parsers: Arc<Vec<Box<dyn ChannelParser>>>,
+    signal_parsers: Arc<Vec<Box<dyn SignalParser>>>,
 }
 
 impl Dialect {
@@ -28,16 +28,16 @@ impl Dialect {
         signal_parsers: Vec<Box<dyn SignalParser>>,
     ) -> Self {
         Dialect {
-            generator_parsers: Rc::new(generator_parsers),
-            format_parsers: Rc::new(format_parsers),
-            channel_parsers: Rc::new(channel_parsers),
-            signal_parsers: Rc::new(signal_parsers),
+            generator_parsers: Arc::new(generator_parsers),
+            format_parsers: Arc::new(format_parsers),
+            channel_parsers: Arc::new(channel_parsers),
+            signal_parsers: Arc::new(signal_parsers),
         }
     }
 
     /// Adds a parser for a generator `type`, alongside the dialect's existing ones.
     pub fn with_generator_parser(mut self, parser: impl GeneratorParser + 'static) -> Self {
-        Rc::get_mut(&mut self.generator_parsers)
+        Arc::get_mut(&mut self.generator_parsers)
             .expect("generator parsers are only shared during a parse")
             .push(Box::new(parser));
         self
@@ -45,7 +45,7 @@ impl Dialect {
 
     /// Adds a parser for a format `type`, alongside the dialect's existing ones.
     pub fn with_format_parser(mut self, parser: impl FormatParser + 'static) -> Self {
-        Rc::get_mut(&mut self.format_parsers)
+        Arc::get_mut(&mut self.format_parsers)
             .expect("format parsers are only shared during a parse")
             .push(Box::new(parser));
         self
@@ -53,7 +53,7 @@ impl Dialect {
 
     /// Adds a parser for a channel `type`, alongside the dialect's existing ones.
     pub fn with_channel_parser(mut self, parser: impl ChannelParser + 'static) -> Self {
-        Rc::get_mut(&mut self.channel_parsers)
+        Arc::get_mut(&mut self.channel_parsers)
             .expect("channel parsers are only shared during a parse")
             .push(Box::new(parser));
         self
@@ -61,7 +61,7 @@ impl Dialect {
 
     /// Adds a parser for a signal `type`, alongside the dialect's existing ones.
     pub fn with_signal_parser(mut self, parser: impl SignalParser + 'static) -> Self {
-        Rc::get_mut(&mut self.signal_parsers)
+        Arc::get_mut(&mut self.signal_parsers)
             .expect("signal parsers are only shared during a parse")
             .push(Box::new(parser));
         self
@@ -152,7 +152,7 @@ impl Dialect {
             }
         }
 
-        let custom_generators: Rc<Vec<CustomParser>> = Rc::new(
+        let custom_generators: Arc<Vec<CustomParser>> = Arc::new(
             spec.generators
                 .iter()
                 .map(|(name, generator_type)| {
@@ -176,7 +176,7 @@ impl Dialect {
 
             let visitor = GeneratorParseVisitor::new(
                 self.generator_parsers.clone(),
-                Rc::clone(&custom_generators),
+                Arc::clone(&custom_generators),
                 effect.generator.clone(),
                 vec![],
                 vec!["effects".into(), key.clone(), "generator".into()],

@@ -3,7 +3,7 @@ use crate::SimulationError;
 use crate::effect::Input;
 use crate::log::RunLogReader;
 use jiff::Timestamp;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub(super) enum TriggerConfig {
@@ -15,7 +15,7 @@ pub(super) enum TriggerConfig {
 /// One firing of an effect's trigger.
 pub struct TriggerEvent {
     pub(crate) sim_offset: i64,
-    pub(crate) input_event: Option<Rc<Input>>,
+    pub(crate) input_event: Option<Arc<Input>>,
 }
 
 impl TriggerEvent {
@@ -33,7 +33,7 @@ impl TriggerEvent {
 #[derive(Debug)]
 pub(super) enum Trigger {
     Effect {
-        run_log_reader: Rc<dyn RunLogReader>,
+        run_log_reader: Arc<dyn RunLogReader>,
         key: String,
         sim_start: Timestamp,
         last_offset: i64,

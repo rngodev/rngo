@@ -30,9 +30,9 @@ mod parser;
 pub use parser::{GeneratorParseVisitor, GeneratorParser};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::rc::Rc;
+use std::sync::Arc;
 
-pub trait Generator: std::fmt::Debug {
+pub trait Generator: std::fmt::Debug + Send {
     fn next(&mut self, context: &GeneratorContext) -> GeneratorResult;
 }
 
@@ -106,7 +106,7 @@ impl Metadata {
     }
 }
 
-pub trait GeneratorBuilder: std::fmt::Debug {
+pub trait GeneratorBuilder: std::fmt::Debug + Send {
     fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, BuildErrors>;
 }
 
@@ -119,7 +119,7 @@ impl GeneratorBuilder for Box<dyn GeneratorBuilder> {
 /// What a generator builder gets when the simulation builds: the run log, the effect, and where in
 /// the generator tree it sits.
 pub struct GeneratorBuildVisitor {
-    pub(crate) event_run_log: Rc<dyn RunLogReader>,
+    pub(crate) event_run_log: Arc<dyn RunLogReader>,
     pub(crate) simulation_seed: u64,
     pub(crate) effect_key: String,
     pub(crate) path: Vec<GeneratorEdge>,
@@ -129,7 +129,7 @@ pub struct GeneratorBuildVisitor {
 impl Clone for GeneratorBuildVisitor {
     fn clone(&self) -> Self {
         GeneratorBuildVisitor {
-            event_run_log: Rc::clone(&self.event_run_log),
+            event_run_log: Arc::clone(&self.event_run_log),
             simulation_seed: self.simulation_seed,
             effect_key: self.effect_key.clone(),
             path: self.path.clone(),
@@ -140,7 +140,7 @@ impl Clone for GeneratorBuildVisitor {
 
 impl GeneratorBuildVisitor {
     /// The run log, for generators that look up earlier inputs.
-    pub fn run_log(&self) -> &Rc<dyn RunLogReader> {
+    pub fn run_log(&self) -> &Arc<dyn RunLogReader> {
         &self.event_run_log
     }
 

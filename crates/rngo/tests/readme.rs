@@ -20,7 +20,7 @@ fn readme_spec_is_valid() {
     dialect
         .parse_simulation(&spec)
         .unwrap()
-        .run_log_reader(SimpleEventRunLog::new())
+        .run_log_reader(std::sync::Arc::new(SimpleEventRunLog::new()))
         .build()
         .unwrap();
     dialect.parse_proxy(&spec).unwrap();
@@ -42,7 +42,7 @@ fn readme_spec_runs_and_passes_audit() {
     let spec = rngo::spec::from_value(value).unwrap();
     let dialect = Dialect::primitive();
     let dir = tempfile::tempdir().unwrap();
-    let run_log = SqliteRunLog::new(dir.path().to_path_buf()).unwrap();
+    let run_log = std::sync::Arc::new(SqliteRunLog::new(dir.path().to_path_buf()).unwrap());
 
     let mut simulation = dialect
         .parse_simulation(&spec)

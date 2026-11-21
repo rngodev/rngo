@@ -45,7 +45,7 @@ fn run(builder: CounterBuilder) -> Result<Vec<Input>, BuildErrors> {
                 .limit(NonZeroU64::new(3).unwrap())
                 .generator(object().property("counter", builder))
         })
-        .run_log_reader(rngo::SimpleEventRunLog::new())
+        .run_log_reader(std::sync::Arc::new(rngo::SimpleEventRunLog::new()))
         .build()?
         .filter_map(|step| step.unwrap().into_input())
         .collect())
@@ -112,7 +112,7 @@ fn a_registered_generator_parser_handles_its_type_in_a_spec() {
             &rngo::spec::from_value(counter_spec(json!({ "type": "counter", "step": 5 }))).unwrap(),
         )
         .unwrap()
-        .run_log_reader(rngo::SimpleEventRunLog::new())
+        .run_log_reader(std::sync::Arc::new(rngo::SimpleEventRunLog::new()))
         .build()
         .unwrap()
         .filter_map(|step| step.unwrap().into_input())

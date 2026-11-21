@@ -7,12 +7,12 @@ use crate::{ChannelError, Level, ParseError, spec};
 use serde_json::Value;
 use std::io::{BufRead, BufReader};
 use std::process::Stdio;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub(crate) struct Exec {
     channel_key: String,
-    format: Option<Rc<dyn Format>>,
+    format: Option<Arc<dyn Format>>,
 }
 
 impl Exec {
@@ -77,12 +77,12 @@ impl Channel for Exec {
 
 #[derive(Default)]
 pub struct ExecBuilder {
-    format: Option<Rc<dyn Format>>,
+    format: Option<Arc<dyn Format>>,
 }
 
 impl ExecBuilder {
     pub fn format(mut self, format: impl Format + 'static) -> Self {
-        self.format = Some(Rc::new(format));
+        self.format = Some(Arc::new(format));
         self
     }
 }

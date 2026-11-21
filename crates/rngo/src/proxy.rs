@@ -11,17 +11,17 @@ use channel::{Channel, ChannelBuilder};
 use jiff::Timestamp;
 use output::{Output, OutputSender};
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver};
 use std::time::Duration;
 pub use stop::StopHandle;
 
 const WAIT_TICK: Duration = Duration::from_secs(1);
 
-type OnWait = Box<dyn FnMut(Timestamp)>;
+type OnWait = Box<dyn FnMut(Timestamp) + Send>;
 
 pub struct Proxy {
-    run_log_writer: Rc<dyn RunLogWriter>,
+    run_log_writer: Arc<dyn RunLogWriter>,
     channels: HashMap<String, Box<dyn Channel>>,
     effect_channels: HashMap<String, String>,
     output_rx: Receiver<Output>,
@@ -128,7 +128,7 @@ impl Proxy {
 }
 
 pub struct ProxyBuilder {
-    run_log_writer: Option<Rc<dyn RunLogWriter>>,
+    run_log_writer: Option<Arc<dyn RunLogWriter>>,
     channel_builders: Vec<(String, Box<dyn ChannelBuilder>)>,
     effect_channels: HashMap<String, String>,
     realtime: bool,
@@ -148,8 +148,8 @@ impl ProxyBuilder {
         }
     }
 
-    pub fn run_log_writer<T: RunLogWriter + 'static>(mut self, writer: Rc<T>) -> Self {
-        self.run_log_writer = Some(writer as Rc<dyn RunLogWriter>);
+    pub fn run_log_writer<T: RunLogWriter + 'static>(mut self, writer: Arc<T>) -> Self {
+        self.run_log_writer = Some(writer as Arc<dyn RunLogWriter>);
         self
     }
 
@@ -161,7 +161,7 @@ impl ProxyBuilder {
 
     /// Called with the awaited timestamp when a realtime wait starts and about once a second
     /// while it lasts.
-    pub fn on_wait(mut self, f: impl FnMut(Timestamp) + 'static) -> Self {
+    pub fn on_wait(mut self, f: impl FnMut(Timestamp) + Send + 'static) -> Self {
         self.on_wait = Some(Box::new(f));
         self
     }
@@ -203,7 +203,7 @@ impl ProxyBuilder {
 
         let run_log_writer = self
             .run_log_writer
-            .unwrap_or_else(|| SimpleEventRunLog::new());
+            .unwrap_or_else(|| Arc::new(SimpleEventRunLog::new()));
 
         let mut unknown: Vec<_> = self
             .effect_channels
@@ -263,27 +263,27 @@ mod tests {
     use crate::proxy::output::{ChannelOutput, OutputSender};
     use jiff::{SignedDuration, Timestamp};
     use serde_json::{Value, json};
-    use std::cell::RefCell;
+    use std::sync::Mutex;
     use std::time::Instant;
 
     #[derive(Debug, Default)]
     struct RecordingLog {
-        inputs: RefCell<Vec<Input>>,
-        outputs: RefCell<Vec<Output>>,
-        metadata: RefCell<Vec<Metadata>>,
+        inputs: Mutex<Vec<Input>>,
+        outputs: Mutex<Vec<Output>>,
+        metadata: Mutex<Vec<Metadata>>,
     }
 
     impl RunLogWriter for RecordingLog {
         fn push_input(&self, input: Input) -> Result<(), RunLogError> {
-            self.inputs.borrow_mut().push(input);
+            self.inputs.lock().unwrap().push(input);
             Ok(())
         }
         fn push_output(&self, output: Output) -> Result<(), RunLogError> {
-            self.outputs.borrow_mut().push(output);
+            self.outputs.lock().unwrap().push(output);
             Ok(())
         }
         fn push_metadata(&self, metadata: Metadata) -> Result<(), RunLogError> {
-            self.metadata.borrow_mut().push(metadata);
+            self.metadata.lock().unwrap().push(metadata);
             Ok(())
         }
     }
@@ -303,15 +303,15 @@ mod tests {
 
     #[derive(Debug)]
     struct RecordingSink {
-        sent: Rc<RefCell<Vec<Value>>>,
-        format: Option<Rc<dyn Format>>,
+        sent: Arc<Mutex<Vec<Value>>>,
+        format: Option<Arc<dyn Format>>,
     }
 
     impl Channel for RecordingSink {
         fn send(&mut self, input: &Input) -> Result<Vec<ChannelOutput>, crate::ChannelError> {
             match render(self.format.as_deref(), input) {
                 Ok(data) => {
-                    self.sent.borrow_mut().push(data);
+                    self.sent.lock().unwrap().push(data);
                     Ok(vec![])
                 }
                 Err(output) => Ok(vec![output]),
@@ -320,12 +320,12 @@ mod tests {
     }
 
     struct RecordingSinkBuilder {
-        sent: Rc<RefCell<Vec<Value>>>,
-        format: Option<Rc<dyn Format>>,
+        sent: Arc<Mutex<Vec<Value>>>,
+        format: Option<Arc<dyn Format>>,
     }
 
     impl RecordingSinkBuilder {
-        fn new(sent: &Rc<RefCell<Vec<Value>>>) -> Self {
+        fn new(sent: &Arc<Mutex<Vec<Value>>>) -> Self {
             RecordingSinkBuilder {
                 sent: sent.clone(),
                 format: None,
@@ -358,10 +358,10 @@ mod tests {
 
     #[test]
     fn format_failure_records_an_error_output_and_keeps_going() {
-        let log = Rc::new(RecordingLog::default());
-        let sent = Rc::new(RefCell::new(vec![]));
+        let log = Arc::new(RecordingLog::default());
+        let sent = Arc::new(Mutex::new(vec![]));
         let mut channel = RecordingSinkBuilder::new(&sent);
-        channel.format = Some(Rc::new(FailOnEvenIds));
+        channel.format = Some(Arc::new(FailOnEvenIds));
         let mut proxy = Proxy::builder()
             .run_log_writer(log.clone())
             .channel("logger", channel)
@@ -373,8 +373,8 @@ mod tests {
             proxy.send(&input(id)).unwrap();
         }
 
-        assert_eq!(*sent.borrow(), vec![json!("1"), json!("3")]);
-        let outputs = log.outputs.borrow();
+        assert_eq!(*sent.lock().unwrap(), vec![json!("1"), json!("3")]);
+        let outputs = log.outputs.lock().unwrap();
         assert_eq!(outputs.len(), 1);
         assert_eq!(outputs[0].input_id, Some(2));
         assert_eq!(outputs[0].channel, "logger");
@@ -384,7 +384,7 @@ mod tests {
 
     #[test]
     fn unformatted_channels_send_the_input_data() {
-        let sent = Rc::new(RefCell::new(vec![]));
+        let sent = Arc::new(Mutex::new(vec![]));
         let mut proxy = Proxy::builder()
             .channel("logger", RecordingSinkBuilder::new(&sent))
             .effect_channels([("ping", "logger")])
@@ -395,12 +395,12 @@ mod tests {
         ping.data = json!({ "a": 1 });
         proxy.send(&ping).unwrap();
 
-        assert_eq!(*sent.borrow(), vec![json!({ "a": 1 })]);
+        assert_eq!(*sent.lock().unwrap(), vec![json!({ "a": 1 })]);
     }
 
     #[test]
     fn channel_outputs_are_tied_to_the_input() {
-        let log = Rc::new(RecordingLog::default());
+        let log = Arc::new(RecordingLog::default());
         let mut proxy = Proxy::builder()
             .run_log_writer(log.clone())
             .channel("logger", channel::Exec::builder())
@@ -412,13 +412,13 @@ mod tests {
         ping.data = json!("echo hi");
         proxy.send(&ping).unwrap();
 
-        let outputs = log.outputs.borrow();
+        let outputs = log.outputs.lock().unwrap();
         assert_eq!(outputs.len(), 1);
         assert_eq!(outputs[0].input_id, Some(5));
         assert_eq!(outputs[0].data, "hi");
     }
 
-    fn recording_proxy(builder: ProxyBuilder, sent: &Rc<RefCell<Vec<Value>>>) -> Proxy {
+    fn recording_proxy(builder: ProxyBuilder, sent: &Arc<Mutex<Vec<Value>>>) -> Proxy {
         builder
             .channel("logger", RecordingSinkBuilder::new(sent))
             .effect_channels([("ping", "logger")])
@@ -428,7 +428,7 @@ mod tests {
 
     #[test]
     fn build_passes_the_channel_key_to_its_builder() {
-        struct KeyRecorder(Rc<RefCell<Option<String>>>);
+        struct KeyRecorder(Arc<Mutex<Option<String>>>);
 
         impl ChannelBuilder for KeyRecorder {
             fn build(
@@ -436,21 +436,21 @@ mod tests {
                 channel_key: &str,
                 _outputs: OutputSender,
             ) -> Result<Box<dyn Channel>, BuildErrors> {
-                *self.0.borrow_mut() = Some(channel_key.to_string());
+                *self.0.lock().unwrap() = Some(channel_key.to_string());
                 Ok(Box::new(RecordingSink {
-                    sent: Rc::new(RefCell::new(vec![])),
+                    sent: Arc::new(Mutex::new(vec![])),
                     format: None,
                 }))
             }
         }
 
-        let seen = Rc::new(RefCell::new(None));
+        let seen = Arc::new(Mutex::new(None));
         Proxy::builder()
             .channel("db", KeyRecorder(seen.clone()))
             .build()
             .unwrap();
 
-        assert_eq!(seen.borrow().as_deref(), Some("db"));
+        assert_eq!(seen.lock().unwrap().as_deref(), Some("db"));
     }
 
     #[test]
@@ -465,12 +465,12 @@ mod tests {
 
     #[test]
     fn realtime_holds_future_inputs_until_due() {
-        let sent = Rc::new(RefCell::new(vec![]));
-        let waits = Rc::new(RefCell::new(vec![]));
+        let sent = Arc::new(Mutex::new(vec![]));
+        let waits = Arc::new(Mutex::new(vec![]));
         let waits_hook = waits.clone();
         let builder = Proxy::builder()
             .realtime(true)
-            .on_wait(move |until| waits_hook.borrow_mut().push(until));
+            .on_wait(move |until| waits_hook.lock().unwrap().push(until));
         let mut proxy = recording_proxy(builder, &sent);
 
         let mut past = input(1);
@@ -480,18 +480,18 @@ mod tests {
 
         let started = Instant::now();
         proxy.send(&past).unwrap();
-        assert!(waits.borrow().is_empty(), "past inputs aren't held");
+        assert!(waits.lock().unwrap().is_empty(), "past inputs aren't held");
         proxy.send(&future).unwrap();
 
         assert!(Timestamp::now() >= future.timestamp);
         assert!(started.elapsed() >= Duration::from_millis(250));
-        assert_eq!(waits.borrow().first(), Some(&future.timestamp));
-        assert_eq!(sent.borrow().len(), 2);
+        assert_eq!(waits.lock().unwrap().first(), Some(&future.timestamp));
+        assert_eq!(sent.lock().unwrap().len(), 2);
     }
 
     #[test]
     fn stop_interrupts_a_wait_and_ignores_later_inputs() {
-        let sent = Rc::new(RefCell::new(vec![]));
+        let sent = Arc::new(Mutex::new(vec![]));
         let mut proxy = recording_proxy(Proxy::builder().realtime(true), &sent);
         let handle = proxy.stop_handle();
 
@@ -508,12 +508,12 @@ mod tests {
 
         assert!(started.elapsed() < Duration::from_secs(5));
         proxy.send(&input(2)).unwrap();
-        assert!(sent.borrow().is_empty());
+        assert!(sent.lock().unwrap().is_empty());
     }
 
     #[test]
     fn stop_handle_can_be_shared_before_build() {
-        let sent = Rc::new(RefCell::new(vec![]));
+        let sent = Arc::new(Mutex::new(vec![]));
         let handle = StopHandle::new();
         let mut proxy = recording_proxy(Proxy::builder().stop_handle(handle.clone()), &sent);
 
@@ -521,20 +521,23 @@ mod tests {
         handle.stop();
         proxy.send(&input(2)).unwrap();
 
-        assert_eq!(sent.borrow().len(), 1);
+        assert_eq!(sent.lock().unwrap().len(), 1);
         assert!(proxy.stop_handle().is_stopped());
     }
 
     #[test]
     fn records_start_and_end_timing() {
-        let log = Rc::new(RecordingLog::default());
+        let log = Arc::new(RecordingLog::default());
         let mut proxy = Proxy::builder()
             .run_log_writer(log.clone())
             .build()
             .unwrap();
 
         proxy.finish().unwrap();
-        assert!(log.metadata.borrow().is_empty(), "nothing sent, no timing");
+        assert!(
+            log.metadata.lock().unwrap().is_empty(),
+            "nothing sent, no timing"
+        );
 
         proxy.send(&input(1)).unwrap();
         proxy.finish().unwrap();
@@ -542,7 +545,8 @@ mod tests {
 
         let kinds: Vec<_> = log
             .metadata
-            .borrow()
+            .lock()
+            .unwrap()
             .iter()
             .map(|m| match &m.data {
                 Some(data) if m.mtype == "timing" => data["key"].as_str().unwrap().to_string(),
@@ -554,7 +558,7 @@ mod tests {
 
     #[test]
     fn logs_inputs_unless_stopped() {
-        let log = Rc::new(RecordingLog::default());
+        let log = Arc::new(RecordingLog::default());
         let mut proxy = Proxy::builder()
             .run_log_writer(log.clone())
             .build()
@@ -564,7 +568,7 @@ mod tests {
         proxy.stop_handle().stop();
         proxy.send(&input(2)).unwrap();
 
-        let ids: Vec<_> = log.inputs.borrow().iter().map(|i| i.id).collect();
+        let ids: Vec<_> = log.inputs.lock().unwrap().iter().map(|i| i.id).collect();
         assert_eq!(ids, [1]);
     }
 }
