@@ -27,7 +27,7 @@ fn log_all(simulation: Simulation, log: &impl RunLogWriter) -> Vec<Input> {
 #[test]
 fn reference_with_no_prior_events_is_skipped_not_logged() {
     let tmp = TempDir::new().unwrap();
-    let run_log = std::sync::Arc::new(SqliteRunLog::new(tmp.path().to_path_buf()).unwrap());
+    let run_log = std::sync::Arc::new(SqliteRunLog::in_dir(tmp.path()).unwrap());
 
     let mut simulation_builder = short_window();
     simulation_builder = simulation_builder.effect("derived", |e| {
