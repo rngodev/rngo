@@ -265,7 +265,7 @@ fn an_effect_in_an_unknown_prototype_runs_on_its_own_values() {
     builder = builder.effect("events", |e| {
         e.prototype_key("nowhere")
             .start(Moment::Relative(SignedDuration::from_hours(-24)))
-            .limit(std::num::NonZeroU64::new(2).unwrap())
+            .limit(2)
             .generator(constant().value(Value::Null))
     });
 

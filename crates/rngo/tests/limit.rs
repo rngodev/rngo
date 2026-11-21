@@ -1,22 +1,15 @@
 use rngo::build::*;
-use rngo::{Dialect, Input, Simulation};
-use std::num::NonZeroU64;
+use rngo::{BuildError, Dialect, Input, Simulation};
 
 fn count_for(inputs: &[Input], effect: &str) -> usize {
     inputs.iter().filter(|i| i.effect == effect).count()
-}
-
-fn limit(n: u64) -> NonZeroU64 {
-    NonZeroU64::new(n).unwrap()
 }
 
 #[test]
 fn unlimited_effect_keeps_running_after_limited_effect_stops() {
     let simulation_builder = Simulation::builder()
         .effect("limited", |e| {
-            e.trigger_hertz(1.0)
-                .limit(limit(3))
-                .generator(constant().value(1))
+            e.trigger_hertz(1.0).limit(3).generator(constant().value(1))
         })
         .effect("unlimited", |e| {
             e.trigger_expression("hz(1, hour)")
@@ -47,7 +40,7 @@ fn dependent_effect_stops_after_upstream_limit() {
     let simulation_builder = Simulation::builder()
         .effect("upstream", |e| {
             e.trigger_expression("hz(1, hour)")
-                .limit(limit(4))
+                .limit(4)
                 .generator(constant().value(1))
         })
         .effect("downstream", |e| {
@@ -69,7 +62,7 @@ fn run_limit_lower_than_effect_limit_wins() {
     let mut simulation_builder = Simulation::builder();
     simulation_builder = simulation_builder.effect("ping", |e| {
         e.trigger_hertz(1.0)
-            .limit(limit(10))
+            .limit(10)
             .generator(constant().value(1))
     });
 
@@ -88,9 +81,7 @@ fn run_limit_lower_than_effect_limit_wins() {
 fn effect_limit_lower_than_run_limit_wins() {
     let mut simulation_builder = Simulation::builder();
     simulation_builder = simulation_builder.effect("ping", |e| {
-        e.trigger_hertz(1.0)
-            .limit(limit(4))
-            .generator(constant().value(1))
+        e.trigger_hertz(1.0).limit(4).generator(constant().value(1))
     });
 
     let inputs: Vec<_> = simulation_builder
@@ -165,4 +156,56 @@ fn invalid_spec_limit_is_rejected_with_effect_path() {
             errors[0]
         );
     }
+}
+
+#[test]
+fn zero_effect_limit_is_a_build_error() {
+    let errors = Simulation::builder()
+        .effect("ping", |e| e.limit(0).generator(constant().value(1)))
+        .standalone()
+        .unwrap_err();
+
+    assert_eq!(errors.len(), 1);
+    assert!(matches!(errors[0], BuildError::Effect { .. }));
+    assert!(
+        errors[0].to_string().contains("effects.ping.limit"),
+        "{}",
+        errors[0]
+    );
+}
+
+#[test]
+fn zero_prototype_limit_is_a_build_error() {
+    let errors = Simulation::builder()
+        .prototype("capped", |p| p.limit(0))
+        .standalone()
+        .unwrap_err();
+
+    assert_eq!(errors.len(), 1);
+    assert!(matches!(
+        errors[0],
+        BuildError::Simulation {
+            key: rngo::SimulationKey::Limit,
+            ..
+        }
+    ));
+    assert!(errors[0].message().contains("capped"), "{}", errors[0]);
+}
+
+#[test]
+fn zero_simulation_limit_is_a_build_error() {
+    let errors = Simulation::builder()
+        .effect("ping", |e| e.generator(constant().value(1)))
+        .limit(0)
+        .standalone()
+        .unwrap_err();
+
+    assert_eq!(errors.len(), 1);
+    assert!(matches!(
+        errors[0],
+        BuildError::Simulation {
+            key: rngo::SimulationKey::Limit,
+            ..
+        }
+    ));
 }

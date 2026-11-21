@@ -353,6 +353,8 @@ pub enum SimulationKey {
     End,
     /// The run log the simulation reads earlier inputs from.
     RunLogReader,
+    /// The simulation's or a prototype's `limit`.
+    Limit,
 }
 
 /// The part of an effect's spec an error concerns.
@@ -369,6 +371,8 @@ pub enum EffectKey {
     Start,
     /// The effect's `end`.
     End,
+    /// The effect's `limit`.
+    Limit,
 }
 
 impl EffectKey {
@@ -380,6 +384,7 @@ impl EffectKey {
             EffectKey::Config => "",
             EffectKey::Start => ".start",
             EffectKey::End => ".end",
+            EffectKey::Limit => ".limit",
         }
     }
 }
