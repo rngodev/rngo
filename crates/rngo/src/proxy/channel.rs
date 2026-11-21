@@ -12,10 +12,11 @@ pub use parser::ChannelParser;
 
 use crate::effect::Input;
 use crate::error::BuildErrors;
-use crate::proxy::format::Format;
+use crate::proxy::format::{Format, FormatBuilder};
 use crate::{ChannelError, Level};
 use serde_json::Value;
 use std::process::Command;
+use std::sync::Arc;
 
 /// Where a proxy delivers the inputs of the effects assigned to it.
 pub trait Channel: std::fmt::Debug + Send {
@@ -30,7 +31,7 @@ pub trait Channel: std::fmt::Debug + Send {
 /// before the key it'll be added under is known, mirroring how `outputs` is threaded in.
 pub trait ChannelBuilder: Send {
     fn build(
-        &self,
+        self: Box<Self>,
         channel_key: &str,
         outputs: OutputSender,
     ) -> Result<Box<dyn Channel>, BuildErrors>;
@@ -38,12 +39,22 @@ pub trait ChannelBuilder: Send {
 
 impl ChannelBuilder for Box<dyn ChannelBuilder> {
     fn build(
-        &self,
+        self: Box<Self>,
         channel_key: &str,
         outputs: OutputSender,
     ) -> Result<Box<dyn Channel>, BuildErrors> {
-        self.as_ref().build(channel_key, outputs)
+        (*self).build(channel_key, outputs)
     }
+}
+
+/// Builds a channel's optional format for the channel `channel_key`.
+fn build_format(
+    format: Option<Box<dyn FormatBuilder>>,
+    channel_key: &str,
+) -> Result<Option<Arc<dyn Format>>, BuildErrors> {
+    format
+        .map(|format| format.build(channel_key).map(Arc::from))
+        .transpose()
 }
 
 /// The value a channel delivers for `input`: its formatted string, or its own `data` without a

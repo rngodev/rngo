@@ -68,7 +68,10 @@ impl SelectBuilder {
 }
 
 impl GeneratorBuilder for SelectBuilder {
-    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, BuildErrors> {
+    fn build(
+        self: Box<Self>,
+        visitor: GeneratorBuildVisitor,
+    ) -> Result<Box<dyn Generator>, BuildErrors> {
         if self.option_builders.is_empty() {
             return Err(visitor.error("options must not be empty").into());
         }
@@ -76,16 +79,13 @@ impl GeneratorBuilder for SelectBuilder {
         let mut errors = vec![];
         let mut properties = vec![];
 
-        for (i, (weight, builder)) in self.option_builders.iter().enumerate() {
+        for (i, (weight, builder)) in self.option_builders.into_iter().enumerate() {
             let option_visitor = visitor.follow_edge(GeneratorEdge {
                 kind: "option",
                 key: i.to_string(),
             });
             match builder.build(option_visitor) {
-                Ok(generator) => properties.push(SelectProperty {
-                    generator,
-                    weight: *weight,
-                }),
+                Ok(generator) => properties.push(SelectProperty { generator, weight }),
                 Err(e) => errors.extend(e),
             }
         }

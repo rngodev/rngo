@@ -37,11 +37,12 @@ impl ConstantBuilder {
 }
 
 impl GeneratorBuilder for ConstantBuilder {
-    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, BuildErrors> {
-        if let Some(value) = &self.value {
-            Ok(Box::new(Constant {
-                value: value.clone(),
-            }))
+    fn build(
+        self: Box<Self>,
+        visitor: GeneratorBuildVisitor,
+    ) -> Result<Box<dyn Generator>, BuildErrors> {
+        if let Some(value) = self.value {
+            Ok(Box::new(Constant { value }))
         } else {
             Err(visitor.error("value was not set").into())
         }

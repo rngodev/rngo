@@ -103,9 +103,12 @@ impl ContextBuilder {
 }
 
 impl GeneratorBuilder for ContextBuilder {
-    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, BuildErrors> {
-        let path = match &self.path {
-            Some(p) => p.clone(),
+    fn build(
+        self: Box<Self>,
+        visitor: GeneratorBuildVisitor,
+    ) -> Result<Box<dyn Generator>, BuildErrors> {
+        let path = match self.path {
+            Some(p) => p,
             None => return Err(visitor.error("path was not set").into()),
         };
 

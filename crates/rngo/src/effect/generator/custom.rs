@@ -44,7 +44,10 @@ struct CustomBuilder {
 }
 
 impl GeneratorBuilder for CustomBuilder {
-    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, BuildErrors> {
+    fn build(
+        self: Box<Self>,
+        visitor: GeneratorBuildVisitor,
+    ) -> Result<Box<dyn Generator>, BuildErrors> {
         self.inner.build(visitor.in_custom_type(&self.name))
     }
 }

@@ -1,7 +1,7 @@
 use crate::effect::Input;
 use crate::error::{BuildErrors, ParseErrors};
 use crate::proxy::channel::{Channel, ChannelBuilder, ChannelParser};
-use crate::proxy::format::{Format, FormatParseContext};
+use crate::proxy::format::{Format, FormatBuilder, FormatParseContext};
 use crate::proxy::output::{ChannelOutput, OutputSender};
 use crate::{ChannelError, Level, ParseError, spec};
 use serde_json::Value;
@@ -77,25 +77,25 @@ impl Channel for Exec {
 
 #[derive(Default)]
 pub struct ExecBuilder {
-    format: Option<Arc<dyn Format>>,
+    format: Option<Box<dyn FormatBuilder>>,
 }
 
 impl ExecBuilder {
-    pub fn format(mut self, format: impl Format + 'static) -> Self {
-        self.format = Some(Arc::new(format));
+    pub fn format(mut self, format: impl FormatBuilder + 'static) -> Self {
+        self.format = Some(Box::new(format));
         self
     }
 }
 
 impl ChannelBuilder for ExecBuilder {
     fn build(
-        &self,
+        self: Box<Self>,
         channel_key: &str,
         _outputs: OutputSender,
     ) -> Result<Box<dyn Channel>, BuildErrors> {
         Ok(Box::new(Exec {
             channel_key: channel_key.to_string(),
-            format: self.format.clone(),
+            format: super::build_format(self.format, channel_key)?,
         }))
     }
 }
@@ -152,7 +152,7 @@ mod tests {
 
     fn exec() -> Box<dyn Channel> {
         let (tx, _rx) = mpsc::channel();
-        Exec::builder()
+        Box::new(Exec::builder())
             .build("logger", OutputSender::new("logger", tx))
             .unwrap()
     }

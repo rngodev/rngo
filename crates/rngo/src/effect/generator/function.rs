@@ -101,8 +101,11 @@ impl FunctionBuilder {
 }
 
 impl GeneratorBuilder for FunctionBuilder {
-    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, BuildErrors> {
-        let expression = match &self.expression {
+    fn build(
+        self: Box<Self>,
+        visitor: GeneratorBuildVisitor,
+    ) -> Result<Box<dyn Generator>, BuildErrors> {
+        let expression = match self.expression {
             Some(e) => e,
             None => return Err(visitor.error("expression was not set").into()),
         };
@@ -110,14 +113,14 @@ impl GeneratorBuilder for FunctionBuilder {
         let mut errors = vec![];
         let mut variables = HashMap::new();
 
-        for (key, builder) in &self.variable_builders {
+        for (key, builder) in self.variable_builders {
             let var_visitor = visitor.follow_edge(GeneratorEdge {
                 kind: "variable",
                 key: key.clone(),
             });
             match builder.build(var_visitor) {
                 Ok(generator) => {
-                    variables.insert(key.clone(), generator);
+                    variables.insert(key, generator);
                 }
                 Err(e) => errors.extend(e),
             }
@@ -127,7 +130,7 @@ impl GeneratorBuilder for FunctionBuilder {
             return Err(errors.into());
         }
 
-        let program = Program::compile(expression)
+        let program = Program::compile(&expression)
             .map_err(|e| vec![visitor.error(format!("expression compilation failed: {e}"))])?;
 
         Ok(Box::new(Function { program, variables }))

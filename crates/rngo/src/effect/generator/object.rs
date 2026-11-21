@@ -68,18 +68,21 @@ impl ObjectBuilder {
 }
 
 impl GeneratorBuilder for ObjectBuilder {
-    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, BuildErrors> {
+    fn build(
+        self: Box<Self>,
+        visitor: GeneratorBuildVisitor,
+    ) -> Result<Box<dyn Generator>, BuildErrors> {
         let mut errors = vec![];
         let mut properties = IndexMap::new();
 
-        for (key, builder) in &self.property_builders {
+        for (key, builder) in self.property_builders {
             let property_visitor = visitor.follow_edge(GeneratorEdge {
                 kind: "property",
                 key: key.clone(),
             });
             match builder.build(property_visitor) {
                 Ok(generator) => {
-                    properties.insert(key.into(), generator);
+                    properties.insert(key, generator);
                 }
                 Err(e) => errors.extend(e),
             }

@@ -1,16 +1,16 @@
 use crate::error::{ParseError, ParseErrorKind, ParseErrors};
-use crate::proxy::format::Format;
+use crate::proxy::format::FormatBuilder;
 use crate::spec;
 use serde_json::Value;
-use std::sync::Arc;
 
+/// Parses spec formats whose `type` is its `key` into format builders.
 pub trait FormatParser: Send + Sync {
     fn key(&self) -> &str;
     fn parse(
         &self,
         format: &spec::Format,
         spec: &spec::Spec,
-    ) -> Result<Box<dyn Format>, ParseErrors>;
+    ) -> Result<Box<dyn FormatBuilder>, ParseErrors>;
 }
 
 /// Lets a channel parser build the optional `format` of its channel with the dialect's format parsers.
@@ -30,7 +30,7 @@ impl<'a> FormatParseContext<'a> {
         &self,
         path: &[&str],
         value: &Value,
-    ) -> Result<Option<Arc<dyn Format>>, ParseErrors> {
+    ) -> Result<Option<Box<dyn FormatBuilder>>, ParseErrors> {
         let invalid = |message: String| {
             ParseErrors::from(ParseError::invalid(message).at(path.iter().copied()))
         };
@@ -64,13 +64,11 @@ impl<'a> FormatParseContext<'a> {
             }
         };
 
-        result
-            .map(|format| Some(Arc::from(format)))
-            .map_err(|errors| {
-                errors
-                    .into_iter()
-                    .map(|error| error.prefixed(path))
-                    .collect()
-            })
+        result.map(Some).map_err(|errors| {
+            errors
+                .into_iter()
+                .map(|error| error.prefixed(path))
+                .collect()
+        })
     }
 }

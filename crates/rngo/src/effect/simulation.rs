@@ -225,7 +225,7 @@ impl SimulationBuilder {
 
         let mut effects = vec![];
         for effect_builder in self.effect_builders {
-            let prototype = match effect_builder.get_prototype_key() {
+            let prototype = match effect_builder.prototype_key.as_deref() {
                 Some(key) => prototypes.get(key).unwrap_or(&empty_prototype),
                 None => &default_prototype,
             };
@@ -303,7 +303,7 @@ mod tests {
 
     impl GeneratorBuilder for AlternatingGeneratorBuilder {
         fn build(
-            &self,
+            self: Box<Self>,
             _visitor: GeneratorBuildVisitor,
         ) -> Result<Box<dyn Generator>, BuildErrors> {
             Ok(Box::new(AlternatingGenerator::default()))

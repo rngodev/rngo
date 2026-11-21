@@ -8,7 +8,7 @@ pub use crate::effect::generator::number::NumberBuilder;
 pub use crate::effect::generator::object::ObjectBuilder;
 pub use crate::effect::generator::reference::ReferenceBuilder;
 pub use crate::effect::generator::select::SelectBuilder;
-pub use crate::effect::generator::string::StrBuilder;
+pub use crate::effect::generator::string::StringBuilder;
 use crate::effect::generator::{
     Array, Constant, Context, Function, Number, Object, Reference, Select, Str,
 };
@@ -16,7 +16,9 @@ pub use crate::proxy::channel::exec::ExecBuilder;
 pub use crate::proxy::channel::stdout::StdoutBuilder;
 pub use crate::proxy::channel::stream::StreamBuilder;
 use crate::proxy::channel::{Exec, Stdout, Stream};
-use crate::proxy::format::SqlFormat;
+pub use crate::proxy::format::sql::SqlFormatBuilder;
+pub use crate::proxy::format::template::TemplateFormatBuilder;
+use crate::proxy::format::{SqlFormat, TemplateFormat};
 
 pub fn array() -> ArrayBuilder {
     Array::builder()
@@ -50,7 +52,7 @@ pub fn select() -> SelectBuilder {
     Select::builder()
 }
 
-pub fn string() -> StrBuilder {
+pub fn string() -> StringBuilder {
     Str::builder()
 }
 
@@ -58,8 +60,12 @@ pub fn sql_signal() -> SqlSignalBuilder {
     SqlSignal::builder()
 }
 
-pub fn sql_format() -> SqlFormat {
+pub fn sql_format() -> SqlFormatBuilder {
     SqlFormat::builder()
+}
+
+pub fn template_format() -> TemplateFormatBuilder {
+    TemplateFormat::builder()
 }
 
 pub fn stream() -> StreamBuilder {

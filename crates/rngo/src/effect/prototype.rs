@@ -81,7 +81,7 @@ impl PrototypeBuilder {
     }
 
     /// Resolves the prototype; errors if an expression doesn't parse, if `start` isn't before `end`, or if `limit` is 0.
-    pub(crate) fn build(&self) -> Result<Prototype, BuildErrors> {
+    pub(crate) fn build(self) -> Result<Prototype, BuildErrors> {
         let now = self.now.unwrap_or_else(Timestamp::now);
         let prototype = self.prototype.as_ref();
         let mut errors = vec![];
@@ -133,7 +133,7 @@ impl PrototypeBuilder {
             start,
             end,
             limit: self.limit,
-            channel: self.channel.clone(),
+            channel: self.channel,
         })
     }
 }

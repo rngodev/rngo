@@ -1,13 +1,13 @@
-use crate::error::ParseErrors;
+use crate::error::{BuildErrors, ParseErrors};
 use serde_json::Value;
 use std::collections::HashMap;
 
 use crate::effect::Input;
-use crate::proxy::format::{Format, FormatParser};
+use crate::proxy::format::{Format, FormatBuilder, FormatParser};
 use crate::{FormatError, spec};
 
 #[derive(Debug)]
-pub struct SqlFormat {
+pub(crate) struct SqlFormat {
     effect_tables: HashMap<String, String>,
 }
 
@@ -16,15 +16,32 @@ impl SqlFormat {
         SqlFormatParser {}
     }
 
-    pub fn builder() -> SqlFormat {
-        SqlFormat {
+    pub(crate) fn builder() -> SqlFormatBuilder {
+        SqlFormatBuilder {
             effect_tables: HashMap::new(),
         }
     }
+}
 
+/// Builds the `sql` format, which renders each input as an `INSERT` into its effect's table.
+#[derive(Debug)]
+pub struct SqlFormatBuilder {
+    effect_tables: HashMap<String, String>,
+}
+
+impl SqlFormatBuilder {
+    /// Inserts the inputs of `effect_key` into `table` instead of a table named after the effect.
     pub fn effect_table(mut self, effect_key: impl Into<String>, table: impl Into<String>) -> Self {
         self.effect_tables.insert(effect_key.into(), table.into());
         self
+    }
+}
+
+impl FormatBuilder for SqlFormatBuilder {
+    fn build(self: Box<Self>, _channel_key: &str) -> Result<Box<dyn Format>, BuildErrors> {
+        Ok(Box::new(SqlFormat {
+            effect_tables: self.effect_tables,
+        }))
     }
 }
 
@@ -95,7 +112,7 @@ impl FormatParser for SqlFormatParser {
         &self,
         _format: &spec::Format,
         spec: &spec::Spec,
-    ) -> Result<Box<dyn Format>, ParseErrors> {
+    ) -> Result<Box<dyn FormatBuilder>, ParseErrors> {
         let effect_tables = spec
             .effects
             .iter()
@@ -105,7 +122,7 @@ impl FormatParser for SqlFormatParser {
             })
             .collect();
 
-        Ok(Box::new(SqlFormat { effect_tables }))
+        Ok(Box::new(SqlFormatBuilder { effect_tables }))
     }
 }
 
@@ -155,7 +172,7 @@ mod tests {
 
     #[test]
     fn builder_defaults_table_to_effect_key() {
-        let format = SqlFormat::builder();
+        let format = Box::new(SqlFormat::builder()).build("db").unwrap();
         let event = event(json!({ "id": 1 }));
         let sql = format.format(&event).unwrap();
         assert!(
@@ -166,7 +183,9 @@ mod tests {
 
     #[test]
     fn builder_effect_table_overrides_the_effect_key() {
-        let format = SqlFormat::builder().effect_table("user", "accounts");
+        let format = Box::new(SqlFormat::builder().effect_table("user", "accounts"))
+            .build("db")
+            .unwrap();
         let event = event(json!({ "id": 1 }));
         let sql = format.format(&event).unwrap();
         assert!(
