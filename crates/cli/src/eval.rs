@@ -4,11 +4,10 @@ use console::style;
 use rngo::signal::SignalOutcome;
 use rngo::{Dialect, RunLogWriter, SqliteRunLog, Step, StopHandle, spec};
 use status::StatusWriter;
-use std::cell::RefCell;
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
+use std::sync::{Arc, Mutex, PoisonError};
 use uuid::Uuid;
 
 /// Options for a single `rngo eval`.
@@ -68,28 +67,32 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
 
     if dry_run {
         simulation_builder
-            .run_log_reader(rngo::SimpleEventRunLog::new())
+            .run_log_reader(Arc::new(rngo::SimpleEventRunLog::new()))
             .build()?;
         return Ok(true);
     }
 
     let eval_dir = prepare_eval_dir(&rngo_dir, &spec, rewritten)?;
 
-    let sqlite_run_log = SqliteRunLog::new(eval_dir.clone())?;
-    let reader = sqlite_run_log.clone();
-    let simulation = simulation_builder.run_log_reader(reader.clone()).build()?;
+    let sqlite_run_log = Arc::new(SqliteRunLog::new(eval_dir.clone())?);
+    let simulation = simulation_builder
+        .run_log_reader(sqlite_run_log.clone())
+        .build()?;
     let effect_channels = simulation.effect_channels();
     proxy_builder = proxy_builder.effect_channels(effect_channels.clone());
-    let writer = StatusWriter::new(sqlite_run_log.clone(), effect_channels);
+    let writer = Arc::new(StatusWriter::new(sqlite_run_log.clone(), effect_channels));
 
-    let flush_failure = Rc::new(RefCell::new(None));
+    let flush_failure = Arc::new(Mutex::new(None));
 
     if realtime {
         let status = writer.clone();
         let failure = flush_failure.clone();
         proxy_builder = proxy_builder.realtime(true).on_wait(move |until| {
             if let Err(error) = status.flush() {
-                failure.borrow_mut().get_or_insert(error);
+                failure
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .get_or_insert(error);
             }
             status.wait(until);
         });
@@ -109,7 +112,11 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
             Ok(_) => {}
             Err(error) => failure = Some(error.into()),
         }
-        if let Some(error) = flush_failure.borrow_mut().take() {
+        if let Some(error) = flush_failure
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+        {
             failure.get_or_insert(error.into());
         }
         if failure.is_some() || stop.is_stopped() {

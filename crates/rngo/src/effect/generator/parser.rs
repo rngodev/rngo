@@ -2,9 +2,9 @@ use crate::effect::generator::GeneratorBuilder;
 use crate::effect::generator::custom::CustomParser;
 use crate::error::{ParseError, ParseErrorKind, ParseErrors};
 use crate::spec;
-use std::rc::Rc;
+use std::sync::Arc;
 
-pub trait GeneratorParser {
+pub trait GeneratorParser: Send + Sync {
     fn key(&self) -> &str;
     fn parse(
         &self,
@@ -13,8 +13,8 @@ pub trait GeneratorParser {
 }
 
 pub struct GeneratorParseVisitor {
-    primitive_generator_parsers: Rc<Vec<Box<dyn GeneratorParser>>>,
-    custom_generator_parsers: Rc<Vec<CustomParser>>,
+    primitive_generator_parsers: Arc<Vec<Box<dyn GeneratorParser>>>,
+    custom_generator_parsers: Arc<Vec<CustomParser>>,
     spec: spec::Generator,
     type_stack: Vec<String>,
     source_path: Vec<String>,
@@ -22,8 +22,8 @@ pub struct GeneratorParseVisitor {
 
 impl GeneratorParseVisitor {
     pub(crate) fn new(
-        primitive_generator_parsers: Rc<Vec<Box<dyn GeneratorParser>>>,
-        custom_generator_parsers: Rc<Vec<CustomParser>>,
+        primitive_generator_parsers: Arc<Vec<Box<dyn GeneratorParser>>>,
+        custom_generator_parsers: Arc<Vec<CustomParser>>,
         spec: spec::Generator,
         type_stack: Vec<String>,
         source_path: Vec<String>,
@@ -101,8 +101,8 @@ impl GeneratorParseVisitor {
     }
 
     pub(crate) fn parse(self) -> Result<Box<dyn GeneratorBuilder>, ParseErrors> {
-        let generator_parsers = Rc::clone(&self.primitive_generator_parsers);
-        let custom_generators = Rc::clone(&self.custom_generator_parsers);
+        let generator_parsers = Arc::clone(&self.primitive_generator_parsers);
+        let custom_generators = Arc::clone(&self.custom_generator_parsers);
 
         let matching: Vec<&dyn GeneratorParser> = generator_parsers
             .iter()

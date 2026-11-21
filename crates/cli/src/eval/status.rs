@@ -2,9 +2,8 @@ use console::{Term, style};
 use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 use rngo::{Input, Metadata, Output, RunLogError, RunLogWriter};
-use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
-use std::rc::Rc;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 const RENDER_INTERVAL: Duration = Duration::from_millis(50);
@@ -16,69 +15,75 @@ struct ChannelStats {
 }
 
 pub struct StatusWriter {
-    child: Rc<dyn RunLogWriter>,
-    effect_channels: Rc<HashMap<String, String>>,
+    child: Arc<dyn RunLogWriter>,
+    effect_channels: HashMap<String, String>,
     term: Term,
-    stats: RefCell<BTreeMap<String, ChannelStats>>,
-    last_timestamp: Cell<Option<Timestamp>>,
-    waiting: Cell<Option<Timestamp>>,
-    rendered_lines: Cell<usize>,
-    last_render: Cell<Option<Instant>>,
-    dirty: Cell<bool>,
+    display: Mutex<Display>,
+}
+
+#[derive(Default)]
+struct Display {
+    stats: BTreeMap<String, ChannelStats>,
+    last_timestamp: Option<Timestamp>,
+    waiting: Option<Timestamp>,
+    rendered_lines: usize,
+    last_render: Option<Instant>,
+    dirty: bool,
 }
 
 impl StatusWriter {
     /// `effect_channels` maps each effect key to the channel it writes to.
     pub fn new<T: RunLogWriter + 'static>(
-        child: Rc<T>,
+        child: Arc<T>,
         effect_channels: HashMap<String, String>,
-    ) -> Rc<Self> {
-        Rc::new(StatusWriter {
-            child: child as Rc<dyn RunLogWriter>,
-            effect_channels: Rc::new(effect_channels),
+    ) -> Self {
+        StatusWriter {
+            child: child as Arc<dyn RunLogWriter>,
+            effect_channels,
             term: Term::stderr(),
-            stats: RefCell::new(BTreeMap::new()),
-            last_timestamp: Cell::new(None),
-            waiting: Cell::new(None),
-            rendered_lines: Cell::new(0),
-            last_render: Cell::new(None),
-            dirty: Cell::new(false),
-        })
+            display: Mutex::new(Display::default()),
+        }
+    }
+
+    fn display(&self) -> MutexGuard<'_, Display> {
+        self.display.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     pub fn finish(&self) {
-        self.waiting.set(None);
-        self.render(true);
+        let mut display = self.display();
+        display.waiting = None;
+        self.render(&mut display, true);
     }
 
     /// Shows that the eval is waiting for an input due at `until`, until that time passes.
     pub fn wait(&self, until: Timestamp) {
-        self.waiting.set(Some(until));
-        self.dirty.set(true);
-        self.render(false);
+        let mut display = self.display();
+        display.waiting = Some(until);
+        display.dirty = true;
+        self.render(&mut display, false);
     }
 
-    fn render(&self, force: bool) {
+    fn render(&self, display: &mut Display, force: bool) {
         if !self.term.is_term() {
             return;
         }
 
-        if force && !self.dirty.get() {
+        if force && !display.dirty {
             return;
         }
 
         let now = Instant::now();
         if !force
-            && let Some(last) = self.last_render.get()
+            && let Some(last) = display.last_render
             && now.duration_since(last) < RENDER_INTERVAL
         {
             return;
         }
-        self.last_render.set(Some(now));
-        self.dirty.set(false);
+        display.last_render = Some(now);
+        display.dirty = false;
 
-        let waiting = self.waiting.get().filter(|until| *until > Timestamp::now());
-        let time_line = match (waiting, self.last_timestamp.get()) {
+        let waiting = display.waiting.filter(|until| *until > Timestamp::now());
+        let time_line = match (waiting, display.last_timestamp) {
             (Some(until), _) => format!(
                 "waiting: next input at {} (in {})",
                 format_time(until),
@@ -90,24 +95,22 @@ impl StatusWriter {
             (None, None) => "time: -".to_string(),
         };
 
-        let stats = self.stats.borrow();
-        let mut lines = Vec::with_capacity(stats.len() + 2);
+        let mut lines = Vec::with_capacity(display.stats.len() + 2);
         lines.push(style("Simulation").bold().for_stderr().to_string());
         lines.push(time_line);
-        for (channel, channel_stats) in stats.iter() {
+        for (channel, channel_stats) in display.stats.iter() {
             lines.push(channel_line(
                 channel,
                 channel_stats.inputs,
                 channel_stats.outputs,
             ));
         }
-        drop(stats);
 
-        let _ = self.term.clear_last_lines(self.rendered_lines.get());
+        let _ = self.term.clear_last_lines(display.rendered_lines);
         for line in &lines {
             let _ = self.term.write_line(line);
         }
-        self.rendered_lines.set(lines.len());
+        display.rendered_lines = lines.len();
     }
 }
 
@@ -154,34 +157,34 @@ impl std::fmt::Debug for StatusWriter {
 
 impl RunLogWriter for StatusWriter {
     fn push_input(&self, input: Input) -> Result<(), RunLogError> {
-        self.last_timestamp.set(Some(input.timestamp));
-        if let Some(channel) = self.effect_channels.get(&input.effect) {
-            self.stats
-                .borrow_mut()
-                .entry(channel.clone())
-                .or_default()
-                .inputs += 1;
+        {
+            let mut display = self.display();
+            display.last_timestamp = Some(input.timestamp);
+            if let Some(channel) = self.effect_channels.get(&input.effect) {
+                display.stats.entry(channel.clone()).or_default().inputs += 1;
+            }
+            display.dirty = true;
+            self.render(&mut display, false);
         }
-
-        self.dirty.set(true);
-        self.render(false);
         self.child.push_input(input)
     }
 
     fn push_output(&self, output: Output) -> Result<(), RunLogError> {
-        self.stats
-            .borrow_mut()
-            .entry(output.channel.clone())
-            .or_default()
-            .outputs += 1;
-
-        self.dirty.set(true);
-        self.render(false);
+        {
+            let mut display = self.display();
+            display
+                .stats
+                .entry(output.channel.clone())
+                .or_default()
+                .outputs += 1;
+            display.dirty = true;
+            self.render(&mut display, false);
+        }
         self.child.push_output(output)
     }
 
     fn push_metadata(&self, metadata: Metadata) -> Result<(), RunLogError> {
-        self.render(false);
+        self.render(&mut self.display(), false);
         self.child.push_metadata(metadata)
     }
 

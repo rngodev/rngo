@@ -2,9 +2,9 @@ use crate::error::{ParseError, ParseErrorKind, ParseErrors};
 use crate::proxy::format::Format;
 use crate::spec;
 use serde_json::Value;
-use std::rc::Rc;
+use std::sync::Arc;
 
-pub trait FormatParser {
+pub trait FormatParser: Send + Sync {
     fn key(&self) -> &str;
     fn parse(
         &self,
@@ -30,7 +30,7 @@ impl<'a> FormatParseContext<'a> {
         &self,
         path: &[&str],
         value: &Value,
-    ) -> Result<Option<Rc<dyn Format>>, ParseErrors> {
+    ) -> Result<Option<Arc<dyn Format>>, ParseErrors> {
         let invalid = |message: String| {
             ParseErrors::from(ParseError::invalid(message).at(path.iter().copied()))
         };
@@ -65,7 +65,7 @@ impl<'a> FormatParseContext<'a> {
         };
 
         result
-            .map(|format| Some(Rc::from(format)))
+            .map(|format| Some(Arc::from(format)))
             .map_err(|errors| {
                 errors
                     .into_iter()

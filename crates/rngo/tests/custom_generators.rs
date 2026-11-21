@@ -6,7 +6,7 @@ fn build(json: &str) -> Result<Simulation, String> {
         .parse_simulation(&rngo::spec::from_value(value).unwrap())
         .map_err(|e| e.to_string())?;
     simulation_builder
-        .run_log_reader(rngo::SimpleEventRunLog::new())
+        .run_log_reader(std::sync::Arc::new(rngo::SimpleEventRunLog::new()))
         .build()
         .map_err(|e| e.to_string())
 }

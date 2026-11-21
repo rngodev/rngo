@@ -13,6 +13,7 @@ You can define a spec using a builder DSL:
 
 ```rust,no_run
 use std::num::NonZeroU64;
+use std::sync::Arc;
 use jiff::SignedDuration;
 use serde_json::Value;
 use rngo::build::*;
@@ -20,7 +21,7 @@ use rngo::build::*;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // The run log records inputs, outputs and metadata. `SqliteRunLog` writes
     // `log.sqlite` into the directory you give it.
-    let run_log = rngo::SqliteRunLog::new("run".into())?;
+    let run_log = Arc::new(rngo::SqliteRunLog::new("run".into())?);
 
     // The simulation generates a deterministic stream of inputs.
     let mut simulation = rngo::Simulation::builder()
@@ -237,12 +238,14 @@ You can also define the above as a JSON (or YAML) spec:
 Then parse the simulation, proxy and audit and run them:
 
 ```rust,no_run
+use std::sync::Arc;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let raw = std::fs::read_to_string("spec.json")?;
     let value: serde_json::Value = serde_json::from_str(&raw)?;
     let spec = rngo::spec::from_value(value)?;
     let dialect = rngo::Dialect::primitive();
-    let run_log = rngo::SqliteRunLog::new("run".into())?;
+    let run_log = Arc::new(rngo::SqliteRunLog::new("run".into())?);
 
     let mut simulation = dialect
         .parse_simulation(&spec)?

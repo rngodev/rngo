@@ -18,7 +18,7 @@ use serde_json::Value;
 use std::process::Command;
 
 /// Where a proxy delivers the inputs of the effects assigned to it.
-pub trait Channel: std::fmt::Debug {
+pub trait Channel: std::fmt::Debug + Send {
     /// Sends one input, formatted by the channel's own format if it has one. The proxy ties
     /// returned outputs to the input.
     fn send(&mut self, input: &Input) -> Result<Vec<ChannelOutput>, ChannelError>;
@@ -28,7 +28,7 @@ pub trait Channel: std::fmt::Debug {
 /// Built with the channel's own key passed in at build time, rather than baked in at
 /// construction - lets a builder (e.g. [`crate::build::exec`]) be constructed generically,
 /// before the key it'll be added under is known, mirroring how `outputs` is threaded in.
-pub trait ChannelBuilder {
+pub trait ChannelBuilder: Send {
     fn build(
         &self,
         channel_key: &str,

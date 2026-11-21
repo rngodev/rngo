@@ -1,60 +1,73 @@
 use crate::log::pool::InputPool;
 use crate::log::{Metadata, RunLogReader, RunLogWriter};
 use crate::{Input, Output, Rng, RunLogError};
-use std::cell::{RefCell, RefMut};
-use std::rc::Rc;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+/// An in-memory run log; it can't run SQL queries.
 #[derive(Debug, Default)]
 pub struct SimpleEventRunLog {
-    inputs: RefCell<Vec<Rc<Input>>>,
-    outputs: RefCell<Vec<Output>>,
-    metadata: RefCell<Vec<Metadata>>,
-    pool: RefCell<InputPool<Rc<Input>>>,
+    state: Mutex<State>,
 }
 
-impl SimpleEventRunLog {
-    pub fn new() -> Rc<Self> {
-        Rc::new(Self::default())
-    }
+#[derive(Debug, Default)]
+struct State {
+    inputs: Vec<Arc<Input>>,
+    outputs: Vec<Output>,
+    metadata: Vec<Metadata>,
+    pool: InputPool<Arc<Input>>,
+}
 
-    pub(crate) fn insert_input(&self, input: Input) {
-        let input = Rc::new(input);
-        self.pool.borrow_mut().push(&input.effect, input.clone());
-        self.inputs.borrow_mut().push(input);
+impl State {
+    fn insert_input(&mut self, input: Input) {
+        let input = Arc::new(input);
+        self.pool.push(&input.effect, input.clone());
+        self.inputs.push(input);
     }
 
     /// The input pool, with `effect` tracked.
-    fn pool(&self, effect: &str) -> RefMut<'_, InputPool<Rc<Input>>> {
-        let mut pool = self.pool.borrow_mut();
-        if !pool.is_tracked(effect) {
+    fn pool(&mut self, effect: &str) -> &mut InputPool<Arc<Input>> {
+        if !self.pool.is_tracked(effect) {
             let items = self
                 .inputs
-                .borrow()
                 .iter()
                 .filter(|input| input.effect == effect)
                 .cloned()
                 .collect();
-            pool.track(effect, items);
+            self.pool.track(effect, items);
         }
-        pool
+        &mut self.pool
+    }
+}
+
+impl SimpleEventRunLog {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn state(&self) -> MutexGuard<'_, State> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    pub(crate) fn insert_input(&self, input: Input) {
+        self.state().insert_input(input);
     }
 }
 
 impl RunLogReader for SimpleEventRunLog {
-    fn last(&self) -> Option<Rc<Input>> {
-        self.inputs.borrow().last().cloned()
+    fn last(&self) -> Option<Arc<Input>> {
+        self.state().inputs.last().cloned()
     }
 
-    fn last_for_effect(&self, key: &str) -> Option<Rc<Input>> {
-        self.pool(key).last(key)
+    fn last_for_effect(&self, key: &str) -> Option<Arc<Input>> {
+        self.state().pool(key).last(key)
     }
 
-    fn random_for_effect(&self, key: &str, rng: &mut Rng) -> Option<Rc<Input>> {
-        self.pool(key).random(key, rng)
+    fn random_for_effect(&self, key: &str, rng: &mut Rng) -> Option<Arc<Input>> {
+        self.state().pool(key).random(key, rng)
     }
 
-    fn unique_for_effect(&self, key: &str, cursor: &str, rng: &mut Rng) -> Option<Rc<Input>> {
-        self.pool(key).take(key, cursor, rng)
+    fn unique_for_effect(&self, key: &str, cursor: &str, rng: &mut Rng) -> Option<Arc<Input>> {
+        self.state().pool(key).take(key, cursor, rng)
     }
 
     fn query(&self, _query: &str) -> Result<serde_json::Value, RunLogError> {
@@ -69,12 +82,12 @@ impl RunLogWriter for SimpleEventRunLog {
     }
 
     fn push_output(&self, output: Output) -> Result<(), RunLogError> {
-        self.outputs.borrow_mut().push(output);
+        self.state().outputs.push(output);
         Ok(())
     }
 
     fn push_metadata(&self, metadata: Metadata) -> Result<(), RunLogError> {
-        self.metadata.borrow_mut().push(metadata);
+        self.state().metadata.push(metadata);
         Ok(())
     }
 }

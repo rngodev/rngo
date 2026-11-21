@@ -5,11 +5,11 @@ use crate::proxy::format::{Format, FormatParseContext};
 use crate::proxy::output::{ChannelOutput, OutputSender};
 use crate::{ChannelError, spec};
 use serde_json::Value;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug, Default)]
 pub(crate) struct Stdout {
-    format: Option<Rc<dyn Format>>,
+    format: Option<Arc<dyn Format>>,
 }
 
 impl Stdout {
@@ -41,12 +41,12 @@ impl Channel for Stdout {
 
 #[derive(Default)]
 pub struct StdoutBuilder {
-    format: Option<Rc<dyn Format>>,
+    format: Option<Arc<dyn Format>>,
 }
 
 impl StdoutBuilder {
     pub fn format(mut self, format: impl Format + 'static) -> Self {
-        self.format = Some(Rc::new(format));
+        self.format = Some(Arc::new(format));
         self
     }
 }

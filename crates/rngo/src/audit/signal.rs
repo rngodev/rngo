@@ -10,11 +10,11 @@ pub use parser::SignalParser;
 use crate::RunLogReader;
 use serde::Serialize;
 
-pub trait Signal: std::fmt::Debug {
+pub trait Signal: std::fmt::Debug + Send {
     fn evaluate(&self, run_log: &dyn RunLogReader) -> SignalOutcome;
 }
 
-pub trait SignalBuilder: std::fmt::Debug {
+pub trait SignalBuilder: std::fmt::Debug + Send {
     fn build(self: Box<Self>, key: &str) -> Result<Box<dyn Signal>, BuildErrors>;
 }
 

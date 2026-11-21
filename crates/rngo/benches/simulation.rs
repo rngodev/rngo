@@ -91,7 +91,7 @@ fn bench_spec(c: &mut Criterion, name: &str, spec: Value, sizes: &[u64]) {
         group.bench_with_input(BenchmarkId::new("memory", size), &size, |b, &size| {
             b.iter_batched(
                 || {
-                    let log = SimpleEventRunLog::new();
+                    let log = std::sync::Arc::new(SimpleEventRunLog::new());
                     let simulation = builder(&spec, size)
                         .run_log_reader(log.clone())
                         .build()
@@ -107,7 +107,8 @@ fn bench_spec(c: &mut Criterion, name: &str, spec: Value, sizes: &[u64]) {
             b.iter_batched(
                 || {
                     let tmp = TempDir::new().unwrap();
-                    let log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
+                    let log =
+                        std::sync::Arc::new(SqliteRunLog::new(tmp.path().to_path_buf()).unwrap());
                     let simulation = builder(&spec, size)
                         .run_log_reader(log.clone())
                         .build()

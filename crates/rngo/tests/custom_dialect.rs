@@ -5,10 +5,9 @@ use rngo::{
     parse, spec,
 };
 use serde_json::{Value, json};
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
-type Sink = Rc<RefCell<Vec<String>>>;
+type Sink = Arc<Mutex<Vec<String>>>;
 
 #[derive(Debug)]
 struct Upper;
@@ -38,7 +37,7 @@ impl FormatParser for UpperParser {
 #[derive(Debug)]
 struct Memory {
     sink: Sink,
-    format: Option<Rc<dyn Format>>,
+    format: Option<Arc<dyn Format>>,
 }
 
 impl Channel for Memory {
@@ -47,14 +46,14 @@ impl Channel for Memory {
             Some(format) => format.format(input).unwrap(),
             None => input.data.to_string(),
         };
-        self.sink.borrow_mut().push(line);
+        self.sink.lock().unwrap().push(line);
         Ok(vec![ChannelOutput::new(Level::Info, "stored")])
     }
 }
 
 struct MemoryBuilder {
     sink: Sink,
-    format: Option<Rc<dyn Format>>,
+    format: Option<Arc<dyn Format>>,
 }
 
 impl ChannelBuilder for MemoryBuilder {
@@ -126,7 +125,7 @@ fn a_custom_dialect_runs_custom_channels_and_formats() {
     let sink = Sink::default();
     let dialect = dialect(&sink);
     let spec = spec_with(json!({ "type": "constant", "value": "hi" }));
-    let log = SimpleEventRunLog::new();
+    let log = std::sync::Arc::new(SimpleEventRunLog::new());
 
     let simulation = dialect
         .parse_simulation(&spec)
@@ -148,7 +147,7 @@ fn a_custom_dialect_runs_custom_channels_and_formats() {
     }
     proxy.finish().unwrap();
 
-    assert_eq!(*sink.borrow(), ["HI", "HI"]);
+    assert_eq!(*sink.lock().unwrap(), ["HI", "HI"]);
 }
 
 #[test]
