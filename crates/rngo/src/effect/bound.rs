@@ -1,7 +1,7 @@
 use crate::effect::prototype::Prototype;
 use crate::error::ParseErrors;
 use crate::moment::Moment;
-use jiff::Timestamp;
+use jiff::{SignedDuration, Timestamp};
 
 /// Which end of a window a [`Bound`] sets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -26,7 +26,7 @@ pub(crate) enum BoundValue {
     Expression(String),
 }
 
-/// A window's start or end as declared: a [`Moment`], a timestamp, or a CEL expression (from a `String` or `&str`).
+/// A window's start or end as declared: a [`Moment`], a timestamp, a duration relative to now, or a CEL expression (from a `String` or `&str`, such as `"now - days(7)"`).
 #[derive(Clone, Debug)]
 pub struct Bound {
     pub(crate) kind: Option<BoundKind>,
@@ -47,6 +47,15 @@ impl From<Timestamp> for Bound {
         Bound {
             kind: None,
             value: BoundValue::Moment(timestamp.into()),
+        }
+    }
+}
+
+impl From<SignedDuration> for Bound {
+    fn from(delta: SignedDuration) -> Self {
+        Bound {
+            kind: None,
+            value: BoundValue::Moment(delta.into()),
         }
     }
 }
@@ -93,5 +102,21 @@ impl Bound {
             }
         };
         Ok(moment.resolve(now))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_duration_is_relative_to_now() {
+        let now: Timestamp = "2024-01-08T00:00:00Z".parse().unwrap();
+        let bound = Bound::from(SignedDuration::from_hours(-24));
+
+        assert_eq!(
+            bound.resolve(now, None).unwrap(),
+            now - SignedDuration::from_hours(24)
+        );
     }
 }

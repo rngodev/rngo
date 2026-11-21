@@ -9,11 +9,10 @@ Each is connected via a `Log` instance, which persists all input, outputs and me
 
 ## DSL
 
-You can define a spec using a builder DSL:
+You can define a spec using a builder DSL. Its `start` and `end` take the same expressions as the JSON spec, a `jiff::Timestamp`, or a `jiff::SignedDuration` relative to now:
 
 ```rust,no_run
 use std::sync::Arc;
-use jiff::SignedDuration;
 use serde_json::Value;
 use rngo::build::*;
 
@@ -25,12 +24,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // The simulation generates a deterministic stream of inputs.
     let mut simulation = rngo::Simulation::builder()
         .seed(41)
-        .start(Moment::Relative(SignedDuration::from_hours(-2160)))
-        .end(Moment::Relative(SignedDuration::ZERO))
+        .start("now - months(3)")
+        .end("now")
         .prototype("recent", |prototype| {
             prototype
-                .start(Moment::Relative(SignedDuration::from_hours(-168)))
-                .end(Moment::Relative(SignedDuration::ZERO))
+                .start("now - days(7)")
+                .end("now")
         })
         .effect("user", |effect| {
             effect
