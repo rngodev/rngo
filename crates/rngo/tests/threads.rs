@@ -42,7 +42,7 @@ fn a_run_built_on_one_thread_runs_on_another() {
     .unwrap();
     let dialect = Dialect::primitive();
     let dir = tempfile::tempdir().unwrap();
-    let run_log = Arc::new(SqliteRunLog::new(dir.path().to_path_buf()).unwrap());
+    let run_log = Arc::new(SqliteRunLog::in_dir(dir.path()).unwrap());
 
     let simulation = dialect
         .parse_simulation(&spec)

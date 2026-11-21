@@ -21,7 +21,7 @@ use rngo::build::*;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // The run log records inputs, outputs and metadata. `SqliteRunLog` writes
     // `log.sqlite` into the directory you give it.
-    let run_log = Arc::new(rngo::SqliteRunLog::new("run".into())?);
+    let run_log = Arc::new(rngo::SqliteRunLog::in_dir("run")?);
 
     // The simulation generates a deterministic stream of inputs.
     let mut simulation = rngo::Simulation::builder()
@@ -245,7 +245,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let value: serde_json::Value = serde_json::from_str(&raw)?;
     let spec = rngo::spec::from_value(value)?;
     let dialect = rngo::Dialect::primitive();
-    let run_log = Arc::new(rngo::SqliteRunLog::new("run".into())?);
+    let run_log = Arc::new(rngo::SqliteRunLog::in_dir("run")?);
 
     let mut simulation = dialect
         .parse_simulation(&spec)?

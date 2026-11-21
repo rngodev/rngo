@@ -42,7 +42,7 @@ fn readme_spec_runs_and_passes_audit() {
     let spec = rngo::spec::from_value(value).unwrap();
     let dialect = Dialect::primitive();
     let dir = tempfile::tempdir().unwrap();
-    let run_log = std::sync::Arc::new(SqliteRunLog::new(dir.path().to_path_buf()).unwrap());
+    let run_log = std::sync::Arc::new(SqliteRunLog::in_dir(dir.path()).unwrap());
 
     let mut simulation = dialect
         .parse_simulation(&spec)

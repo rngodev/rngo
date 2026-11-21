@@ -74,7 +74,7 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
 
     let eval_dir = prepare_eval_dir(&rngo_dir, &spec, rewritten)?;
 
-    let sqlite_run_log = Arc::new(SqliteRunLog::new(eval_dir.clone())?);
+    let sqlite_run_log = Arc::new(SqliteRunLog::in_dir(&eval_dir)?);
     let simulation = simulation_builder
         .run_log_reader(sqlite_run_log.clone())
         .build()?;

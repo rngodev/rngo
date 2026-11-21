@@ -5,7 +5,7 @@ use crate::{Level, Output, Rng, RunLogError};
 use jiff::Timestamp;
 use rusqlite::types::Value as SqlValue;
 use rusqlite::{Connection, OptionalExtension};
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 const BATCH_SIZE: usize = 500;
@@ -25,9 +25,9 @@ struct State {
 }
 
 impl SqliteRunLog {
-    /// Opens (creating if needed) `log.sqlite` in `directory`.
-    pub fn new(directory: PathBuf) -> Result<Self, RunLogError> {
-        let connection = Connection::open(directory.join("log.sqlite"))?;
+    /// Opens (creating if needed) `log.sqlite` in `directory`, which must already exist.
+    pub fn in_dir(directory: impl AsRef<Path>) -> Result<Self, RunLogError> {
+        let connection = Connection::open(directory.as_ref().join("log.sqlite"))?;
 
         connection.execute_batch(
             "
@@ -449,7 +449,7 @@ mod tests {
     #[test]
     fn reads_back_input_timestamps_as_milliseconds() {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
+        let run_log = SqliteRunLog::in_dir(tmp.path()).unwrap();
         let timestamp = Timestamp::from_millisecond(1_700_000_000_123).unwrap();
 
         run_log
@@ -478,7 +478,7 @@ mod tests {
     #[test]
     fn writes_input_and_output_metadata_inline() {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
+        let run_log = SqliteRunLog::in_dir(tmp.path()).unwrap();
 
         run_log
             .push_input(Input {
@@ -551,7 +551,7 @@ mod tests {
     #[test]
     fn skipped_inputs_write_metadata_with_no_input_row() {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
+        let run_log = SqliteRunLog::in_dir(tmp.path()).unwrap();
 
         run_log
             .push_metadata(Metadata {
@@ -598,7 +598,7 @@ mod tests {
     #[test]
     fn standalone_metadata_can_carry_an_output_id() {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
+        let run_log = SqliteRunLog::in_dir(tmp.path()).unwrap();
 
         run_log
             .push_metadata(Metadata {
@@ -623,7 +623,7 @@ mod tests {
     #[test]
     fn batches_across_commits() {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
+        let run_log = SqliteRunLog::in_dir(tmp.path()).unwrap();
 
         for i in 0..(BATCH_SIZE * 2 + 3) {
             run_log
@@ -648,14 +648,14 @@ mod tests {
     #[test]
     fn last_returns_none_when_empty() {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
+        let run_log = SqliteRunLog::in_dir(tmp.path()).unwrap();
         assert!(run_log.last().is_none());
     }
 
     #[test]
     fn last_returns_most_recently_inserted_input_including_uncommitted() {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
+        let run_log = SqliteRunLog::in_dir(tmp.path()).unwrap();
 
         run_log
             .push_input(Input {
@@ -688,7 +688,7 @@ mod tests {
     #[test]
     fn last_for_effect_only_returns_most_recent_matching_effect() {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
+        let run_log = SqliteRunLog::in_dir(tmp.path()).unwrap();
 
         for (i, effect) in [(1, "a"), (2, "b"), (3, "a")] {
             run_log
@@ -716,7 +716,7 @@ mod tests {
     /// ids.
     fn sampled_ids(seed: u64, draws: usize) -> Vec<u64> {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
+        let run_log = SqliteRunLog::in_dir(tmp.path()).unwrap();
         let mut rng = rng(seed);
 
         for i in 1..=10u64 {
@@ -749,7 +749,7 @@ mod tests {
     #[test]
     fn random_for_effect_returns_none_when_no_matching_effect() {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
+        let run_log = SqliteRunLog::in_dir(tmp.path()).unwrap();
         let mut rng = rng(1);
 
         assert!(run_log.random_for_effect("nonexistent", &mut rng).is_none());
@@ -772,7 +772,7 @@ mod tests {
     #[test]
     fn unique_cursor_never_repeats_and_exhausts() {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
+        let run_log = SqliteRunLog::in_dir(tmp.path()).unwrap();
         push_inputs(&run_log, "a", 5);
         let mut rng = rng(1);
 
@@ -793,7 +793,7 @@ mod tests {
     fn unique_cursor_is_deterministic_for_a_fixed_seed() {
         fn draw_all(seed: u64) -> Vec<u64> {
             let tmp = TempDir::new().unwrap();
-            let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
+            let run_log = SqliteRunLog::in_dir(tmp.path()).unwrap();
             push_inputs(&run_log, "a", 10);
             let mut rng = rng(seed);
 
@@ -811,7 +811,7 @@ mod tests {
     #[test]
     fn unique_cursor_state_is_independent_per_cursor() {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
+        let run_log = SqliteRunLog::in_dir(tmp.path()).unwrap();
         push_inputs(&run_log, "a", 1);
         let mut rng = rng(1);
 
@@ -835,7 +835,7 @@ mod tests {
     #[test]
     fn unique_cursor_consumed_markers_do_not_leak_into_input_metadata() {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
+        let run_log = SqliteRunLog::in_dir(tmp.path()).unwrap();
         push_inputs(&run_log, "a", 1);
         let mut rng = rng(1);
 
@@ -851,7 +851,7 @@ mod tests {
         let mut rng = rng(1);
         let mut seen = std::collections::HashSet::new();
 
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
+        let run_log = SqliteRunLog::in_dir(tmp.path()).unwrap();
         push_inputs(&run_log, "a", 6);
         for _ in 0..3 {
             let sampled = run_log.unique_for_effect("a", "cursor", &mut rng).unwrap();
@@ -859,7 +859,7 @@ mod tests {
         }
         drop(run_log);
 
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
+        let run_log = SqliteRunLog::in_dir(tmp.path()).unwrap();
         for _ in 0..3 {
             let sampled = run_log.unique_for_effect("a", "cursor", &mut rng).unwrap();
             assert!(
@@ -874,7 +874,7 @@ mod tests {
     #[test]
     fn get_signal_returns_query_value() {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
+        let run_log = SqliteRunLog::in_dir(tmp.path()).unwrap();
         push_inputs(&run_log, "a", 3);
         run_log.commit().unwrap();
 
@@ -886,7 +886,7 @@ mod tests {
     #[test]
     fn get_signal_returns_none_on_query_error() {
         let tmp = TempDir::new().unwrap();
-        let run_log = SqliteRunLog::new(tmp.path().to_path_buf()).unwrap();
+        let run_log = SqliteRunLog::in_dir(tmp.path()).unwrap();
 
         let value = run_log.query("SELECT COUNT(*) FROM missing_table");
 
