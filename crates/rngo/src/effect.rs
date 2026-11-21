@@ -9,7 +9,7 @@ use crate::SimulationError;
 use crate::effect::bound::{Bound, BoundKind};
 use crate::effect::prototype::Prototype;
 use crate::error::{BuildError, BuildErrors, EffectKey};
-use crate::log::{Metadata, RunLogReader, SimpleEventRunLog};
+use crate::log::{Metadata, RunLogReader};
 use crate::moment::offset_timestamp;
 use clock::Clock;
 use generator::{
@@ -27,8 +27,8 @@ use trigger::{Trigger, TriggerConfig};
 pub use trigger::TriggerEvent;
 
 #[derive(Debug)]
-pub struct Effect {
-    pub key: String,
+pub(crate) struct Effect {
+    pub(crate) key: String,
     run_log_reader: Arc<dyn RunLogReader>,
     trigger: Trigger,
     trigger_config: TriggerConfig,
@@ -38,21 +38,18 @@ pub struct Effect {
     limit: Option<u64>,
     produced: u64,
     origin: Timestamp,
-    pub start: Timestamp,
-    pub end: Option<Timestamp>,
-    /// The name of the prototype the effect asked for; `None` for the default prototype.
-    pub prototype: Option<String>,
-    /// The channel the effect writes to: its own, else its prototype's.
-    pub channel: Option<String>,
+    pub(crate) start: Timestamp,
+    pub(crate) end: Option<Timestamp>,
+    pub(crate) channel: Option<String>,
 }
 
 impl Effect {
-    pub fn builder(key: impl Into<String>) -> EffectBuilder {
+    pub(crate) fn builder(key: impl Into<String>) -> EffectBuilder {
         EffectBuilder::new(key.into())
     }
 
     /// Moves the instant offsets are measured from, rebuilding the trigger around it; call before iterating, once every effect of the simulation is built and the earliest start is known.
-    pub fn set_origin(&mut self, origin: Timestamp) -> Result<&mut Self, BuildErrors> {
+    pub(crate) fn set_origin(&mut self, origin: Timestamp) -> Result<&mut Self, BuildErrors> {
         self.trigger = build_trigger(
             self.trigger_config.clone(),
             &self.key,
@@ -67,7 +64,7 @@ impl Effect {
     }
 
     /// Milliseconds since the simulation origin at which this effect next fires.
-    pub fn next_offset(&self) -> Option<i64> {
+    pub(crate) fn next_offset(&self) -> Option<i64> {
         if self.limit.is_some_and(|limit| self.produced >= limit) {
             return None;
         }
@@ -181,6 +178,15 @@ impl From<SkippedInput> for Metadata {
     }
 }
 
+/// What the simulation hands an effect when it builds it.
+pub(crate) struct EffectContext<'a> {
+    pub(crate) now: Timestamp,
+    pub(crate) seed: u64,
+    pub(crate) prototype: &'a Prototype,
+    pub(crate) run_log_reader: Arc<dyn RunLogReader>,
+}
+
+/// Describes an effect: its window, channel, prototype, trigger and generator; the simulation fills in the rest when it builds.
 #[derive(Debug)]
 pub struct EffectBuilder {
     key: String,
@@ -188,12 +194,7 @@ pub struct EffectBuilder {
     end: Option<Bound>,
     limit: Option<NonZeroU64>,
     channel: Option<String>,
-    now: Option<Timestamp>,
     prototype_key: Option<String>,
-    prototype: Option<Prototype>,
-    seed: Option<u64>,
-    // TODO: get rid of this --->
-    event_run_log: Option<Arc<dyn RunLogReader>>,
     trigger: TriggerConfig,
     generator_builder: Option<Box<dyn GeneratorBuilder>>,
 }
@@ -206,97 +207,86 @@ impl EffectBuilder {
             end: None,
             limit: None,
             channel: None,
-            now: None,
             prototype_key: None,
-            prototype: None,
-            seed: None,
-            event_run_log: None,
             trigger: TriggerConfig::ClockExpression("hz(1, day)".into()),
             generator_builder: None,
         }
     }
 
+    /// When the effect starts firing, overriding its prototype's start.
     pub fn start(mut self, start: impl Into<Bound>) -> Self {
         let start: Bound = start.into();
         self.start = Some(start.of_kind(BoundKind::Start));
         self
     }
 
+    /// When the effect stops firing, overriding its prototype's end.
     pub fn end(mut self, end: impl Into<Bound>) -> Self {
         let end: Bound = end.into();
         self.end = Some(end.of_kind(BoundKind::End));
         self
     }
 
+    /// The most inputs the effect produces, overriding its prototype's limit; skipped attempts don't count.
     pub fn limit(mut self, limit: NonZeroU64) -> Self {
         self.limit = Some(limit);
         self
     }
 
+    /// The key of the channel the effect writes to, overriding its prototype's.
     pub fn channel(mut self, channel: impl Into<String>) -> Self {
         self.channel = Some(channel.into());
         self
     }
 
+    /// The name of the prototype the effect takes its defaults from; without one it uses the default prototype.
     pub fn prototype_key(mut self, key: impl Into<String>) -> Self {
         self.prototype_key = Some(key.into());
         self
     }
 
-    pub fn prototype(mut self, prototype: &Prototype) -> Self {
-        self.prototype = Some(prototype.clone());
-        self
-    }
-
-    pub fn now(mut self, now: Timestamp) -> Self {
-        self.now = Some(now);
-        self
-    }
-
-    pub fn seed(mut self, seed: u64) -> Self {
-        self.seed = Some(seed);
-        self
-    }
-
     /// The key of the prototype this effect asked for, if any.
-    pub fn get_prototype_key(&self) -> Option<&str> {
+    pub(crate) fn get_prototype_key(&self) -> Option<&str> {
         self.prototype_key.as_deref()
     }
 
-    pub fn event_run_log(mut self, event_run_log: Arc<dyn RunLogReader>) -> Self {
-        self.event_run_log = Some(event_run_log);
-        self
-    }
-
+    /// Fires the effect once for each input of the effect `key`.
     pub fn trigger_effect(mut self, key: impl Into<String>) -> Self {
         self.trigger = TriggerConfig::Effect { key: key.into() };
         self
     }
 
+    /// Fires the effect at a fixed rate, in inputs per second.
     pub fn trigger_hertz(mut self, hertz: f64) -> Self {
         self.trigger = TriggerConfig::ClockHertz(hertz);
         self
     }
 
+    /// Fires the effect at the rate a CEL expression returns, such as `hz(1, day)`; the default.
     pub fn trigger_expression(mut self, expression: impl Into<String>) -> Self {
         self.trigger = TriggerConfig::ClockExpression(expression.into());
         self
     }
 
+    /// Generates the data of each input.
     pub fn generator(mut self, builder: impl GeneratorBuilder + 'static) -> Self {
         self.generator_builder = Some(Box::new(builder));
         self
     }
 
     /// Lays the effect's own `start`, `end` and `limit` over its prototype's and builds it; errors unless the window has a `start` and an `end` or `limit`, and a `start` before any `end`.
-    pub fn build(self) -> Result<Effect, BuildErrors> {
-        let now = self.now.unwrap_or_else(Timestamp::now);
-        let prototype = self.prototype.as_ref();
+    pub(crate) fn build(self, context: EffectContext) -> Result<Effect, BuildErrors> {
+        let EffectContext {
+            now,
+            seed,
+            prototype,
+            run_log_reader,
+        } = context;
         let mut errors: Vec<BuildError> = vec![];
         let own_start =
             self.start
                 .as_ref()
-                .map(|bound| bound.resolve(now, prototype))
+                .map(|bound| bound.resolve(now, Some(prototype)))
                 .transpose()
                 .map_err(|e| {
                     errors.extend(e.iter().map(|e| {
@@ -308,7 +298,7 @@ impl EffectBuilder {
         let own_end = self
             .end
             .as_ref()
-            .map(|bound| bound.resolve(now, prototype))
+            .map(|bound| bound.resolve(now, Some(prototype)))
             .transpose()
             .map_err(|e| {
                 errors.extend(
@@ -321,12 +311,9 @@ impl EffectBuilder {
         if !errors.is_empty() {
             return Err(errors.into());
         }
-        let start = own_start.or(prototype.and_then(|p| p.start));
-        let end = own_end.or(prototype.and_then(|p| p.end));
-        let limit = self
-            .limit
-            .or(prototype.and_then(|p| p.limit))
-            .map(NonZeroU64::get);
+        let start = own_start.or(prototype.start);
+        let end = own_end.or(prototype.end);
+        let limit = self.limit.or(prototype.limit).map(NonZeroU64::get);
 
         if start.is_none() {
             errors.push(BuildError::effect(
@@ -355,12 +342,7 @@ impl EffectBuilder {
             return Err(errors.into());
         };
 
-        let seed = self.seed.unwrap_or(1);
         let origin = start;
-
-        let run_log_reader: Arc<dyn RunLogReader> = self
-            .event_run_log
-            .unwrap_or_else(|| Arc::new(SimpleEventRunLog::new()));
 
         let generator_result = if let Some(generator_builder) = self.generator_builder {
             let visitor = GeneratorBuildVisitor {
@@ -407,10 +389,7 @@ impl EffectBuilder {
                 origin,
                 start,
                 end,
-                prototype: self.prototype_key,
-                channel: self
-                    .channel
-                    .or_else(|| prototype.and_then(|p| p.channel.clone())),
+                channel: self.channel.or_else(|| prototype.channel.clone()),
             }),
             Ok(_) => Err(errors.into()),
             Err(e) => {
@@ -461,7 +440,7 @@ fn build_trigger(
 
 #[cfg(test)]
 mod tests {
-    use super::{Effect, EffectBuilder};
+    use super::{Effect, EffectBuilder, EffectContext};
     use crate::build::constant;
     use crate::effect::generator::{
         Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
@@ -469,8 +448,19 @@ mod tests {
     };
     use crate::effect::prototype::Prototype;
     use crate::error::BuildErrors;
+    use crate::log::SimpleEventRunLog;
     use jiff::{SignedDuration, Timestamp};
     use std::num::NonZeroU64;
+    use std::sync::Arc;
+
+    fn context(prototype: &Prototype) -> EffectContext<'_> {
+        EffectContext {
+            now: Timestamp::now(),
+            seed: 1,
+            prototype,
+            run_log_reader: Arc::new(SimpleEventRunLog::new()),
+        }
+    }
 
     #[derive(Debug, Default)]
     struct AlternatingGenerator {
@@ -510,7 +500,7 @@ mod tests {
         }
     }
 
-    fn build(mut builder: EffectBuilder) -> Effect {
+    fn build(builder: EffectBuilder) -> Effect {
         let now = Timestamp::now();
         let start = now - SignedDuration::from_hours(24 * 30);
         let prototype = Prototype {
@@ -518,8 +508,7 @@ mod tests {
             end: Some(now),
             ..Prototype::default()
         };
-        builder = builder.prototype(&prototype);
-        builder.build().unwrap()
+        builder.build(context(&prototype)).unwrap()
     }
 
     #[test]
@@ -536,8 +525,7 @@ mod tests {
             if let Some(channel) = channel {
                 builder = builder.channel(channel);
             }
-            builder = builder.prototype(&prototype);
-            builder.build().unwrap()
+            builder.build(context(&prototype)).unwrap()
         };
 
         assert_eq!(built(None).channel.as_deref(), Some("db"));

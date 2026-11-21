@@ -54,7 +54,7 @@ pub struct MomentParser<'a> {
 
 impl<'a> MomentParser<'a> {
     /// Lets expressions refer to `prototype.start` and `prototype.end`, whichever the prototype has.
-    pub fn prototype(mut self, prototype: &'a Prototype) -> Self {
+    pub(crate) fn prototype(mut self, prototype: &'a Prototype) -> Self {
         self.prototype = Some(prototype);
         self
     }

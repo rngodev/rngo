@@ -5,23 +5,22 @@ use std::num::NonZeroU64;
 
 /// A time window and an input cap, each optional; an effect takes the parts it doesn't set itself from its prototype.
 #[derive(Clone, Debug, Default)]
-pub struct Prototype {
-    /// The prototype's name; `None` for the default prototype and for an effect's own window.
-    pub name: Option<String>,
-    pub start: Option<Timestamp>,
-    pub end: Option<Timestamp>,
-    pub limit: Option<NonZeroU64>,
+pub(crate) struct Prototype {
+    pub(crate) start: Option<Timestamp>,
+    pub(crate) end: Option<Timestamp>,
+    pub(crate) limit: Option<NonZeroU64>,
     /// The key of the channel effects on this prototype write to unless they set their own.
-    pub channel: Option<String>,
+    pub(crate) channel: Option<String>,
 }
 
 impl Prototype {
-    pub fn builder() -> PrototypeBuilder {
+    #[cfg(test)]
+    pub(crate) fn builder() -> PrototypeBuilder {
         PrototypeBuilder::default()
     }
 }
 
-/// Builds a prototype; whatever is left unset stays unset.
+/// Describes a prototype: defaults for the effects that name it; whatever is left unset stays unset.
 #[derive(Clone, Debug, Default)]
 pub struct PrototypeBuilder {
     name: Option<String>,
@@ -34,45 +33,49 @@ pub struct PrototypeBuilder {
 }
 
 impl PrototypeBuilder {
-    pub fn name(mut self, name: impl Into<String>) -> Self {
+    pub(crate) fn name(mut self, name: impl Into<String>) -> Self {
         self.name = Some(name.into());
         self
     }
 
+    /// When effects on this prototype start firing, unless they set their own start.
     pub fn start(mut self, start: impl Into<Bound>) -> Self {
         let start: Bound = start.into();
         self.start = Some(start.of_kind(BoundKind::Start));
         self
     }
 
+    /// When effects on this prototype stop firing, unless they set their own end.
     pub fn end(mut self, end: impl Into<Bound>) -> Self {
         let end: Bound = end.into();
         self.end = Some(end.of_kind(BoundKind::End));
         self
     }
 
+    /// The most inputs each effect on this prototype produces, unless it sets its own limit.
     pub fn limit(mut self, limit: NonZeroU64) -> Self {
         self.limit = Some(limit);
         self
     }
 
+    /// The key of the channel effects on this prototype write to, unless they set their own.
     pub fn channel(mut self, channel: impl Into<String>) -> Self {
         self.channel = Some(channel.into());
         self
     }
 
-    pub fn now(mut self, now: Timestamp) -> Self {
+    pub(crate) fn now(mut self, now: Timestamp) -> Self {
         self.now = Some(now);
         self
     }
 
-    pub fn prototype(mut self, prototype: &Prototype) -> Self {
+    pub(crate) fn prototype(mut self, prototype: &Prototype) -> Self {
         self.prototype = Some(prototype.clone());
         self
     }
 
     /// Resolves the prototype; errors if an expression doesn't parse or if `start` isn't before `end`.
-    pub fn build(&self) -> Result<Prototype, BuildErrors> {
+    pub(crate) fn build(&self) -> Result<Prototype, BuildErrors> {
         let now = self.now.unwrap_or_else(Timestamp::now);
         let prototype = self.prototype.as_ref();
         let mut errors = vec![];
@@ -113,7 +116,6 @@ impl PrototypeBuilder {
         }
 
         Ok(Prototype {
-            name: self.name.clone(),
             start,
             end,
             limit: self.limit,

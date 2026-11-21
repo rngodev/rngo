@@ -1,6 +1,6 @@
 use crate::effect::bound::Bound;
 use crate::effect::prototype::{Prototype, PrototypeBuilder};
-use crate::effect::{Effect, EffectBuilder, Step};
+use crate::effect::{Effect, EffectBuilder, EffectContext, Step};
 use crate::error::{BuildError, BuildErrors, SimulationKey};
 use crate::log::SimpleEventRunLog;
 use crate::moment::Moment;
@@ -108,11 +108,13 @@ impl SimulationBuilder {
         self
     }
 
+    /// Seeds every random draw, so a run with the same seed, `now` and spec repeats exactly; defaults to 1.
     pub fn seed(mut self, seed: u64) -> Self {
         self.seed = Some(seed);
         self
     }
 
+    /// The instant relative bounds are measured from; defaults to the current time at build. Set it to make runs reproducible.
     pub fn now(mut self, now: Timestamp) -> Self {
         self.now = Some(now);
         self
@@ -213,13 +215,14 @@ impl SimulationBuilder {
                 Some(key) => prototypes.get(key).unwrap_or(&empty_prototype),
                 None => &default_prototype,
             };
-            let effect_builder = effect_builder
-                .prototype(prototype)
-                .now(now)
-                .event_run_log(run_log_reader.clone())
-                .seed(self.seed.unwrap_or(1));
+            let context = EffectContext {
+                now,
+                seed: self.seed.unwrap_or(1),
+                prototype,
+                run_log_reader: run_log_reader.clone(),
+            };
 
-            match effect_builder.build() {
+            match effect_builder.build(context) {
                 Ok(effect) => effects.push(effect),
                 Err(e) => errors.extend(e),
             }
