@@ -244,11 +244,6 @@ impl EffectBuilder {
         self
     }
 
-    /// The key of the prototype this effect asked for, if any.
-    pub(crate) fn get_prototype_key(&self) -> Option<&str> {
-        self.prototype_key.as_deref()
-    }
-
     /// Fires the effect once for each input of the effect `key`.
     pub fn trigger_effect(mut self, key: impl Into<String>) -> Self {
         self.trigger = TriggerConfig::Effect { key: key.into() };
@@ -498,7 +493,7 @@ mod tests {
 
     impl GeneratorBuilder for AlternatingGeneratorBuilder {
         fn build(
-            &self,
+            self: Box<Self>,
             _visitor: GeneratorBuildVisitor,
         ) -> Result<Box<dyn Generator>, BuildErrors> {
             Ok(Box::new(AlternatingGenerator::default()))

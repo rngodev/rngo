@@ -16,8 +16,8 @@ impl std::fmt::Debug for Str {
 }
 
 impl Str {
-    pub(crate) fn builder() -> StrBuilder {
-        StrBuilder {
+    pub(crate) fn builder() -> StringBuilder {
+        StringBuilder {
             pattern: ".{0,64}".into(),
         }
     }
@@ -38,19 +38,22 @@ impl Generator for Str {
 }
 
 #[derive(Debug)]
-pub struct StrBuilder {
+pub struct StringBuilder {
     pattern: String,
 }
 
-impl StrBuilder {
+impl StringBuilder {
     pub fn pattern(mut self, pattern: impl Into<String>) -> Self {
         self.pattern = pattern.into();
         self
     }
 }
 
-impl GeneratorBuilder for StrBuilder {
-    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, BuildErrors> {
+impl GeneratorBuilder for StringBuilder {
+    fn build(
+        self: Box<Self>,
+        visitor: GeneratorBuildVisitor,
+    ) -> Result<Box<dyn Generator>, BuildErrors> {
         let regex = rand_regex::Regex::compile(&self.pattern, 100)
             .map_err(|e| vec![visitor.error(format!("invalid pattern: {e}"))])?;
 

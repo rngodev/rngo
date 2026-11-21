@@ -56,10 +56,10 @@ impl ArrayBuilder {
 
 impl GeneratorBuilder for ArrayBuilder {
     fn build(
-        &self,
+        self: Box<Self>,
         generator_visitor: GeneratorBuildVisitor,
     ) -> Result<Box<dyn Generator>, BuildErrors> {
-        let items = if let Some(items_builder) = &self.items_builder {
+        let items = if let Some(items_builder) = self.items_builder {
             items_builder.build(generator_visitor.follow_edge(GeneratorEdge {
                 kind: "items",
                 key: "items".into(),

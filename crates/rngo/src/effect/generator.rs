@@ -107,12 +107,18 @@ impl Metadata {
 }
 
 pub trait GeneratorBuilder: std::fmt::Debug + Send {
-    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, BuildErrors>;
+    fn build(
+        self: Box<Self>,
+        visitor: GeneratorBuildVisitor,
+    ) -> Result<Box<dyn Generator>, BuildErrors>;
 }
 
 impl GeneratorBuilder for Box<dyn GeneratorBuilder> {
-    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, BuildErrors> {
-        self.as_ref().build(visitor)
+    fn build(
+        self: Box<Self>,
+        visitor: GeneratorBuildVisitor,
+    ) -> Result<Box<dyn Generator>, BuildErrors> {
+        (*self).build(visitor)
     }
 }
 

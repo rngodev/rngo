@@ -335,13 +335,13 @@ mod tests {
 
     impl ChannelBuilder for RecordingSinkBuilder {
         fn build(
-            &self,
+            self: Box<Self>,
             _channel_key: &str,
             _outputs: OutputSender,
         ) -> Result<Box<dyn Channel>, BuildErrors> {
             Ok(Box::new(RecordingSink {
-                sent: self.sent.clone(),
-                format: self.format.clone(),
+                sent: self.sent,
+                format: self.format,
             }))
         }
     }
@@ -432,7 +432,7 @@ mod tests {
 
         impl ChannelBuilder for KeyRecorder {
             fn build(
-                &self,
+                self: Box<Self>,
                 channel_key: &str,
                 _outputs: OutputSender,
             ) -> Result<Box<dyn Channel>, BuildErrors> {

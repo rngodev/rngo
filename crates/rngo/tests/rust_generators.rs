@@ -26,7 +26,10 @@ struct CounterBuilder {
 }
 
 impl GeneratorBuilder for CounterBuilder {
-    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, BuildErrors> {
+    fn build(
+        self: Box<Self>,
+        visitor: GeneratorBuildVisitor,
+    ) -> Result<Box<dyn Generator>, BuildErrors> {
         if self.step == 0 {
             return Err(visitor.error("step must be positive").into());
         }

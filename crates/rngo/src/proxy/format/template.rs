@@ -1,4 +1,4 @@
-use crate::error::ParseErrors;
+use crate::error::{BuildError, BuildErrors, ParseErrors};
 use handlebars::{
     Context, Handlebars, Helper, HelperResult, Output, RenderContext, RenderError,
     RenderErrorReason,
@@ -7,7 +7,7 @@ use handlebars::{
 use serde_json::json;
 
 use crate::effect::Input;
-use crate::proxy::format::{Format, FormatParser};
+use crate::proxy::format::{Format, FormatBuilder, FormatParser};
 use crate::{FormatError, ParseError, spec};
 
 const TEMPLATE_NAME: &str = "template";
@@ -15,7 +15,7 @@ const TEMPLATE_NAME: &str = "template";
 /// Formats each event by rendering a Handlebars template against the whole `Input` (with the
 /// effect exposed as `effect.key`), without HTML escaping and with a `json` helper that serializes its one argument.
 #[derive(Debug)]
-pub struct TemplateFormat {
+pub(crate) struct TemplateFormat {
     hbs: Handlebars<'static>,
 }
 
@@ -24,8 +24,12 @@ impl TemplateFormat {
         TemplateFormatParser {}
     }
 
+    pub(crate) fn builder() -> TemplateFormatBuilder {
+        TemplateFormatBuilder { template: None }
+    }
+
     /// Compiles `template`, failing if it is invalid.
-    pub fn new(template: &str) -> Result<Self, FormatError> {
+    fn new(template: &str) -> Result<Self, FormatError> {
         let mut hbs = Handlebars::new();
         hbs.register_escape_fn(handlebars::no_escape);
         hbs.register_helper("json", Box::new(json_helper));
@@ -66,6 +70,31 @@ impl Format for TemplateFormat {
     }
 }
 
+/// Builds the `template` format, which renders each input through a Handlebars template.
+#[derive(Debug)]
+pub struct TemplateFormatBuilder {
+    template: Option<String>,
+}
+
+impl TemplateFormatBuilder {
+    /// The Handlebars template, rendered against the whole input; required, and compiled at build.
+    pub fn template(mut self, template: impl Into<String>) -> Self {
+        self.template = Some(template.into());
+        self
+    }
+}
+
+impl FormatBuilder for TemplateFormatBuilder {
+    fn build(self: Box<Self>, channel_key: &str) -> Result<Box<dyn Format>, BuildErrors> {
+        let Some(template) = self.template else {
+            return Err(BuildError::channel(channel_key, "format: template is required").into());
+        };
+        let format = TemplateFormat::new(&template)
+            .map_err(|e| BuildError::channel(channel_key, format!("format: {e}")))?;
+        Ok(Box::new(format))
+    }
+}
+
 pub(crate) struct TemplateFormatParser;
 
 impl FormatParser for TemplateFormatParser {
@@ -77,7 +106,7 @@ impl FormatParser for TemplateFormatParser {
         &self,
         format: &spec::Format,
         _spec: &spec::Spec,
-    ) -> Result<Box<dyn Format>, ParseErrors> {
+    ) -> Result<Box<dyn FormatBuilder>, ParseErrors> {
         let error =
             |message: String| ParseErrors::from(ParseError::invalid(message).at(["template"]));
 
@@ -117,7 +146,8 @@ mod tests {
     fn parse(format: Value) -> Result<Box<dyn Format>, ParseErrors> {
         let format: spec::Format = serde_json::from_value(format).unwrap();
         let spec: spec::Spec = serde_json::from_value(json!({ "effects": {} })).unwrap();
-        TemplateFormat::parser().parse(&format, &spec)
+        let builder = TemplateFormat::parser().parse(&format, &spec)?;
+        Ok(builder.build("out").unwrap())
     }
 
     #[test]
@@ -162,6 +192,26 @@ mod tests {
     fn json_helper_errors_on_bad_arguments() {
         assert!(render("{{json}}", json!({})).is_err());
         assert!(render("{{json data id}}", json!({})).is_err());
+    }
+
+    #[test]
+    fn builder_builds_a_format() {
+        let format = Box::new(TemplateFormat::builder().template("{{effect.key}}"))
+            .build("out")
+            .unwrap();
+        assert_eq!(format.format(&event(json!(null))).unwrap(), "user");
+    }
+
+    #[test]
+    fn builder_errors_on_a_missing_or_invalid_template() {
+        let missing = Box::new(TemplateFormat::builder())
+            .build("out")
+            .unwrap_err();
+        assert!(missing[0].to_string().contains("template is required"));
+        let invalid = Box::new(TemplateFormat::builder().template("{{#if}}"))
+            .build("out")
+            .unwrap_err();
+        assert_eq!(invalid.len(), 1);
     }
 
     #[test]

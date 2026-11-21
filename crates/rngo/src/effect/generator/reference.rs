@@ -87,13 +87,16 @@ impl ReferenceBuilder {
 }
 
 impl GeneratorBuilder for ReferenceBuilder {
-    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, BuildErrors> {
-        if let Some(key) = &self.effect {
+    fn build(
+        self: Box<Self>,
+        visitor: GeneratorBuildVisitor,
+    ) -> Result<Box<dyn Generator>, BuildErrors> {
+        if let Some(key) = self.effect {
             let unique_cursor = matches!(self.cursor, Cursor::Unique).then(|| visitor.path_id());
 
             Ok(Box::new(Reference {
                 event_run_log: visitor.event_run_log.clone(),
-                key: key.clone(),
+                key,
                 cursor: self.cursor,
                 unique_cursor,
                 rng: visitor.rng(),

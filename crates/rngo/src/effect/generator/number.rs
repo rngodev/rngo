@@ -123,7 +123,10 @@ impl NumberBuilder {
 }
 
 impl GeneratorBuilder for NumberBuilder {
-    fn build(&self, visitor: GeneratorBuildVisitor) -> Result<Box<dyn Generator>, BuildErrors> {
+    fn build(
+        self: Box<Self>,
+        visitor: GeneratorBuildVisitor,
+    ) -> Result<Box<dyn Generator>, BuildErrors> {
         let sampling = sampling(self.minimum, self.maximum, self.step)
             .map_err(|(_, message)| vec![visitor.error(message)])?;
 

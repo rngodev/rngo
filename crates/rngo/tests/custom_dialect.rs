@@ -1,5 +1,5 @@
 use rngo::channel::{Channel, ChannelBuilder, ChannelOutput, ChannelParser, OutputSender};
-use rngo::format::{Format, FormatParseContext, FormatParser};
+use rngo::format::{Format, FormatBuilder, FormatParseContext, FormatParser};
 use rngo::{
     BuildErrors, ChannelError, Dialect, FormatError, Input, Level, ParseErrors, SimpleEventRunLog,
     parse, spec,
@@ -29,7 +29,7 @@ impl FormatParser for UpperParser {
         &self,
         _format: &spec::Format,
         _spec: &spec::Spec,
-    ) -> Result<Box<dyn Format>, ParseErrors> {
+    ) -> Result<Box<dyn FormatBuilder>, ParseErrors> {
         Ok(Box::new(Upper))
     }
 }
@@ -37,7 +37,7 @@ impl FormatParser for UpperParser {
 #[derive(Debug)]
 struct Memory {
     sink: Sink,
-    format: Option<Arc<dyn Format>>,
+    format: Option<Box<dyn Format>>,
 }
 
 impl Channel for Memory {
@@ -53,18 +53,21 @@ impl Channel for Memory {
 
 struct MemoryBuilder {
     sink: Sink,
-    format: Option<Arc<dyn Format>>,
+    format: Option<Box<dyn FormatBuilder>>,
 }
 
 impl ChannelBuilder for MemoryBuilder {
     fn build(
-        &self,
-        _channel_key: &str,
+        self: Box<Self>,
+        channel_key: &str,
         _outputs: OutputSender,
     ) -> Result<Box<dyn Channel>, BuildErrors> {
         Ok(Box::new(Memory {
-            sink: self.sink.clone(),
-            format: self.format.clone(),
+            sink: self.sink,
+            format: self
+                .format
+                .map(|format| format.build(channel_key))
+                .transpose()?,
         }))
     }
 }

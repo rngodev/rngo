@@ -1,7 +1,7 @@
 use crate::effect::Input;
 use crate::error::{BuildErrors, ParseErrors};
 use crate::proxy::channel::{Channel, ChannelBuilder, ChannelParser};
-use crate::proxy::format::{Format, FormatParseContext};
+use crate::proxy::format::{Format, FormatBuilder, FormatParseContext};
 use crate::proxy::output::{ChannelOutput, OutputSender};
 use crate::{BuildError, ChannelError, Level, ParseError, spec};
 use serde_json::Value;
@@ -134,12 +134,12 @@ impl Drop for Stream {
 #[derive(Default)]
 pub struct StreamBuilder {
     command: Option<String>,
-    format: Option<Arc<dyn Format>>,
+    format: Option<Box<dyn FormatBuilder>>,
 }
 
 impl StreamBuilder {
-    pub fn format(mut self, format: impl Format + 'static) -> Self {
-        self.format = Some(Arc::new(format));
+    pub fn format(mut self, format: impl FormatBuilder + 'static) -> Self {
+        self.format = Some(Box::new(format));
         self
     }
 
@@ -151,13 +151,14 @@ impl StreamBuilder {
 
 impl ChannelBuilder for StreamBuilder {
     fn build(
-        &self,
+        self: Box<Self>,
         channel_key: &str,
         outputs: OutputSender,
     ) -> Result<Box<dyn Channel>, BuildErrors> {
-        let Some(command) = self.command.clone() else {
+        let Some(command) = self.command else {
             return Err(BuildError::channel(channel_key, "command not specified").into());
         };
+        let format = super::build_format(self.format, channel_key)?;
 
         let mut child = super::shell(&command)
             .stdin(Stdio::piped())
@@ -191,7 +192,7 @@ impl ChannelBuilder for StreamBuilder {
 
         Ok(Box::new(Stream {
             channel_key: channel_key.to_string(),
-            format: self.format.clone(),
+            format,
             child,
             stdin,
             reader_threads,
@@ -277,26 +278,28 @@ mod tests {
 
     #[test]
     fn builder_without_a_command_is_an_error() {
-        let result = StreamBuilder::default().build("logger", outputs());
+        let result = Box::new(StreamBuilder::default()).build("logger", outputs());
         assert!(result.is_err());
     }
 
     #[test]
     fn builder_with_no_channel_key_at_construction_still_builds() {
-        let result = Stream::builder().command("cat").build("logger", outputs());
+        let result = Box::new(Stream::builder().command("cat")).build("logger", outputs());
         assert!(result.is_ok());
     }
 
     #[test]
     #[cfg(unix)]
     fn drop_abandons_a_reader_thread_stuck_on_an_orphaned_grandchild() {
-        let stream = StreamBuilder::default()
-            // Backgrounds `sleep 5` without redirecting it, so it inherits this shell's stdout
-            // pipe and keeps it open (reparented, once this shell exits) well past both grace
-            // periods below - simulating a command whose kill doesn't actually close its pipe.
-            .command("sleep 5 & echo done".to_string())
-            .build("test", outputs())
-            .unwrap();
+        let stream = Box::new(
+            StreamBuilder::default()
+                // Backgrounds `sleep 5` without redirecting it, so it inherits this shell's stdout
+                // pipe and keeps it open (reparented, once this shell exits) well past both grace
+                // periods below - simulating a command whose kill doesn't actually close its pipe.
+                .command("sleep 5 & echo done".to_string()),
+        )
+        .build("test", outputs())
+        .unwrap();
 
         let start = Instant::now();
         drop(stream);
@@ -312,10 +315,11 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn write_to_a_command_that_exited_reports_its_status_and_stderr() {
-        let mut stream = StreamBuilder::default()
-            .command("echo 'connection refused' >&2; exit 2".to_string())
-            .build("db", outputs())
-            .unwrap();
+        let mut stream = Box::new(
+            StreamBuilder::default().command("echo 'connection refused' >&2; exit 2".to_string()),
+        )
+        .build("db", outputs())
+        .unwrap();
         let input = Input {
             id: 1,
             effect: "ping".into(),
