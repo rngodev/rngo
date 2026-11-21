@@ -10,6 +10,7 @@ Each release has a section named after its version. Changes that break existing 
 - `rngo init` installs the agent skills release that matches the CLI version.
 - `exec` and `stream` channels work on Windows.
 - The docs on docs.rs include items behind the `schema` feature, such as `spec::json_schema`, marked with the feature they need.
+- Builder `start` and `end` accept a `jiff::SignedDuration`, relative to now. The crate README writes them as spec expressions, such as `.start("now - days(7)")`.
 
 ### Changed
 
