@@ -168,6 +168,7 @@ pub struct Prototype {
 /// Overrides of a prototype's `start` and `end`.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
 #[non_exhaustive]
 pub struct Scenario {
     pub start: Option<String>,
@@ -178,6 +179,7 @@ pub struct Scenario {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
+#[serde(deny_unknown_fields)]
 #[non_exhaustive]
 pub enum Trigger {
     Clock { rate: String },
@@ -224,6 +226,7 @@ impl<'de> Deserialize<'de> for TriggerUnion {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
 #[non_exhaustive]
 pub struct Effect {
     /// Key of the prototype whose window and defaults this effect uses.
@@ -268,6 +271,7 @@ pub struct Generator {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
 #[non_exhaustive]
 pub struct GeneratorType {
     pub generator: Generator,
@@ -392,6 +396,33 @@ mod tests {
         for spec in specs {
             let errors = parse(spec).unwrap_err();
             assert!(errors[0].to_string().contains(MIGRATION_URL));
+        }
+    }
+
+    #[test]
+    fn unknown_fields_are_rejected_at_their_path() {
+        let cases = [
+            (
+                json!({ "effects": { "user": { "limt": 10, "generator": { "type": "number" } } } }),
+                "effects.user.limt",
+            ),
+            (
+                json!({ "effects": {}, "prototypes": { "p": { "scenarios": { "s": { "strat": "2024-01-01" } } } } }),
+                "prototypes.p.scenarios.s.strat",
+            ),
+            (
+                json!({ "effects": {}, "generators": { "name": { "generator": { "type": "number" }, "typ": "x" } } }),
+                "generators.name.typ",
+            ),
+            (
+                json!({ "effects": { "a": { "trigger": { "type": "effect", "key": "b", "extra": 1 }, "generator": { "type": "number" } } } }),
+                "effects.a.trigger",
+            ),
+        ];
+        for (spec, path) in cases {
+            let message = parse(spec).unwrap_err().to_string();
+            assert!(message.contains(&format!("`{path}`")), "{message}");
+            assert!(message.contains("unknown field"), "{message}");
         }
     }
 

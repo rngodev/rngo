@@ -13,6 +13,7 @@
       "type": "object"
     },
     "Effect": {
+      "additionalProperties": false,
       "properties": {
         "channel": {
           "description": "Key of the channel this effect's inputs are delivered to.",
@@ -88,6 +89,7 @@
       "type": "object"
     },
     "GeneratorType": {
+      "additionalProperties": false,
       "properties": {
         "generator": {
           "$ref": "#/$defs/Generator"
@@ -140,6 +142,7 @@
       "type": "object"
     },
     "Scenario": {
+      "additionalProperties": false,
       "description": "Overrides of a prototype's `start` and `end`.",
       "properties": {
         "end": {
@@ -172,6 +175,7 @@
     "Trigger": {
       "oneOf": [
         {
+          "additionalProperties": false,
           "properties": {
             "rate": {
               "type": "string"
@@ -188,6 +192,7 @@
           "type": "object"
         },
         {
+          "additionalProperties": false,
           "properties": {
             "key": {
               "type": "string"
