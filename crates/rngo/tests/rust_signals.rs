@@ -16,10 +16,10 @@ impl Signal for LastIdAtLeast {
         };
         SignalOutcome::Success {
             value: json!(last.id),
-            eval: Some(SignalEval {
-                expectation: format!("id >= {}", self.min),
-                passed: last.id >= self.min,
-            }),
+            eval: Some(SignalEval::new(
+                format!("id >= {}", self.min),
+                last.id >= self.min,
+            )),
         }
     }
 }

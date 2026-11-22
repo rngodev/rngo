@@ -64,11 +64,9 @@ impl Generator for Function {
                 metadata,
             },
             Err(e) => {
-                metadata.push(Metadata {
-                    mtype: "error".into(),
-                    attribute: None,
-                    data: Some(serde_json::json!({ "message": e.to_string() })),
-                });
+                metadata.push(
+                    Metadata::new("error").data(serde_json::json!({ "message": e.to_string() })),
+                );
                 GeneratorResult {
                     value: None,
                     metadata,
@@ -114,10 +112,7 @@ impl GeneratorBuilder for FunctionBuilder {
         let mut variables = HashMap::new();
 
         for (key, builder) in self.variable_builders {
-            let var_visitor = visitor.follow_edge(GeneratorEdge {
-                kind: "variable",
-                key: key.clone(),
-            });
+            let var_visitor = visitor.follow_edge(GeneratorEdge::new("variable", key.clone()));
             match builder.build(var_visitor) {
                 Ok(generator) => {
                     variables.insert(key, generator);

@@ -1,9 +1,9 @@
 use rngo::build::*;
 use rngo::generator::{
     Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorParseVisitor,
-    GeneratorParser, GeneratorResult,
+    GeneratorParser, GeneratorResult, Metadata,
 };
-use rngo::{BuildErrors, Dialect, Input, ParseErrors, Simulation};
+use rngo::{BuildErrors, Dialect, Input, ParseErrors, Simulation, Step};
 use serde_json::{Value, json};
 
 #[derive(Debug)]
@@ -70,6 +70,61 @@ fn a_generator_defined_outside_the_crate_reports_build_errors() {
         errors
             .iter()
             .any(|e| e.to_string().contains("step must be positive"))
+    );
+}
+
+#[derive(Debug)]
+struct EveryOther {
+    fired: u64,
+}
+
+impl Generator for EveryOther {
+    fn next(&mut self, _context: &GeneratorContext) -> GeneratorResult {
+        self.fired += 1;
+        if self.fired.is_multiple_of(2) {
+            GeneratorResult::skip().metadata(vec![Metadata::new("even").data(json!(self.fired))])
+        } else {
+            GeneratorResult::from(json!(self.fired))
+                .metadata(vec![Metadata::new("odd").data(json!(self.fired))])
+        }
+    }
+}
+
+impl GeneratorBuilder for EveryOther {
+    fn build(
+        self: Box<Self>,
+        _visitor: GeneratorBuildVisitor,
+    ) -> Result<Box<dyn Generator>, BuildErrors> {
+        Ok(self)
+    }
+}
+
+#[test]
+fn a_generator_defined_outside_the_crate_can_skip_and_attach_metadata() {
+    let steps: Vec<Step> = Simulation::builder()
+        .effect("every_other", |e| {
+            e.trigger_hertz(1.0)
+                .limit(2)
+                .generator(EveryOther { fired: 0 })
+        })
+        .run_log_reader(std::sync::Arc::new(rngo::SimpleEventRunLog::new()))
+        .build()
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+
+    let kinds: Vec<(&str, &str)> = steps
+        .iter()
+        .map(|step| match step {
+            Step::Input(input) => ("input", input.metadata[0].mtype.as_str()),
+            Step::Skipped(skipped) => ("skipped", skipped.metadata[0].mtype.as_str()),
+            _ => unreachable!(),
+        })
+        .collect();
+
+    assert_eq!(
+        kinds,
+        [("input", "odd"), ("skipped", "even"), ("input", "odd")]
     );
 }
 

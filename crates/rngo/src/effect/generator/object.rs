@@ -76,10 +76,7 @@ impl GeneratorBuilder for ObjectBuilder {
         let mut properties = IndexMap::new();
 
         for (key, builder) in self.property_builders {
-            let property_visitor = visitor.follow_edge(GeneratorEdge {
-                kind: "property",
-                key: key.clone(),
-            });
+            let property_visitor = visitor.follow_edge(GeneratorEdge::new("property", key.clone()));
             match builder.build(property_visitor) {
                 Ok(generator) => {
                     properties.insert(key, generator);

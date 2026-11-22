@@ -38,12 +38,20 @@ pub trait Generator: std::fmt::Debug + Send {
 
 /// One step down the generator tree: `kind` is the kind of step (e.g. a property or an array item) and `key` names it.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct GeneratorEdge {
     pub kind: &'static str,
     pub key: String,
 }
 
 impl GeneratorEdge {
+    pub fn new(kind: &'static str, key: impl Into<String>) -> Self {
+        GeneratorEdge {
+            kind,
+            key: key.into(),
+        }
+    }
+
     /// The spec fields this step descends through, e.g. `properties.<key>` for a property.
     pub fn spec_path(&self) -> Vec<String> {
         match self.kind {
@@ -74,9 +82,25 @@ impl GeneratorContext<'_> {
     }
 }
 
+/// What a generator produced: a value, or none to skip the attempt, plus any metadata.
 pub struct GeneratorResult {
     pub(crate) value: Option<Value>,
     pub(crate) metadata: Vec<Metadata>,
+}
+
+impl GeneratorResult {
+    /// No value, so the effect skips this attempt.
+    pub fn skip() -> Self {
+        Self {
+            value: None,
+            metadata: Vec::default(),
+        }
+    }
+
+    pub fn metadata(mut self, metadata: Vec<Metadata>) -> Self {
+        self.metadata = metadata;
+        self
+    }
 }
 
 impl From<Value> for GeneratorResult {
@@ -88,7 +112,10 @@ impl From<Value> for GeneratorResult {
     }
 }
 
+/// A note a generator attaches to its result, such as an error; `attribute` points at the part of
+/// the value it concerns.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Metadata {
     #[serde(rename = "type")]
     pub mtype: String,
@@ -97,6 +124,26 @@ pub struct Metadata {
 }
 
 impl Metadata {
+    /// Metadata of type `mtype`, about the whole value and with no data.
+    pub fn new(mtype: impl Into<String>) -> Self {
+        Metadata {
+            mtype: mtype.into(),
+            attribute: None,
+            data: None,
+        }
+    }
+
+    /// Points it at part of the value.
+    pub fn attribute(mut self, attribute: JsonPointer) -> Self {
+        self.attribute = Some(attribute);
+        self
+    }
+
+    pub fn data(mut self, data: Value) -> Self {
+        self.data = Some(data);
+        self
+    }
+
     fn prefix_attribute(&mut self, part: JsonPointerPart) {
         if let Some(attribute) = &mut self.attribute {
             attribute.prefix(part)

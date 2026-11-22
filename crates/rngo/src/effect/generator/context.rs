@@ -59,11 +59,9 @@ impl Generator for Context {
 fn error_result(message: impl Into<String>) -> GeneratorResult {
     GeneratorResult {
         value: None,
-        metadata: vec![Metadata {
-            mtype: "error".into(),
-            attribute: None,
-            data: Some(serde_json::json!({ "message": message.into() })),
-        }],
+        metadata: vec![
+            Metadata::new("error").data(serde_json::json!({ "message": message.into() })),
+        ],
     }
 }
 

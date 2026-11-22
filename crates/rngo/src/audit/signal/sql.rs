@@ -70,10 +70,7 @@ fn evaluate_expect(
 
     Ok(SignalOutcome::Success {
         value,
-        eval: Some(SignalEval {
-            expectation: expectation.source.clone(),
-            passed,
-        }),
+        eval: Some(SignalEval::new(expectation.source.clone(), passed)),
     })
 }
 

@@ -12,7 +12,9 @@ pub enum Level {
     Info,
 }
 
+/// Something a channel reported, as written to the run log.
 #[derive(Clone, Debug, Serialize)]
+#[non_exhaustive]
 pub struct Output {
     pub input_id: Option<u64>,
     pub timestamp: Timestamp,
@@ -22,8 +24,39 @@ pub struct Output {
     pub metadata: Vec<Metadata>,
 }
 
+impl Output {
+    /// An output from `channel`, timestamped now and tied to no input.
+    pub fn new(channel: impl Into<String>, level: Level, data: impl Into<String>) -> Self {
+        Output {
+            input_id: None,
+            timestamp: Timestamp::now(),
+            channel: channel.into(),
+            level,
+            data: data.into(),
+            metadata: vec![],
+        }
+    }
+
+    /// Ties it to the input it was reported for.
+    pub fn input_id(mut self, input_id: u64) -> Self {
+        self.input_id = Some(input_id);
+        self
+    }
+
+    pub fn timestamp(mut self, timestamp: Timestamp) -> Self {
+        self.timestamp = timestamp;
+        self
+    }
+
+    pub fn metadata(mut self, metadata: Vec<Metadata>) -> Self {
+        self.metadata = metadata;
+        self
+    }
+}
+
 /// A message a channel reports; the proxy turns it into an [`Output`].
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct ChannelOutput {
     pub level: Level,
     pub message: String,
@@ -39,13 +72,10 @@ impl ChannelOutput {
 
     /// Converts to an [`Output`] on `channel`, timestamped now.
     pub(crate) fn into_output(self, channel: &str, input_id: Option<u64>) -> Output {
-        Output {
-            input_id,
-            timestamp: Timestamp::now(),
-            channel: channel.to_string(),
-            level: self.level,
-            data: self.message,
-            metadata: vec![],
+        let output = Output::new(channel, self.level, self.message);
+        match input_id {
+            Some(input_id) => output.input_id(input_id),
+            None => output,
         }
     }
 }

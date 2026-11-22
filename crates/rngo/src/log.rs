@@ -32,7 +32,10 @@ pub trait RunLogReader: std::fmt::Debug + Send + Sync {
     fn query(&self, query: &str) -> Result<Value, RunLogError>;
 }
 
+/// A run log row about the run itself or one of its inputs or outputs, such as a skipped attempt
+/// or a signal outcome.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Metadata {
     pub mtype: String,
     pub input_id: Option<i64>,
@@ -41,4 +44,46 @@ pub struct Metadata {
     pub segment: Option<String>,
     /// When the metadata's subject occurred in simulation time, e.g. a skipped attempt.
     pub timestamp: Option<Timestamp>,
+}
+
+impl Metadata {
+    /// Metadata of type `mtype`, with every other field unset.
+    pub fn new(mtype: impl Into<String>) -> Self {
+        Metadata {
+            mtype: mtype.into(),
+            input_id: None,
+            output_id: None,
+            data: None,
+            segment: None,
+            timestamp: None,
+        }
+    }
+
+    /// Ties it to an input.
+    pub fn input_id(mut self, input_id: i64) -> Self {
+        self.input_id = Some(input_id);
+        self
+    }
+
+    /// Ties it to an output.
+    pub fn output_id(mut self, output_id: i64) -> Self {
+        self.output_id = Some(output_id);
+        self
+    }
+
+    pub fn data(mut self, data: Value) -> Self {
+        self.data = Some(data);
+        self
+    }
+
+    pub fn segment(mut self, segment: impl Into<String>) -> Self {
+        self.segment = Some(segment.into());
+        self
+    }
+
+    /// When its subject occurred in simulation time.
+    pub fn timestamp(mut self, timestamp: Timestamp) -> Self {
+        self.timestamp = Some(timestamp);
+        self
+    }
 }

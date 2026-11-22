@@ -7,18 +7,17 @@ use tempfile::TempDir;
 const SIZES: [u64; 2] = [1_000, 10_000];
 
 fn input(id: u64, effect: &str) -> Input {
-    Input {
+    Input::new(
         id,
-        effect: effect.to_string(),
-        timestamp: Timestamp::now(),
-        data: serde_json::json!({
+        effect,
+        Timestamp::now(),
+        serde_json::json!({
             "id": id,
             "name": "Some User Name",
             "email": "user@example.com",
             "tags": ["a", "b", "c"],
         }),
-        metadata: vec![],
-    }
+    )
 }
 
 fn filled(count: u64) -> (TempDir, std::sync::Arc<SqliteRunLog>) {
