@@ -34,9 +34,7 @@ impl Signal for SqlSignal {
     fn evaluate(&self, run_log: &dyn RunLogReader) -> SignalOutcome {
         match self.try_evaluate(run_log) {
             Ok(outcome) => outcome,
-            Err(error) => SignalOutcome::Error {
-                error: error.to_string(),
-            },
+            Err(error) => SignalOutcome::error(error.to_string()),
         }
     }
 }
@@ -53,7 +51,7 @@ fn evaluate_expect(
     value: serde_json::Value,
 ) -> Result<SignalOutcome, SignalError> {
     let Some(expectation) = expectation else {
-        return Ok(SignalOutcome::Success { value, eval: None });
+        return Ok(SignalOutcome::success(value, None));
     };
 
     let mut ctx = Context::default();
@@ -68,10 +66,10 @@ fn evaluate_expect(
         other => return Err(SignalError::NotBool(format!("{other:?}"))),
     };
 
-    Ok(SignalOutcome::Success {
+    Ok(SignalOutcome::success(
         value,
-        eval: Some(SignalEval::new(expectation.source.clone(), passed)),
-    })
+        Some(SignalEval::new(expectation.source.clone(), passed)),
+    ))
 }
 
 pub(crate) struct SqlSignalParser;

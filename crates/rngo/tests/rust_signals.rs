@@ -10,17 +10,15 @@ struct LastIdAtLeast {
 impl Signal for LastIdAtLeast {
     fn evaluate(&self, run_log: &dyn RunLogReader) -> SignalOutcome {
         let Some(last) = run_log.last() else {
-            return SignalOutcome::Error {
-                error: "no inputs".into(),
-            };
+            return SignalOutcome::error("no inputs");
         };
-        SignalOutcome::Success {
-            value: json!(last.id),
-            eval: Some(SignalEval::new(
+        SignalOutcome::success(
+            json!(last.id),
+            Some(SignalEval::new(
                 format!("id >= {}", self.min),
                 last.id >= self.min,
             )),
-        }
+        )
     }
 }
 
@@ -112,4 +110,20 @@ fn a_registered_signal_parser_reports_parse_errors() {
             .iter()
             .any(|e| e.to_string().contains("min must be a number"))
     );
+}
+
+#[test]
+fn outcomes_built_outside_the_crate_can_be_read_back() {
+    match outcome(1) {
+        SignalOutcome::Success { value, eval, .. } => {
+            assert_eq!(value, json!(3));
+            assert_eq!(eval.unwrap().expectation, "id >= 1");
+        }
+        other => panic!("expected a success, got {other:?}"),
+    }
+
+    match SignalOutcome::error("no inputs") {
+        SignalOutcome::Error { error, .. } => assert_eq!(error, "no inputs"),
+        other => panic!("expected an error, got {other:?}"),
+    }
 }
