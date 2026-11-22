@@ -43,10 +43,7 @@ impl Channel for Exec {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
-            .map_err(|source| ChannelError::Spawn {
-                channel: self.channel_key.clone(),
-                source,
-            })?;
+            .map_err(|source| ChannelError::spawn(self.channel_key.clone(), source))?;
 
         let mut outputs = vec![];
 
