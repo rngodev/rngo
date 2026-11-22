@@ -11,3 +11,5 @@ The first versioned format. Specs written before versioning were already in it i
 - `phases`: replaced by `prototypes` (named defaults an effect opts into with `prototype`); a prototype takes `start`, `end`, `limit` and `channel`, not lists of effects or channels.
 - `schemas`: renamed to `generators`.
 - a channel's `target`: removed; put the target's fields (`type`, `command`, ...) directly on the channel next to `format`.
+
+An unknown field on an effect, a trigger object, a prototype's scenario or a custom generator is rejected rather than ignored. Such a field never did anything, so remove it, or fix the typo it hides (`limt` for `limit`, `chanel` for `channel`).

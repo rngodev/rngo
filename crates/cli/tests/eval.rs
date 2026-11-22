@@ -584,6 +584,27 @@ fn path_to_rngo_dir_merges_its_files() {
 }
 
 #[test]
+fn unknown_field_in_an_effect_file_is_reported_at_its_path() {
+    let tmp = TempDir::new().unwrap();
+    let rngo_dir = tmp.path().join(".rngo");
+    fs::create_dir_all(rngo_dir.join("effects")).unwrap();
+    let mut effect = ping_spec("unused")["effects"]["ping"].take();
+    effect["limt"] = json!(10);
+    write_yaml(rngo_dir.join("effects/ping.yml"), &effect);
+    write_yaml(rngo_dir.join("spec.yml"), &json!({ "seed": 1 }));
+
+    let options = EvalOptions {
+        dry_run: true,
+        ..EvalOptions::default()
+    };
+    let error = eval(Some(&rngo_dir), options).unwrap_err();
+
+    let message = error.to_string();
+    assert!(message.contains("`effects.ping.limt`"), "{message}");
+    assert!(!rngo_dir.join("evals").exists());
+}
+
+#[test]
 fn path_to_project_dir_uses_the_rngo_dir_inside() {
     let tmp = TempDir::new().unwrap();
     let base = tmp.path();
