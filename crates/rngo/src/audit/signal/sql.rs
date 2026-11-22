@@ -7,7 +7,6 @@ use cel::{Context, Program};
 
 #[derive(Debug)]
 pub(crate) struct SqlSignal {
-    key: String,
     query: String,
     expectation: Option<super::CelExpectation>,
 }
@@ -36,7 +35,7 @@ impl Signal for SqlSignal {
         match self.try_evaluate(run_log) {
             Ok(outcome) => outcome,
             Err(error) => SignalOutcome::Error {
-                error: format!("signal `{}`: {error}", self.key),
+                error: error.to_string(),
             },
         }
     }
@@ -85,7 +84,7 @@ impl SignalParser for SqlSignalParser {
         "sql"
     }
 
-    fn parse(&self, key: &str, signal: &spec::Signal) -> Result<Box<dyn Signal>, ParseErrors> {
+    fn parse(&self, signal: &spec::Signal) -> Result<Box<dyn SignalBuilder>, ParseErrors> {
         let query = match signal.fields.get("query") {
             Some(value) => match value.as_str() {
                 Some(query) => query.to_string(),
@@ -118,11 +117,7 @@ impl SignalParser for SqlSignalParser {
             None => None,
         };
 
-        Ok(Box::new(SqlSignal {
-            key: key.to_string(),
-            query,
-            expectation,
-        }))
+        Ok(Box::new(SqlSignal { query, expectation }))
     }
 }
 
@@ -158,11 +153,7 @@ impl SignalBuilder for SqlSignalBuilder {
             None => None,
         };
 
-        Ok(Box::new(SqlSignal {
-            key: key.to_string(),
-            query,
-            expectation,
-        }))
+        Ok(Box::new(SqlSignal { query, expectation }))
     }
 }
 
@@ -189,14 +180,14 @@ mod tests {
             "expect": "result == 1",
         }));
 
-        let result = SqlSignal::parser().parse("check", &signal);
+        let result = SqlSignal::parser().parse(&signal);
         assert!(result.is_ok());
     }
 
     #[test]
     fn missing_query_is_an_error() {
         let signal = spec_signal(serde_json::json!({ "type": "sql" }));
-        let result = SqlSignal::parser().parse("check", &signal);
+        let result = SqlSignal::parser().parse(&signal);
         assert!(result.is_err());
     }
 
@@ -229,7 +220,7 @@ mod tests {
             "query": "SELECT 1",
             "expect": 1,
         }));
-        let result = SqlSignal::parser().parse("check", &signal);
+        let result = SqlSignal::parser().parse(&signal);
         assert!(result.is_err());
     }
 
@@ -240,7 +231,7 @@ mod tests {
             "query": "SELECT 1",
             "expect": "not ( valid cel",
         }));
-        let result = SqlSignal::parser().parse("check", &signal);
+        let result = SqlSignal::parser().parse(&signal);
         assert!(result.is_err());
     }
 
@@ -295,13 +286,11 @@ mod tests {
     #[test]
     fn unsupported_run_log_is_reported_in_the_outcome() {
         let signal = SqlSignal {
-            key: "check".to_string(),
             query: "SELECT 1".to_string(),
             expectation: None,
         };
         match signal.evaluate(&crate::SimpleEventRunLog::default()) {
             SignalOutcome::Error { error } => {
-                assert!(error.contains("signal `check`"));
                 assert!(error.contains("does not support running queries"));
             }
             SignalOutcome::Success { .. } => panic!("expected error"),
