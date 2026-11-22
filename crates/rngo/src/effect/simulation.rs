@@ -267,8 +267,8 @@ impl SimulationBuilder {
 #[cfg(test)]
 mod tests {
     use crate::effect::generator::{
-        Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
-        Metadata,
+        Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorMetadata,
+        GeneratorResult,
     };
     use crate::error::{BuildError, BuildErrors};
 
@@ -288,8 +288,8 @@ mod tests {
             } else {
                 GeneratorResult {
                     value: None,
-                    metadata: vec![Metadata {
-                        mtype: "error".into(),
+                    metadata: vec![GeneratorMetadata {
+                        kind: "error".into(),
                         attribute: None,
                         data: Some(serde_json::json!({ "message": "boom" })),
                     }],

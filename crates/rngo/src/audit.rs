@@ -317,7 +317,7 @@ mod tests {
         let written = run_log.metadata.lock().unwrap();
         assert_eq!(written.len(), 2);
 
-        assert_eq!(written[0].mtype, "signal");
+        assert_eq!(written[0].kind, "signal");
         assert_eq!(written[0].input_id, None);
         assert_eq!(written[0].output_id, None);
         assert_eq!(
@@ -329,7 +329,7 @@ mod tests {
             serde_json::json!("success")
         );
 
-        assert_eq!(written[1].mtype, "signal");
+        assert_eq!(written[1].kind, "signal");
         assert_eq!(
             written[1].data.as_ref().unwrap()["key"],
             serde_json::json!("errored")

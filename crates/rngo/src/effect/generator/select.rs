@@ -1,7 +1,9 @@
 use super::{
     Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
 };
-use crate::effect::generator::{GeneratorEdge, GeneratorParseVisitor, GeneratorParser, Metadata};
+use crate::effect::generator::{
+    GeneratorEdge, GeneratorEdgeKind, GeneratorMetadata, GeneratorParseVisitor, GeneratorParser,
+};
 use crate::error::{BuildErrors, ParseErrors};
 use crate::spec;
 use rand::RngExt;
@@ -47,7 +49,7 @@ impl Generator for Select {
         GeneratorResult {
             value: None,
             metadata: vec![
-                Metadata::new("error")
+                GeneratorMetadata::new("error")
                     .data(serde_json::json!({ "message": "no options available" })),
             ],
         }
@@ -79,7 +81,8 @@ impl GeneratorBuilder for SelectBuilder {
         let mut properties = vec![];
 
         for (i, (weight, builder)) in self.option_builders.into_iter().enumerate() {
-            let option_visitor = visitor.follow_edge(GeneratorEdge::new("option", i.to_string()));
+            let option_visitor =
+                visitor.follow_edge(GeneratorEdge::new(GeneratorEdgeKind::Option, i.to_string()));
             match builder.build(option_visitor) {
                 Ok(generator) => properties.push(SelectProperty { generator, weight }),
                 Err(e) => errors.extend(e),

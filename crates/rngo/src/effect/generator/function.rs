@@ -2,7 +2,9 @@ use super::{
     Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
 };
 use crate::cel::{CelContextExt, json_to_cel};
-use crate::effect::generator::{GeneratorEdge, GeneratorParseVisitor, GeneratorParser, Metadata};
+use crate::effect::generator::{
+    GeneratorEdge, GeneratorEdgeKind, GeneratorMetadata, GeneratorParseVisitor, GeneratorParser,
+};
 use crate::error::{BuildErrors, ParseErrors};
 use crate::spec;
 use cel::{Context, Program};
@@ -34,7 +36,7 @@ impl Generator for Function {
         ctx.with_strings();
 
         let mut complete = true;
-        let mut metadata: Vec<Metadata> = Vec::new();
+        let mut metadata: Vec<GeneratorMetadata> = Vec::new();
 
         for (key, generator) in &mut self.variables {
             let result = generator.next(context);
@@ -65,7 +67,8 @@ impl Generator for Function {
             },
             Err(e) => {
                 metadata.push(
-                    Metadata::new("error").data(serde_json::json!({ "message": e.to_string() })),
+                    GeneratorMetadata::new("error")
+                        .data(serde_json::json!({ "message": e.to_string() })),
                 );
                 GeneratorResult {
                     value: None,
@@ -112,7 +115,8 @@ impl GeneratorBuilder for FunctionBuilder {
         let mut variables = HashMap::new();
 
         for (key, builder) in self.variable_builders {
-            let var_visitor = visitor.follow_edge(GeneratorEdge::new("variable", key.clone()));
+            let var_visitor =
+                visitor.follow_edge(GeneratorEdge::new(GeneratorEdgeKind::Variable, key.clone()));
             match builder.build(var_visitor) {
                 Ok(generator) => {
                     variables.insert(key, generator);

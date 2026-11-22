@@ -1,4 +1,5 @@
 use rngo::build::*;
+use rngo::generator::GeneratorEdgeKind;
 use rngo::{BuildError, Dialect, EffectKey, ParseError, Simulation};
 
 #[test]
@@ -45,7 +46,7 @@ fn builder() {
     assert_eq!(object_error.message(), "minimum is greater than maximum");
     let object_path = object_error.generator_path().unwrap();
     assert_eq!(object_path.len(), 1);
-    assert_eq!(object_path[0].kind, "property");
+    assert_eq!(object_path[0].kind, GeneratorEdgeKind::Property);
     assert_eq!(object_path[0].key, "age");
     assert_eq!(
         object_error.to_string(),
@@ -74,9 +75,9 @@ fn builder() {
     assert_eq!(nested_error.message(), "minimum is greater than maximum");
     let nested_path = nested_error.generator_path().unwrap();
     assert_eq!(nested_path.len(), 2);
-    assert_eq!(nested_path[0].kind, "property");
+    assert_eq!(nested_path[0].kind, GeneratorEdgeKind::Property);
     assert_eq!(nested_path[0].key, "score");
-    assert_eq!(nested_path[1].kind, "option");
+    assert_eq!(nested_path[1].kind, GeneratorEdgeKind::Option);
     assert_eq!(nested_path[1].key, "0");
     assert_eq!(
         nested_error.spec_path().unwrap().join("."),

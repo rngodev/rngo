@@ -116,12 +116,6 @@ impl Dialect {
             };
         };
 
-        if spec.scenarios.is_some() {
-            errors.push(
-                ParseError::invalid("the default prototype has no scenarios").at(["scenarios"]),
-            );
-        }
-
         for (name, prototype) in &spec.prototypes {
             simulation_builder = simulation_builder.prototype(name, |mut prototype_builder| {
                 if let Some(start) = &prototype.start {
@@ -323,14 +317,14 @@ impl Dialect {
         let matching: Vec<_> = self
             .signal_parsers
             .iter()
-            .filter(|p| signal.stype.as_deref() == Some(p.key()))
+            .filter(|p| signal.kind.as_deref() == Some(p.key()))
             .collect();
 
         match matching.as_slice() {
             [parser] => parser.parse(signal),
             [] => Err(ParseError::new(ParseErrorKind::UnknownType {
                 kind: "signal",
-                found: signal.stype.clone(),
+                found: signal.kind.clone(),
             })
             .at(["type"])
             .into()),
@@ -351,14 +345,14 @@ impl Dialect {
         let matching: Vec<_> = self
             .channel_parsers
             .iter()
-            .filter(|p| channel.ctype.as_deref() == Some(p.key()))
+            .filter(|p| channel.kind.as_deref() == Some(p.key()))
             .collect();
 
         match matching.as_slice() {
             [parser] => parser.parse(channel, formats),
             [] => Err(ParseError::new(ParseErrorKind::UnknownType {
                 kind: "channel",
-                found: channel.ctype.clone(),
+                found: channel.kind.clone(),
             })
             .at(["type"])
             .into()),

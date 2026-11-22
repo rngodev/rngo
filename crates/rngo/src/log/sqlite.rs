@@ -175,9 +175,9 @@ fn load_effect(
 
 fn insert_metadata_row(
     connection: &Connection,
-    mtype: &str,
-    input_id: Option<i64>,
-    output_id: Option<i64>,
+    kind: &str,
+    input_id: Option<u64>,
+    output_id: Option<u64>,
     data: Option<&serde_json::Value>,
     segment: Option<&str>,
     timestamp: Option<Timestamp>,
@@ -187,9 +187,9 @@ fn insert_metadata_row(
             "INSERT INTO metadata (type, input_id, output_id, data, segment, timestamp) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         )?
         .execute(rusqlite::params![
-            mtype,
-            input_id,
-            output_id,
+            kind,
+            input_id.map(|id| id as i64),
+            output_id.map(|id| id as i64),
             data.map(|v| v.to_string()),
             segment,
             timestamp.map(|t| t.as_millisecond()),
@@ -200,7 +200,7 @@ fn insert_metadata_row(
 fn insert_metadata(connection: &Connection, metadata: &Metadata) -> Result<(), RunLogError> {
     insert_metadata_row(
         connection,
-        &metadata.mtype,
+        &metadata.kind,
         metadata.input_id,
         metadata.output_id,
         metadata.data.as_ref(),
@@ -385,7 +385,7 @@ fn query_unique_for_effect(
     insert_metadata_row(
         connection,
         "_unique_reference",
-        Some(input.id as i64),
+        Some(input.id),
         None,
         None,
         Some(cursor),
@@ -438,7 +438,7 @@ impl RunLogReader for SqliteRunLog {
 mod tests {
     use super::*;
     use crate::effect::Input;
-    use crate::effect::generator::Metadata as GeneratorMetadata;
+    use crate::effect::generator::GeneratorMetadata;
     use jiff::Timestamp;
     use tempfile::TempDir;
 
@@ -487,7 +487,7 @@ mod tests {
                 timestamp: Timestamp::now(),
                 data: serde_json::json!({ "a": 1 }),
                 metadata: vec![GeneratorMetadata {
-                    mtype: "error".into(),
+                    kind: "error".into(),
                     attribute: None,
                     data: Some(serde_json::json!({ "message": "partial value" })),
                 }],
@@ -502,7 +502,7 @@ mod tests {
                 level: Level::Info,
                 data: "hello".to_string(),
                 metadata: vec![GeneratorMetadata {
-                    mtype: "error".into(),
+                    kind: "error".into(),
                     attribute: None,
                     data: Some(serde_json::json!({ "message": "delivery failed" })),
                 }],
@@ -555,7 +555,7 @@ mod tests {
 
         run_log
             .push_metadata(Metadata {
-                mtype: "skipped".into(),
+                kind: "skipped".into(),
                 input_id: None,
                 output_id: None,
                 data: None,
@@ -602,7 +602,7 @@ mod tests {
 
         run_log
             .push_metadata(Metadata {
-                mtype: "delivery_failed".into(),
+                kind: "delivery_failed".into(),
                 input_id: None,
                 output_id: Some(7),
                 data: None,

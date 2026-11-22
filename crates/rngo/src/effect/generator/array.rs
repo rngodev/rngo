@@ -2,7 +2,9 @@ use super::{
     Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
     JsonPointerPart,
 };
-use crate::effect::generator::{GeneratorEdge, GeneratorParseVisitor, GeneratorParser, Metadata};
+use crate::effect::generator::{
+    GeneratorEdge, GeneratorEdgeKind, GeneratorMetadata, GeneratorParseVisitor, GeneratorParser,
+};
 use crate::error::{BuildErrors, ParseErrors};
 use crate::spec;
 use rand::RngExt;
@@ -60,8 +62,10 @@ impl GeneratorBuilder for ArrayBuilder {
         generator_visitor: GeneratorBuildVisitor,
     ) -> Result<Box<dyn Generator>, BuildErrors> {
         let items = if let Some(items_builder) = self.items_builder {
-            items_builder
-                .build(generator_visitor.follow_edge(GeneratorEdge::new("items", "items")))?
+            items_builder.build(
+                generator_visitor
+                    .follow_edge(GeneratorEdge::new(GeneratorEdgeKind::Items, "items")),
+            )?
         } else {
             return Err(generator_visitor.error("items was not set").into());
         };
@@ -80,7 +84,7 @@ impl Generator for Array {
         let count = self.rng.random_range(self.min_items..=self.max_items);
         let mut arr = Vec::with_capacity(count);
         let mut complete = true;
-        let mut metadata: Vec<Metadata> = Vec::new();
+        let mut metadata: Vec<GeneratorMetadata> = Vec::new();
 
         for i in 0..count {
             let result = self.items.next(context);

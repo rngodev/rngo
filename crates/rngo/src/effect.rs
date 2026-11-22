@@ -13,8 +13,7 @@ use crate::log::{Metadata, RunLogReader};
 use crate::moment::offset_timestamp;
 use clock::Clock;
 use generator::{
-    Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext,
-    Metadata as GeneratorMetadata,
+    Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorMetadata,
 };
 use jiff::{SignedDuration, Timestamp};
 use multi_try::MultiTry;
@@ -461,8 +460,8 @@ mod tests {
     use super::{Effect, EffectBuilder, EffectContext};
     use crate::build::constant;
     use crate::effect::generator::{
-        Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
-        Metadata,
+        Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorMetadata,
+        GeneratorResult,
     };
     use crate::effect::prototype::Prototype;
     use crate::error::BuildErrors;
@@ -490,8 +489,8 @@ mod tests {
             if self.calls % 2 == 1 {
                 GeneratorResult {
                     value: None,
-                    metadata: vec![Metadata {
-                        mtype: "error".into(),
+                    metadata: vec![GeneratorMetadata {
+                        kind: "error".into(),
                         attribute: None,
                         data: None,
                     }],

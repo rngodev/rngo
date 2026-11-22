@@ -1,7 +1,9 @@
 use super::{
     Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
 };
-use crate::effect::generator::{GeneratorEdge, GeneratorParseVisitor, GeneratorParser, Metadata};
+use crate::effect::generator::{
+    GeneratorEdge, GeneratorEdgeKind, GeneratorMetadata, GeneratorParseVisitor, GeneratorParser,
+};
 use crate::error::{BuildErrors, ParseErrors};
 use crate::spec;
 use indexmap::IndexMap;
@@ -28,7 +30,7 @@ impl Generator for Object {
     fn next(&mut self, context: &GeneratorContext) -> GeneratorResult {
         let mut map = Map::new();
         let mut complete = true;
-        let mut metadata: Vec<Metadata> = Vec::new();
+        let mut metadata: Vec<GeneratorMetadata> = Vec::new();
 
         for (key, generator) in &mut self.properties {
             let result = generator.next(context);
@@ -76,7 +78,8 @@ impl GeneratorBuilder for ObjectBuilder {
         let mut properties = IndexMap::new();
 
         for (key, builder) in self.property_builders {
-            let property_visitor = visitor.follow_edge(GeneratorEdge::new("property", key.clone()));
+            let property_visitor =
+                visitor.follow_edge(GeneratorEdge::new(GeneratorEdgeKind::Property, key.clone()));
             match builder.build(property_visitor) {
                 Ok(generator) => {
                     properties.insert(key, generator);

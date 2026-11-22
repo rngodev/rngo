@@ -543,8 +543,8 @@ mod tests {
             .unwrap()
             .iter()
             .map(|m| match &m.data {
-                Some(data) if m.mtype == "timing" => data["key"].as_str().unwrap().to_string(),
-                _ => m.mtype.clone(),
+                Some(data) if m.kind == "timing" => data["key"].as_str().unwrap().to_string(),
+                _ => m.kind.clone(),
             })
             .collect();
         assert_eq!(kinds, ["simulation_start", "simulation_end"]);
