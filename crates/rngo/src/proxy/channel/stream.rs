@@ -46,11 +46,11 @@ impl Stream {
             .lock()
             .map(|tail| tail.iter().cloned().collect::<Vec<_>>().join("\n"))
             .unwrap_or_default();
-        Some(ChannelError::Exited {
-            channel: self.channel_key.clone(),
-            status: status.to_string(),
+        Some(ChannelError::exited(
+            self.channel_key.clone(),
+            status.to_string(),
             stderr,
-        })
+        ))
     }
 
     pub(crate) fn parser() -> StreamParser {
@@ -90,10 +90,7 @@ impl Channel for Stream {
             {
                 return Err(error);
             }
-            return Err(ChannelError::Write {
-                channel: self.channel_key.clone(),
-                source,
-            });
+            return Err(ChannelError::write(self.channel_key.clone(), source));
         }
 
         Ok(vec![])

@@ -95,18 +95,28 @@ fn display_path(path: &[String]) -> String {
 }
 
 /// A problem found while turning parsed builders into runnable simulations, proxies or audits.
+///
+/// Each variant can gain fields, so build one with its constructor (such as [`BuildError::proxy`])
+/// rather than a struct literal, and end patterns on a variant with `..`:
+///
+/// ```compile_fail,E0639
+/// let error = rngo::BuildError::Proxy { message: "no channels".into() };
+/// ```
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum BuildError {
     #[error("failed to build simulation: `{message}`")]
+    #[non_exhaustive]
     Simulation { key: SimulationKey, message: String },
     #[error("failed to build `effects.{effect}{}`: `{message}`", key.path_suffix())]
+    #[non_exhaustive]
     Effect {
         effect: String,
         key: EffectKey,
         message: String,
     },
     #[error("failed to build `{}`: `{message}`", spec_path.join("."))]
+    #[non_exhaustive]
     Generator {
         effect: String,
         path: Vec<GeneratorEdge>,
@@ -114,12 +124,16 @@ pub enum BuildError {
         message: String,
     },
     #[error("failed to build proxy: `{message}`")]
+    #[non_exhaustive]
     Proxy { message: String },
     #[error("failed to build channel `{channel}`: `{message}`")]
+    #[non_exhaustive]
     Channel { channel: String, message: String },
     #[error("failed to build signal `{signal}`: `{message}`")]
+    #[non_exhaustive]
     Signal { signal: String, message: String },
     #[error("failed to build audit: `{message}`")]
+    #[non_exhaustive]
     Audit { message: String },
 }
 
@@ -454,10 +468,21 @@ pub enum FormatError {
 }
 
 /// A failure delivering an input to a channel, which the run can't carry on past.
+///
+/// Each variant can gain fields, so build one with its constructor (such as [`ChannelError::write`])
+/// rather than a struct literal, and end patterns on a variant with `..`:
+///
+/// ```compile_fail,E0639
+/// let error = rngo::ChannelError::Write {
+///     channel: "db".into(),
+///     source: std::io::ErrorKind::BrokenPipe.into(),
+/// };
+/// ```
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum ChannelError {
     #[error("channel `{channel}`: failed to write: {source}")]
+    #[non_exhaustive]
     Write {
         channel: String,
         #[source]
@@ -467,17 +492,50 @@ pub enum ChannelError {
         "channel `{channel}`: command exited ({status}){}",
         format_stderr(stderr)
     )]
+    #[non_exhaustive]
     Exited {
         channel: String,
         status: String,
         stderr: String,
     },
     #[error("channel `{channel}`: failed to run command: {source}")]
+    #[non_exhaustive]
     Spawn {
         channel: String,
         #[source]
         source: std::io::Error,
     },
+}
+
+impl ChannelError {
+    /// Writing to channel `channel` failed with `source`.
+    pub fn write(channel: impl Into<String>, source: std::io::Error) -> Self {
+        ChannelError::Write {
+            channel: channel.into(),
+            source,
+        }
+    }
+
+    /// Channel `channel`'s command exited with `status`; `stderr` is the end of its stderr, empty if none.
+    pub fn exited(
+        channel: impl Into<String>,
+        status: impl Into<String>,
+        stderr: impl Into<String>,
+    ) -> Self {
+        ChannelError::Exited {
+            channel: channel.into(),
+            status: status.into(),
+            stderr: stderr.into(),
+        }
+    }
+
+    /// Channel `channel` couldn't start its command, failing with `source`.
+    pub fn spawn(channel: impl Into<String>, source: std::io::Error) -> Self {
+        ChannelError::Spawn {
+            channel: channel.into(),
+            source,
+        }
+    }
 }
 
 fn format_stderr(stderr: &str) -> String {
