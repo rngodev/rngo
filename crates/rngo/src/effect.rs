@@ -142,7 +142,9 @@ impl Step {
     }
 }
 
+/// The event an effect produces each time it fires.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Input {
     pub id: u64,
     pub effect: String,
@@ -151,7 +153,27 @@ pub struct Input {
     pub metadata: Vec<GeneratorMetadata>,
 }
 
+impl Input {
+    /// Input `id` from effect `effect`, with no metadata.
+    pub fn new(id: u64, effect: impl Into<String>, timestamp: Timestamp, data: Value) -> Self {
+        Input {
+            id,
+            effect: effect.into(),
+            timestamp,
+            data,
+            metadata: vec![],
+        }
+    }
+
+    pub fn metadata(mut self, metadata: Vec<GeneratorMetadata>) -> Self {
+        self.metadata = metadata;
+        self
+    }
+}
+
+/// An attempt whose generator produced no value.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct SkippedInput {
     pub effect: String,
     pub timestamp: Timestamp,
@@ -166,14 +188,9 @@ impl From<SkippedInput> for Metadata {
             metadata,
         } = skipped;
 
-        Metadata {
-            mtype: "skipped".to_string(),
-            input_id: None,
-            output_id: None,
-            data: Some(serde_json::json!({ "effect": effect, "metadata": metadata })),
-            segment: None,
-            timestamp: Some(timestamp),
-        }
+        Metadata::new("skipped")
+            .data(serde_json::json!({ "effect": effect, "metadata": metadata }))
+            .timestamp(timestamp)
     }
 }
 

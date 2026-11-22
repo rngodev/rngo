@@ -45,14 +45,8 @@ impl Audit {
                 map.insert("key".to_string(), serde_json::Value::String(key.clone()));
             }
 
-            self.run_log_writer.push_metadata(Metadata {
-                mtype: "signal".to_string(),
-                input_id: None,
-                output_id: None,
-                data: Some(data),
-                segment: None,
-                timestamp: None,
-            })?;
+            self.run_log_writer
+                .push_metadata(Metadata::new("signal").data(data))?;
         }
 
         Ok(AuditReport { outcomes })
@@ -138,7 +132,9 @@ impl Default for AuditBuilder {
     }
 }
 
+/// Every signal's outcome, by signal key.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct AuditReport {
     pub outcomes: IndexMap<String, SignalOutcome>,
 }

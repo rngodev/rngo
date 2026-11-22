@@ -60,10 +60,8 @@ impl GeneratorBuilder for ArrayBuilder {
         generator_visitor: GeneratorBuildVisitor,
     ) -> Result<Box<dyn Generator>, BuildErrors> {
         let items = if let Some(items_builder) = self.items_builder {
-            items_builder.build(generator_visitor.follow_edge(GeneratorEdge {
-                kind: "items",
-                key: "items".into(),
-            }))?
+            items_builder
+                .build(generator_visitor.follow_edge(GeneratorEdge::new("items", "items")))?
         } else {
             return Err(generator_visitor.error("items was not set").into());
         };

@@ -58,11 +58,7 @@ impl Generator for Reference {
             },
             None => GeneratorResult {
                 value: None,
-                metadata: vec![Metadata {
-                    mtype: "skipped".into(),
-                    attribute: None,
-                    data: None,
-                }],
+                metadata: vec![Metadata::new("skipped")],
             },
         }
     }

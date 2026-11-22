@@ -45,10 +45,22 @@ pub enum SignalOutcome {
     },
 }
 
+/// How a signal's result fared against its expectation.
 #[derive(Debug, Clone, Serialize)]
+#[non_exhaustive]
 pub struct SignalEval {
     pub expectation: String,
     pub passed: bool,
+}
+
+impl SignalEval {
+    /// `expectation` describes what was checked, e.g. the `expect` expression.
+    pub fn new(expectation: impl Into<String>, passed: bool) -> Self {
+        SignalEval {
+            expectation: expectation.into(),
+            passed,
+        }
+    }
 }
 
 #[derive(Debug)]

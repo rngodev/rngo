@@ -46,11 +46,10 @@ impl Generator for Select {
 
         GeneratorResult {
             value: None,
-            metadata: vec![Metadata {
-                mtype: "error".into(),
-                attribute: None,
-                data: Some(serde_json::json!({ "message": "no options available" })),
-            }],
+            metadata: vec![
+                Metadata::new("error")
+                    .data(serde_json::json!({ "message": "no options available" })),
+            ],
         }
     }
 }
@@ -80,10 +79,7 @@ impl GeneratorBuilder for SelectBuilder {
         let mut properties = vec![];
 
         for (i, (weight, builder)) in self.option_builders.into_iter().enumerate() {
-            let option_visitor = visitor.follow_edge(GeneratorEdge {
-                kind: "option",
-                key: i.to_string(),
-            });
+            let option_visitor = visitor.follow_edge(GeneratorEdge::new("option", i.to_string()));
             match builder.build(option_visitor) {
                 Ok(generator) => properties.push(SelectProperty { generator, weight }),
                 Err(e) => errors.extend(e),

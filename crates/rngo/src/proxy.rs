@@ -106,17 +106,11 @@ impl Proxy {
     }
 
     fn record_timing(&self, key: &str) -> Result<(), RunLogError> {
-        self.run_log_writer.push_metadata(Metadata {
-            mtype: "timing".to_string(),
-            input_id: None,
-            output_id: None,
-            data: Some(serde_json::json!({
+        self.run_log_writer
+            .push_metadata(Metadata::new("timing").data(serde_json::json!({
                 "key": key,
                 "timestamp": Timestamp::now().as_millisecond(),
-            })),
-            segment: None,
-            timestamp: None,
-        })
+            })))
     }
 
     fn drain_outputs(&mut self) -> Result<(), RunLogError> {
