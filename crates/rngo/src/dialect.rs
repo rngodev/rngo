@@ -1,5 +1,5 @@
 use crate::ParseErrorKind;
-use crate::audit::signal::{Signal, SignalParser};
+use crate::audit::signal::{SignalBuilder, SignalParser};
 use crate::audit::{Audit, AuditBuilder};
 use crate::effect::generator::custom::CustomParser;
 use crate::effect::generator::{GeneratorParseVisitor, GeneratorParser};
@@ -304,7 +304,7 @@ impl Dialect {
         let mut audit_builder = Audit::builder();
 
         for (key, signal) in &spec.signals {
-            match self.parse_signal(key, signal) {
+            match self.parse_signal(signal) {
                 Ok(built) => {
                     audit_builder = audit_builder.signal(key.clone(), built);
                 }
@@ -319,11 +319,7 @@ impl Dialect {
         }
     }
 
-    fn parse_signal(
-        &self,
-        key: &str,
-        signal: &spec::Signal,
-    ) -> Result<Box<dyn Signal>, ParseErrors> {
+    fn parse_signal(&self, signal: &spec::Signal) -> Result<Box<dyn SignalBuilder>, ParseErrors> {
         let matching: Vec<_> = self
             .signal_parsers
             .iter()
@@ -331,7 +327,7 @@ impl Dialect {
             .collect();
 
         match matching.as_slice() {
-            [parser] => parser.parse(key, signal),
+            [parser] => parser.parse(signal),
             [] => Err(ParseError::new(ParseErrorKind::UnknownType {
                 kind: "signal",
                 found: signal.stype.clone(),

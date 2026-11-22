@@ -14,13 +14,21 @@ pub trait Signal: std::fmt::Debug + Send {
     fn evaluate(&self, run_log: &dyn RunLogReader) -> SignalOutcome;
 }
 
+/// Builds a [`Signal`] when its audit is built; `key` names the signal in build errors. Every
+/// `Signal` is its own builder.
 pub trait SignalBuilder: std::fmt::Debug + Send {
     fn build(self: Box<Self>, key: &str) -> Result<Box<dyn Signal>, BuildErrors>;
 }
 
-impl SignalBuilder for Box<dyn Signal> {
+impl SignalBuilder for Box<dyn SignalBuilder> {
+    fn build(self: Box<Self>, key: &str) -> Result<Box<dyn Signal>, BuildErrors> {
+        (*self).build(key)
+    }
+}
+
+impl<S: Signal + 'static> SignalBuilder for S {
     fn build(self: Box<Self>, _key: &str) -> Result<Box<dyn Signal>, BuildErrors> {
-        Ok(*self)
+        Ok(self)
     }
 }
 
