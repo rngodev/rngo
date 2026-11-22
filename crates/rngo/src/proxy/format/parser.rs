@@ -38,11 +38,11 @@ impl<'a> FormatParseContext<'a> {
         let format: spec::Format =
             serde_json::from_value(value.clone()).map_err(|e| invalid(e.to_string()))?;
 
-        let Some(ftype) = format.ftype.as_deref() else {
+        let Some(kind) = format.kind.as_deref() else {
             return Ok(None);
         };
 
-        let matching: Vec<_> = self.parsers.iter().filter(|p| p.key() == ftype).collect();
+        let matching: Vec<_> = self.parsers.iter().filter(|p| p.key() == kind).collect();
 
         let type_error = |kind: ParseErrorKind| {
             ParseErrors::from(ParseError::new(kind).at(path.iter().copied().chain(["type"])))
@@ -53,7 +53,7 @@ impl<'a> FormatParseContext<'a> {
             [] => {
                 return Err(type_error(ParseErrorKind::UnknownType {
                     kind: "format",
-                    found: Some(ftype.to_string()),
+                    found: Some(kind.to_string()),
                 }));
             }
             _ => {

@@ -268,7 +268,6 @@
       },
       "type": "object"
     },
-    "scenarios": true,
     "seed": {
       "description": "Seed for the run's random numbers; 1 when omitted.",
       "format": "uint64",

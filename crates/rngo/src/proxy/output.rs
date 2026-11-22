@@ -1,4 +1,4 @@
-use crate::effect::generator::Metadata;
+use crate::effect::generator::GeneratorMetadata;
 use jiff::Timestamp;
 use serde::Serialize;
 use std::sync::mpsc::Sender;
@@ -21,7 +21,7 @@ pub struct Output {
     pub channel: String,
     pub level: Level,
     pub data: String,
-    pub metadata: Vec<Metadata>,
+    pub metadata: Vec<GeneratorMetadata>,
 }
 
 impl Output {
@@ -48,7 +48,7 @@ impl Output {
         self
     }
 
-    pub fn metadata(mut self, metadata: Vec<Metadata>) -> Self {
+    pub fn metadata(mut self, metadata: Vec<GeneratorMetadata>) -> Self {
         self.metadata = metadata;
         self
     }

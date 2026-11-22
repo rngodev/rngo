@@ -1,6 +1,6 @@
 use super::{Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorResult};
 use crate::effect::generator::{
-    GeneratorContext, GeneratorParseVisitor, GeneratorParser, Metadata,
+    GeneratorContext, GeneratorMetadata, GeneratorParseVisitor, GeneratorParser,
 };
 use crate::error::{BuildErrors, ParseErrors};
 use crate::moment::offset_timestamp;
@@ -60,7 +60,7 @@ fn error_result(message: impl Into<String>) -> GeneratorResult {
     GeneratorResult {
         value: None,
         metadata: vec![
-            Metadata::new("error").data(serde_json::json!({ "message": message.into() })),
+            GeneratorMetadata::new("error").data(serde_json::json!({ "message": message.into() })),
         ],
     }
 }

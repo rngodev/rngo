@@ -2,7 +2,7 @@ use super::{
     Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorResult,
 };
 use crate::Rng;
-use crate::effect::generator::{GeneratorParseVisitor, GeneratorParser, Metadata};
+use crate::effect::generator::{GeneratorMetadata, GeneratorParseVisitor, GeneratorParser};
 use crate::error::{BuildErrors, ParseErrors};
 use crate::log::RunLogReader;
 use std::sync::Arc;
@@ -58,7 +58,7 @@ impl Generator for Reference {
             },
             None => GeneratorResult {
                 value: None,
-                metadata: vec![Metadata::new("skipped")],
+                metadata: vec![GeneratorMetadata::new("skipped")],
             },
         }
     }

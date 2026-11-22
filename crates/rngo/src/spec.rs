@@ -10,9 +10,16 @@ pub const SPEC_VERSION: u32 = 1;
 /// Where changes between spec format versions are explained.
 pub const MIGRATION_URL: &str = "https://github.com/rngodev/rngo/blob/main/MIGRATING.md";
 
-/// Parses a spec from a JSON value, checking its `version` and flagging pre-versioning keys before the strict parse.
+/// Parses a spec from a JSON value, checking its `version` and flagging pre-versioning keys and a top-level `scenarios` before the strict parse.
 pub fn from_value(value: serde_json::Value) -> Result<Spec, ParseErrors> {
     check_version(&value)?;
+    if value.get("scenarios").is_some() {
+        return Err(
+            ParseError::invalid("the default prototype has no scenarios")
+                .at(["scenarios"])
+                .into(),
+        );
+    }
     let mut track = serde_path_to_error::Track::new();
     let deserializer = serde_path_to_error::Deserializer::new(value, &mut track);
     serde_path_to_error::deserialize(deserializer).map_err(|e| {
@@ -105,8 +112,6 @@ pub struct Spec {
     pub start: Option<String>,
     /// End of the default prototype, in the same forms as `start`.
     pub end: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub scenarios: Option<Value>,
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub prototypes: IndexMap<String, Prototype>,
     /// The kinds of input to generate, by key.
@@ -253,7 +258,7 @@ pub struct Effect {
 #[non_exhaustive]
 pub struct Format {
     #[serde(rename = "type")]
-    pub ftype: Option<String>,
+    pub kind: Option<String>,
     #[serde(flatten)]
     pub fields: IndexMap<String, Value>,
 }
@@ -264,7 +269,7 @@ pub struct Format {
 #[non_exhaustive]
 pub struct Generator {
     #[serde(rename = "type")]
-    pub stype: Option<String>,
+    pub kind: Option<String>,
     #[serde(flatten)]
     pub fields: IndexMap<String, Value>,
 }
@@ -283,7 +288,7 @@ pub struct GeneratorType {
 #[non_exhaustive]
 pub struct Channel {
     #[serde(rename = "type")]
-    pub ctype: Option<String>,
+    pub kind: Option<String>,
     #[serde(flatten)]
     pub fields: IndexMap<String, Value>,
 }
@@ -294,7 +299,7 @@ pub struct Channel {
 #[non_exhaustive]
 pub struct Signal {
     #[serde(rename = "type")]
-    pub stype: Option<String>,
+    pub kind: Option<String>,
     #[serde(flatten)]
     pub fields: IndexMap<String, Value>,
 }
@@ -430,5 +435,19 @@ mod tests {
     fn legacy_keys_are_plain_unknown_fields_once_versioned() {
         let errors = parse(json!({ "version": 1, "phases": {}, "effects": {} })).unwrap_err();
         assert!(!errors[0].to_string().contains(MIGRATION_URL));
+    }
+
+    #[test]
+    fn top_level_scenarios_are_rejected_whatever_the_version() {
+        for spec in [
+            json!({ "scenarios": {}, "effects": {} }),
+            json!({ "version": 1, "scenarios": {}, "effects": {} }),
+        ] {
+            let errors = parse(spec).unwrap_err();
+            assert_eq!(
+                errors[0].to_string(),
+                "failed to parse `scenarios`: `the default prototype has no scenarios`"
+            );
+        }
     }
 }

@@ -37,9 +37,9 @@ pub trait RunLogReader: std::fmt::Debug + Send + Sync {
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct Metadata {
-    pub mtype: String,
-    pub input_id: Option<i64>,
-    pub output_id: Option<i64>,
+    pub kind: String,
+    pub input_id: Option<u64>,
+    pub output_id: Option<u64>,
     pub data: Option<Value>,
     pub segment: Option<String>,
     /// When the metadata's subject occurred in simulation time, e.g. a skipped attempt.
@@ -47,10 +47,10 @@ pub struct Metadata {
 }
 
 impl Metadata {
-    /// Metadata of type `mtype`, with every other field unset.
-    pub fn new(mtype: impl Into<String>) -> Self {
+    /// Metadata of type `kind`, with every other field unset.
+    pub fn new(kind: impl Into<String>) -> Self {
         Metadata {
-            mtype: mtype.into(),
+            kind: kind.into(),
             input_id: None,
             output_id: None,
             data: None,
@@ -60,13 +60,13 @@ impl Metadata {
     }
 
     /// Ties it to an input.
-    pub fn input_id(mut self, input_id: i64) -> Self {
+    pub fn input_id(mut self, input_id: u64) -> Self {
         self.input_id = Some(input_id);
         self
     }
 
     /// Ties it to an output.
-    pub fn output_id(mut self, output_id: i64) -> Self {
+    pub fn output_id(mut self, output_id: u64) -> Self {
         self.output_id = Some(output_id);
         self
     }

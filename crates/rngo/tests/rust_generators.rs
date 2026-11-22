@@ -1,7 +1,7 @@
 use rngo::build::*;
 use rngo::generator::{
-    Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorParseVisitor,
-    GeneratorParser, GeneratorResult, Metadata,
+    Generator, GeneratorBuildVisitor, GeneratorBuilder, GeneratorContext, GeneratorMetadata,
+    GeneratorParseVisitor, GeneratorParser, GeneratorResult,
 };
 use rngo::{BuildErrors, Dialect, Input, ParseErrors, Simulation, Step};
 use serde_json::{Value, json};
@@ -82,10 +82,11 @@ impl Generator for EveryOther {
     fn next(&mut self, _context: &GeneratorContext) -> GeneratorResult {
         self.fired += 1;
         if self.fired.is_multiple_of(2) {
-            GeneratorResult::skip().metadata(vec![Metadata::new("even").data(json!(self.fired))])
+            GeneratorResult::skip()
+                .metadata(vec![GeneratorMetadata::new("even").data(json!(self.fired))])
         } else {
             GeneratorResult::from(json!(self.fired))
-                .metadata(vec![Metadata::new("odd").data(json!(self.fired))])
+                .metadata(vec![GeneratorMetadata::new("odd").data(json!(self.fired))])
         }
     }
 }
@@ -116,8 +117,8 @@ fn a_generator_defined_outside_the_crate_can_skip_and_attach_metadata() {
     let kinds: Vec<(&str, &str)> = steps
         .iter()
         .map(|step| match step {
-            Step::Input(input) => ("input", input.metadata[0].mtype.as_str()),
-            Step::Skipped(skipped) => ("skipped", skipped.metadata[0].mtype.as_str()),
+            Step::Input(input) => ("input", input.metadata[0].kind.as_str()),
+            Step::Skipped(skipped) => ("skipped", skipped.metadata[0].kind.as_str()),
             _ => unreachable!(),
         })
         .collect();

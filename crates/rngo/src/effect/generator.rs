@@ -40,12 +40,12 @@ pub trait Generator: std::fmt::Debug + Send {
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct GeneratorEdge {
-    pub kind: &'static str,
+    pub kind: GeneratorEdgeKind,
     pub key: String,
 }
 
 impl GeneratorEdge {
-    pub fn new(kind: &'static str, key: impl Into<String>) -> Self {
+    pub fn new(kind: GeneratorEdgeKind, key: impl Into<String>) -> Self {
         GeneratorEdge {
             kind,
             key: key.into(),
@@ -55,11 +55,42 @@ impl GeneratorEdge {
     /// The spec fields this step descends through, e.g. `properties.<key>` for a property.
     pub fn spec_path(&self) -> Vec<String> {
         match self.kind {
-            "property" => vec!["properties".into(), self.key.clone()],
-            "variable" => vec!["variables".into(), self.key.clone()],
-            "option" => vec!["options".into(), self.key.clone(), "generator".into()],
-            "items" => vec!["items".into()],
-            kind => vec![kind.into(), self.key.clone()],
+            GeneratorEdgeKind::Property => vec!["properties".into(), self.key.clone()],
+            GeneratorEdgeKind::Variable => vec!["variables".into(), self.key.clone()],
+            GeneratorEdgeKind::Option => {
+                vec!["options".into(), self.key.clone(), "generator".into()]
+            }
+            GeneratorEdgeKind::Items => vec!["items".into()],
+            GeneratorEdgeKind::Other(kind) => vec![kind.into(), self.key.clone()],
+        }
+    }
+}
+
+/// The kind of step a `GeneratorEdge` takes down the generator tree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum GeneratorEdgeKind {
+    /// An `object` property.
+    Property,
+    /// A `function` variable.
+    Variable,
+    /// A `select` option.
+    Option,
+    /// An `array`'s items.
+    Items,
+    /// A step defined by a custom generator; the name is also the spec field it descends into.
+    Other(&'static str),
+}
+
+impl GeneratorEdgeKind {
+    /// The kind's name, e.g. `property`; part of the generator's seeded path.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            GeneratorEdgeKind::Property => "property",
+            GeneratorEdgeKind::Variable => "variable",
+            GeneratorEdgeKind::Option => "option",
+            GeneratorEdgeKind::Items => "items",
+            GeneratorEdgeKind::Other(kind) => kind,
         }
     }
 }
@@ -85,7 +116,7 @@ impl GeneratorContext<'_> {
 /// What a generator produced: a value, or none to skip the attempt, plus any metadata.
 pub struct GeneratorResult {
     pub(crate) value: Option<Value>,
-    pub(crate) metadata: Vec<Metadata>,
+    pub(crate) metadata: Vec<GeneratorMetadata>,
 }
 
 impl GeneratorResult {
@@ -97,7 +128,7 @@ impl GeneratorResult {
         }
     }
 
-    pub fn metadata(mut self, metadata: Vec<Metadata>) -> Self {
+    pub fn metadata(mut self, metadata: Vec<GeneratorMetadata>) -> Self {
         self.metadata = metadata;
         self
     }
@@ -116,18 +147,18 @@ impl From<Value> for GeneratorResult {
 /// the value it concerns.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
-pub struct Metadata {
+pub struct GeneratorMetadata {
     #[serde(rename = "type")]
-    pub mtype: String,
+    pub kind: String,
     pub attribute: Option<JsonPointer>,
     pub data: Option<Value>,
 }
 
-impl Metadata {
-    /// Metadata of type `mtype`, about the whole value and with no data.
-    pub fn new(mtype: impl Into<String>) -> Self {
-        Metadata {
-            mtype: mtype.into(),
+impl GeneratorMetadata {
+    /// GeneratorMetadata of type `kind`, about the whole value and with no data.
+    pub fn new(kind: impl Into<String>) -> Self {
+        GeneratorMetadata {
+            kind: kind.into(),
             attribute: None,
             data: None,
         }
@@ -217,7 +248,7 @@ impl GeneratorBuildVisitor {
         let path_str: String = self
             .path
             .iter()
-            .map(|e| format!("{}{}", e.kind, e.key))
+            .map(|e| format!("{}{}", e.kind.as_str(), e.key))
             .collect();
         format!("{}-{}", self.effect_key, path_str)
     }

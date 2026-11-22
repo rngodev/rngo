@@ -292,7 +292,7 @@ fn to_stdout_channels(spec: &spec::Spec) -> spec::Spec {
     let mut spec = spec.clone();
     for channel in spec.channels.values_mut() {
         let format = channel.fields.get("format").cloned();
-        channel.ctype = Some("stdout".into());
+        channel.kind = Some("stdout".into());
         channel.fields.clear();
         channel
             .fields

@@ -108,14 +108,14 @@ impl GeneratorParseVisitor {
             .iter()
             .map(|p| p.as_ref())
             .chain(custom_generators.iter().map(|s| s as &dyn GeneratorParser))
-            .filter(|p| self.spec.stype.as_deref() == Some(p.key()))
+            .filter(|p| self.spec.kind.as_deref() == Some(p.key()))
             .collect();
 
         let kind = match matching.as_slice() {
             [parser] => return parser.parse(self),
             [] => ParseErrorKind::UnknownType {
                 kind: "generator",
-                found: self.spec.stype.clone(),
+                found: self.spec.kind.clone(),
             },
             _ => ParseErrorKind::AmbiguousType {
                 kind: "generator",
