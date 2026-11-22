@@ -262,26 +262,18 @@ mod tests {
     }
 
     fn success(passed: bool) -> SignalOutcome {
-        SignalOutcome::Success {
-            value: serde_json::json!(1),
-            eval: Some(SignalEval {
-                expectation: "result == 1".to_string(),
-                passed,
-            }),
-        }
+        SignalOutcome::success(
+            serde_json::json!(1),
+            Some(SignalEval::new("result == 1", passed)),
+        )
     }
 
     fn success_without_expect() -> SignalOutcome {
-        SignalOutcome::Success {
-            value: serde_json::json!(1),
-            eval: None,
-        }
+        SignalOutcome::success(serde_json::json!(1), None)
     }
 
     fn error() -> SignalOutcome {
-        SignalOutcome::Error {
-            error: "boom".to_string(),
-        }
+        SignalOutcome::error("boom")
     }
 
     fn report(outcomes: Vec<(&str, SignalOutcome)>) -> AuditReport {

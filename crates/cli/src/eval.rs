@@ -143,10 +143,10 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
 
         for (key, outcome) in &audit_report.outcomes {
             match outcome {
-                SignalOutcome::Error { error } => {
+                SignalOutcome::Error { error, .. } => {
                     println!("{key}: error - {error}");
                 }
-                SignalOutcome::Success { value, eval } => match eval {
+                SignalOutcome::Success { value, eval, .. } => match eval {
                     Some(eval) => {
                         if eval.passed {
                             println!("{key}: {value} (passed)");
