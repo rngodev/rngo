@@ -572,6 +572,10 @@ pub enum ProxyError {
     Channel(#[from] ChannelError),
     #[error(transparent)]
     RunLog(#[from] RunLogError),
+    /// An input from effect `effect` named channel `channel`, which the proxy doesn't have.
+    #[error("effect `{effect}` sends to unknown channel `{channel}`")]
+    #[non_exhaustive]
+    UnknownChannel { effect: String, channel: String },
 }
 
 /// A failure evaluating a signal.

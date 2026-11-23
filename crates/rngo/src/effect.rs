@@ -110,6 +110,7 @@ impl Iterator for Effect {
                 timestamp,
                 data,
                 metadata: result.metadata,
+                channel: self.channel.clone(),
             })))
         } else {
             Some(Ok(Step::Skipped(SkippedInput {
@@ -150,10 +151,15 @@ pub struct Input {
     pub timestamp: Timestamp,
     pub data: Value,
     pub metadata: Vec<GeneratorMetadata>,
+    /// The key of the channel the proxy sends it to: its effect's channel, else its prototype's.
+    /// Only routing uses it, so it is never serialized, and inputs read back from a
+    /// [`SqliteRunLog`](crate::SqliteRunLog) have none.
+    #[serde(skip)]
+    pub channel: Option<String>,
 }
 
 impl Input {
-    /// Input `id` from effect `effect`, with no metadata.
+    /// Input `id` from effect `effect`, with no metadata and no channel.
     pub fn new(id: u64, effect: impl Into<String>, timestamp: Timestamp, data: Value) -> Self {
         Input {
             id,
@@ -161,11 +167,18 @@ impl Input {
             timestamp,
             data,
             metadata: vec![],
+            channel: None,
         }
     }
 
     pub fn metadata(mut self, metadata: Vec<GeneratorMetadata>) -> Self {
         self.metadata = metadata;
+        self
+    }
+
+    /// The key of the channel the proxy sends it to.
+    pub fn channel(mut self, channel: impl Into<String>) -> Self {
+        self.channel = Some(channel.into());
         self
     }
 }
@@ -537,15 +550,38 @@ mod tests {
             ..Prototype::default()
         };
         let built = |channel: Option<&str>| {
-            let mut builder = Effect::builder("ping").generator(constant().value(1));
+            let mut builder = Effect::builder("ping")
+                .trigger_hertz(1000.0)
+                .generator(constant().value(1));
             if let Some(channel) = channel {
                 builder = builder.channel(channel);
             }
             builder.build(context(&prototype)).unwrap()
         };
+        let first_input_channel = |mut effect: Effect| match effect.next() {
+            Some(Ok(super::Step::Input(input))) => input.channel,
+            other => panic!("expected an input, got {other:?}"),
+        };
 
         assert_eq!(built(None).channel.as_deref(), Some("db"));
         assert_eq!(built(Some("api")).channel.as_deref(), Some("api"));
+        assert_eq!(first_input_channel(built(None)).as_deref(), Some("db"));
+        assert_eq!(
+            first_input_channel(built(Some("api"))).as_deref(),
+            Some("api")
+        );
+    }
+
+    #[test]
+    fn an_inputs_channel_is_never_serialized() {
+        let input =
+            super::Input::new(1, "ping", Timestamp::now(), serde_json::json!(1)).channel("db");
+
+        let value = serde_json::to_value(&input).unwrap();
+
+        assert!(value.get("channel").is_none(), "{value}");
+        let back: super::Input = serde_json::from_value(value).unwrap();
+        assert_eq!(back.channel, None);
     }
 
     #[test]

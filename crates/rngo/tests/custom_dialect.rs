@@ -145,7 +145,6 @@ fn a_custom_dialect_runs_custom_channels_and_formats() {
     let mut proxy = dialect
         .parse_proxy(&spec)
         .unwrap()
-        .effect_channels(simulation.effect_channels())
         .run_log_writer(log.clone())
         .build()
         .unwrap();

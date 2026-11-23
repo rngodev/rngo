@@ -327,6 +327,7 @@ mod tests {
         .build(ChannelBuildContext::new("db", outputs()))
         .unwrap();
         let input = Input {
+            channel: None,
             id: 1,
             effect: "ping".into(),
             timestamp: Timestamp::now(),

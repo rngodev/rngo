@@ -140,6 +140,7 @@ mod tests {
 
     fn event(data: Value) -> Input {
         Input {
+            channel: None,
             id: 1,
             effect: "user".to_string(),
             timestamp: Timestamp::now(),

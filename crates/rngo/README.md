@@ -33,6 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .effect("user", |effect| {
             effect
+                .channel("db")
                 .trigger_expression("hz(10, hour) * (1.0 + offset * 0.0001)")
                 .limit(1000)
                 .generator(
@@ -50,6 +51,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .effect("post", |effect| {
             effect
+                .channel("db")
                 .prototype_key("recent")
                 .trigger_expression("hz(100, hour) * (1.0 + offset * 0.0001)")
                 .generator(
@@ -88,7 +90,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .effect_table("post", "POSTS")
                 )
         )
-        .effect_channels([("user", "db"), ("post", "db")])
         .channel("log", stream().command("tail -F logs/app.log"))
         .run_log_writer(run_log.clone())
         .build()?;
@@ -252,7 +253,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut proxy = dialect
         .parse_proxy(&spec)?
-        .effect_channels(simulation.effect_channels())
         .run_log_writer(run_log.clone())
         .build()?;
 

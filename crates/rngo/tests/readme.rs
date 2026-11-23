@@ -55,7 +55,6 @@ fn readme_spec_runs_and_passes_audit() {
     let mut proxy = dialect
         .parse_proxy(&spec)
         .unwrap()
-        .effect_channels(simulation.effect_channels())
         .run_log_writer(run_log.clone())
         .build()
         .unwrap();

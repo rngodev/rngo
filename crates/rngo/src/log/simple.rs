@@ -111,6 +111,7 @@ mod tests {
         for i in 1..=10u64 {
             run_log
                 .push_input(Input {
+                    channel: None,
                     id: i,
                     effect: "a".to_string(),
                     timestamp: Timestamp::now(),
@@ -147,6 +148,7 @@ mod tests {
         for i in 1..=count {
             run_log
                 .push_input(Input {
+                    channel: None,
                     id: i,
                     effect: effect.to_string(),
                     timestamp: Timestamp::now(),
@@ -235,6 +237,7 @@ mod tests {
         for (i, effect) in [(1, "a"), (2, "b"), (3, "a")] {
             run_log
                 .push_input(Input {
+                    channel: None,
                     id: i,
                     effect: effect.to_string(),
                     timestamp: Timestamp::now(),

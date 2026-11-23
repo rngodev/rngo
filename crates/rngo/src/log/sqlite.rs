@@ -359,6 +359,7 @@ fn query_last(connection: &Connection) -> Result<Option<Arc<Input>>, RunLogError
     };
 
     Ok(Some(Arc::new(Input {
+        channel: None,
         id: id as u64,
         effect,
         timestamp: timestamp_from_millis(timestamp),
@@ -389,6 +390,7 @@ fn query_last_for_effect(
     };
 
     Ok(Some(Arc::new(Input {
+        channel: None,
         id: id as u64,
         effect: key.to_string(),
         timestamp: timestamp_from_millis(timestamp),
@@ -410,6 +412,7 @@ fn query_by_id(connection: &Connection, key: &str, id: u64) -> Result<Input, Run
         .sqlite()?;
 
     Ok(Input {
+        channel: None,
         id,
         effect: key.to_string(),
         timestamp: timestamp_from_millis(timestamp),
@@ -579,6 +582,7 @@ mod tests {
 
         run_log
             .push_input(Input {
+                channel: None,
                 id: 1,
                 effect: "ping".to_string(),
                 timestamp,
@@ -607,6 +611,7 @@ mod tests {
 
         run_log
             .push_input(Input {
+                channel: None,
                 id: 1,
                 effect: "ping".to_string(),
                 timestamp: Timestamp::now(),
@@ -753,6 +758,7 @@ mod tests {
         for i in 0..(BATCH_SIZE * 2 + 3) {
             run_log
                 .push_input(Input {
+                    channel: None,
                     id: (i + 1) as u64,
                     effect: "ping".to_string(),
                     timestamp: Timestamp::now(),
@@ -784,6 +790,7 @@ mod tests {
 
         run_log
             .push_input(Input {
+                channel: None,
                 id: 1,
                 effect: "ping".to_string(),
                 timestamp: Timestamp::now(),
@@ -798,6 +805,7 @@ mod tests {
 
         run_log
             .push_input(Input {
+                channel: None,
                 id: 2,
                 effect: "ping".to_string(),
                 timestamp: Timestamp::now(),
@@ -818,6 +826,7 @@ mod tests {
         for (i, effect) in [(1, "a"), (2, "b"), (3, "a")] {
             run_log
                 .push_input(Input {
+                    channel: None,
                     id: i,
                     effect: effect.to_string(),
                     timestamp: Timestamp::now(),
@@ -847,6 +856,7 @@ mod tests {
         for i in 1..=10u64 {
             run_log
                 .push_input(Input {
+                    channel: None,
                     id: i,
                     effect: "a".to_string(),
                     timestamp: Timestamp::now(),
@@ -884,6 +894,7 @@ mod tests {
         for i in 1..=count {
             run_log
                 .push_input(Input {
+                    channel: None,
                     id: i,
                     effect: effect.to_string(),
                     timestamp: Timestamp::now(),
