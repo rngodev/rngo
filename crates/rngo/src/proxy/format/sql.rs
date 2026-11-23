@@ -3,7 +3,9 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 use crate::effect::Input;
-use crate::proxy::format::{Format, FormatBuilder, FormatParser};
+use crate::proxy::format::{
+    Format, FormatBuildContext, FormatBuilder, FormatContext, FormatParseContext, FormatParser,
+};
 use crate::{FormatError, spec};
 
 #[derive(Debug)]
@@ -38,7 +40,10 @@ impl SqlFormatBuilder {
 }
 
 impl FormatBuilder for SqlFormatBuilder {
-    fn build(self: Box<Self>, _channel_key: &str) -> Result<Box<dyn Format>, BuildErrors> {
+    fn build(
+        self: Box<Self>,
+        _context: FormatBuildContext,
+    ) -> Result<Box<dyn Format>, BuildErrors> {
         Ok(Box::new(SqlFormat {
             effect_tables: self.effect_tables,
         }))
@@ -46,7 +51,7 @@ impl FormatBuilder for SqlFormatBuilder {
 }
 
 impl Format for SqlFormat {
-    fn format(&self, event: &Input) -> Result<String, FormatError> {
+    fn format(&self, event: &Input, _context: &FormatContext) -> Result<String, FormatError> {
         let table = self
             .effect_tables
             .get(&event.effect)
@@ -111,9 +116,10 @@ impl FormatParser for SqlFormatParser {
     fn parse(
         &self,
         _format: &spec::Format,
-        spec: &spec::Spec,
+        context: &FormatParseContext,
     ) -> Result<Box<dyn FormatBuilder>, ParseErrors> {
-        let effect_tables = spec
+        let effect_tables = context
+            .spec()
             .effects
             .iter()
             .filter_map(|(key, effect)| {
@@ -148,7 +154,7 @@ mod tests {
             effect_tables: HashMap::new(),
         };
         let event = event(json!({ "id": 1, "name": "alice" }));
-        let sql = format.format(&event).unwrap();
+        let sql = format.format(&event, &FormatContext::new()).unwrap();
         assert!(
             sql.starts_with("INSERT INTO user ("),
             "expected INSERT INTO user, got: {sql}"
@@ -163,7 +169,7 @@ mod tests {
             effect_tables: HashMap::from([("user".to_string(), "accounts".to_string())]),
         };
         let event = event(json!({ "id": 1 }));
-        let sql = format.format(&event).unwrap();
+        let sql = format.format(&event, &FormatContext::new()).unwrap();
         assert!(
             sql.starts_with("INSERT INTO accounts ("),
             "expected INSERT INTO accounts, got: {sql}"
@@ -172,9 +178,11 @@ mod tests {
 
     #[test]
     fn builder_defaults_table_to_effect_key() {
-        let format = Box::new(SqlFormat::builder()).build("db").unwrap();
+        let format = Box::new(SqlFormat::builder())
+            .build(FormatBuildContext::new("db"))
+            .unwrap();
         let event = event(json!({ "id": 1 }));
-        let sql = format.format(&event).unwrap();
+        let sql = format.format(&event, &FormatContext::new()).unwrap();
         assert!(
             sql.starts_with("INSERT INTO user ("),
             "expected INSERT INTO user, got: {sql}"
@@ -184,10 +192,10 @@ mod tests {
     #[test]
     fn builder_effect_table_overrides_the_effect_key() {
         let format = Box::new(SqlFormat::builder().effect_table("user", "accounts"))
-            .build("db")
+            .build(FormatBuildContext::new("db"))
             .unwrap();
         let event = event(json!({ "id": 1 }));
-        let sql = format.format(&event).unwrap();
+        let sql = format.format(&event, &FormatContext::new()).unwrap();
         assert!(
             sql.starts_with("INSERT INTO accounts ("),
             "expected INSERT INTO accounts, got: {sql}"

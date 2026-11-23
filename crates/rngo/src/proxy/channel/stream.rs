@@ -1,7 +1,9 @@
 use crate::effect::Input;
 use crate::error::{BuildErrors, ParseErrors};
-use crate::proxy::channel::{Channel, ChannelBuilder, ChannelParser};
-use crate::proxy::format::{Format, FormatBuilder, FormatParseContext};
+use crate::proxy::channel::{
+    Channel, ChannelBuildContext, ChannelBuilder, ChannelParseContext, ChannelParser, SendContext,
+};
+use crate::proxy::format::{Format, FormatBuilder};
 use crate::proxy::output::{ChannelOutput, OutputSender};
 use crate::{BuildError, ChannelError, Level, ParseError, spec};
 use serde_json::Value;
@@ -63,7 +65,11 @@ impl Stream {
 }
 
 impl Channel for Stream {
-    fn send(&mut self, input: &Input) -> Result<Vec<ChannelOutput>, ChannelError> {
+    fn send(
+        &mut self,
+        input: &Input,
+        context: &SendContext,
+    ) -> Result<Vec<ChannelOutput>, ChannelError> {
         if !self.startup_checked {
             self.startup_checked = true;
             if let Some(error) = self.exit_error(STARTUP_GRACE) {
@@ -75,7 +81,7 @@ impl Channel for Stream {
             return Ok(vec![]);
         };
 
-        let data = match super::render(self.format.as_deref(), input) {
+        let data = match super::render(self.format.as_deref(), input, context) {
             Ok(data) => data,
             Err(output) => return Ok(vec![output]),
         };
@@ -149,13 +155,14 @@ impl StreamBuilder {
 impl ChannelBuilder for StreamBuilder {
     fn build(
         self: Box<Self>,
-        channel_key: &str,
-        outputs: OutputSender,
+        context: ChannelBuildContext,
     ) -> Result<Box<dyn Channel>, BuildErrors> {
+        let channel_key = context.key();
+        let outputs = context.outputs();
         let Some(command) = self.command else {
             return Err(BuildError::channel(channel_key, "command not specified").into());
         };
-        let format = super::build_format(self.format, channel_key)?;
+        let format = super::build_format(self.format, &context)?;
 
         let mut child = super::shell(&command)
             .stdin(Stdio::piped())
@@ -232,7 +239,7 @@ impl ChannelParser for StreamParser {
     fn parse(
         &self,
         channel: &spec::Channel,
-        formats: &FormatParseContext,
+        context: &ChannelParseContext,
     ) -> Result<Box<dyn ChannelBuilder>, ParseErrors> {
         let command = match channel.fields.get("command") {
             Some(value) => match value.as_str() {
@@ -253,7 +260,7 @@ impl ChannelParser for StreamParser {
         let mut builder = StreamBuilder::default().command(command);
 
         if let Some(value) = channel.fields.get("format")
-            && let Some(format) = formats.parse(&["format"], value)?
+            && let Some(format) = context.parse_format(&["format"], value)?
         {
             builder = builder.format(format);
         }
@@ -275,13 +282,15 @@ mod tests {
 
     #[test]
     fn builder_without_a_command_is_an_error() {
-        let result = Box::new(StreamBuilder::default()).build("logger", outputs());
+        let result =
+            Box::new(StreamBuilder::default()).build(ChannelBuildContext::new("logger", outputs()));
         assert!(result.is_err());
     }
 
     #[test]
     fn builder_with_no_channel_key_at_construction_still_builds() {
-        let result = Box::new(Stream::builder().command("cat")).build("logger", outputs());
+        let result = Box::new(Stream::builder().command("cat"))
+            .build(ChannelBuildContext::new("logger", outputs()));
         assert!(result.is_ok());
     }
 
@@ -295,7 +304,7 @@ mod tests {
                 // periods below - simulating a command whose kill doesn't actually close its pipe.
                 .command("sleep 5 & echo done".to_string()),
         )
-        .build("test", outputs())
+        .build(ChannelBuildContext::new("test", outputs()))
         .unwrap();
 
         let start = Instant::now();
@@ -315,7 +324,7 @@ mod tests {
         let mut stream = Box::new(
             StreamBuilder::default().command("echo 'connection refused' >&2; exit 2".to_string()),
         )
-        .build("db", outputs())
+        .build(ChannelBuildContext::new("db", outputs()))
         .unwrap();
         let input = Input {
             id: 1,
@@ -327,7 +336,7 @@ mod tests {
 
         let mut message = String::new();
         for _ in 0..50 {
-            if let Err(error) = stream.send(&input) {
+            if let Err(error) = stream.send(&input, &SendContext::new()) {
                 message = error.to_string();
                 break;
             }

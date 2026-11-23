@@ -1,5 +1,8 @@
-use rngo::signal::{Signal, SignalBuilder, SignalEval, SignalOutcome, SignalParser};
-use rngo::{Dialect, ParseError, ParseErrors, RunLogReader};
+use rngo::signal::{
+    Signal, SignalBuilder, SignalContext, SignalEval, SignalOutcome, SignalParseContext,
+    SignalParser,
+};
+use rngo::{Dialect, ParseError, ParseErrors};
 use serde_json::{Value, json};
 
 #[derive(Debug)]
@@ -8,8 +11,8 @@ struct LastIdAtLeast {
 }
 
 impl Signal for LastIdAtLeast {
-    fn evaluate(&self, run_log: &dyn RunLogReader) -> SignalOutcome {
-        let Some(last) = run_log.last() else {
+    fn evaluate(&self, context: &SignalContext) -> SignalOutcome {
+        let Some(last) = context.run_log().last() else {
             return SignalOutcome::error("no inputs");
         };
         SignalOutcome::success(
@@ -29,7 +32,11 @@ impl SignalParser for LastIdAtLeastParser {
         "last_id_at_least"
     }
 
-    fn parse(&self, signal: &rngo::spec::Signal) -> Result<Box<dyn SignalBuilder>, ParseErrors> {
+    fn parse(
+        &self,
+        signal: &rngo::spec::Signal,
+        _context: &SignalParseContext,
+    ) -> Result<Box<dyn SignalBuilder>, ParseErrors> {
         match signal.fields.get("min").and_then(Value::as_u64) {
             Some(min) => Ok(Box::new(LastIdAtLeast { min })),
             None => Err(ParseError::invalid("min must be a number")

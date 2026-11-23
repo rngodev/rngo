@@ -7,7 +7,7 @@ use crate::error::BuildErrors;
 use crate::{
     BuildError, Input, Metadata, ProxyError, RunLogError, RunLogWriter, SimpleEventRunLog,
 };
-use channel::{Channel, ChannelBuilder};
+use channel::{Channel, ChannelBuildContext, ChannelBuilder, SendContext};
 use jiff::Timestamp;
 use output::{Output, OutputSender};
 use std::collections::HashMap;
@@ -57,7 +57,7 @@ impl Proxy {
         };
 
         if let Some(channel) = self.channels.get_mut(channel_key) {
-            for output in channel.send(input)? {
+            for output in channel.send(input, &SendContext::new())? {
                 self.run_log_writer
                     .push_output(output.into_output(channel_key, Some(input.id)))?;
             }
@@ -215,7 +215,7 @@ impl ProxyBuilder {
         for (key, channel_builder) in self.channel_builders {
             let outputs = OutputSender::new(&key, output_tx.clone());
 
-            match channel_builder.build(&key, outputs) {
+            match channel_builder.build(ChannelBuildContext::new(&key, outputs)) {
                 Ok(channel) => {
                     channels.insert(key, channel);
                 }
@@ -254,7 +254,7 @@ mod tests {
     use crate::log::Metadata;
     use crate::proxy::channel::{Channel, ChannelBuilder, render};
     use crate::proxy::format::Format;
-    use crate::proxy::output::{ChannelOutput, OutputSender};
+    use crate::proxy::output::ChannelOutput;
     use jiff::{SignedDuration, Timestamp};
     use serde_json::{Value, json};
     use std::sync::Mutex;
@@ -286,7 +286,11 @@ mod tests {
     struct FailOnEvenIds;
 
     impl Format for FailOnEvenIds {
-        fn format(&self, event: &Input) -> Result<String, crate::FormatError> {
+        fn format(
+            &self,
+            event: &Input,
+            _context: &crate::format::FormatContext,
+        ) -> Result<String, crate::FormatError> {
             if event.id.is_multiple_of(2) {
                 Err(crate::FormatError::Render("boom".into()))
             } else {
@@ -302,8 +306,12 @@ mod tests {
     }
 
     impl Channel for RecordingSink {
-        fn send(&mut self, input: &Input) -> Result<Vec<ChannelOutput>, crate::ChannelError> {
-            match render(self.format.as_deref(), input) {
+        fn send(
+            &mut self,
+            input: &Input,
+            context: &SendContext,
+        ) -> Result<Vec<ChannelOutput>, crate::ChannelError> {
+            match render(self.format.as_deref(), input, context) {
                 Ok(data) => {
                     self.sent.lock().unwrap().push(data);
                     Ok(vec![])
@@ -330,8 +338,7 @@ mod tests {
     impl ChannelBuilder for RecordingSinkBuilder {
         fn build(
             self: Box<Self>,
-            _channel_key: &str,
-            _outputs: OutputSender,
+            _context: ChannelBuildContext,
         ) -> Result<Box<dyn Channel>, BuildErrors> {
             Ok(Box::new(RecordingSink {
                 sent: self.sent,
@@ -427,10 +434,9 @@ mod tests {
         impl ChannelBuilder for KeyRecorder {
             fn build(
                 self: Box<Self>,
-                channel_key: &str,
-                _outputs: OutputSender,
+                context: ChannelBuildContext,
             ) -> Result<Box<dyn Channel>, BuildErrors> {
-                *self.0.lock().unwrap() = Some(channel_key.to_string());
+                *self.0.lock().unwrap() = Some(context.key().to_string());
                 Ok(Box::new(RecordingSink {
                     sent: Arc::new(Mutex::new(vec![])),
                     format: None,

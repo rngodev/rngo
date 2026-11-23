@@ -5,30 +5,64 @@ use cel::Program;
 pub(crate) use sql::SqlSignal;
 
 mod parser;
-pub use parser::SignalParser;
+pub use parser::{SignalParseContext, SignalParser};
 
 use crate::RunLogReader;
 use serde::Serialize;
 
 /// A check run once against a finished run's log.
 pub trait Signal: std::fmt::Debug + Send {
-    fn evaluate(&self, run_log: &dyn RunLogReader) -> SignalOutcome;
+    fn evaluate(&self, context: &SignalContext) -> SignalOutcome;
 }
 
-/// Builds a [`Signal`] when its audit is built; `key` names the signal in build errors. Every
-/// `Signal` is its own builder.
+/// What a signal sees when it is evaluated.
+pub struct SignalContext<'a> {
+    run_log: &'a dyn RunLogReader,
+}
+
+impl<'a> SignalContext<'a> {
+    pub(crate) fn new(run_log: &'a dyn RunLogReader) -> Self {
+        SignalContext { run_log }
+    }
+
+    /// The finished run's log.
+    pub fn run_log(&self) -> &'a dyn RunLogReader {
+        self.run_log
+    }
+}
+
+/// Builds a [`Signal`] when its audit is built. Every `Signal` is its own builder.
 pub trait SignalBuilder: std::fmt::Debug + Send {
-    fn build(self: Box<Self>, key: &str) -> Result<Box<dyn Signal>, BuildErrors>;
+    fn build(self: Box<Self>, context: SignalBuildContext) -> Result<Box<dyn Signal>, BuildErrors>;
+}
+
+/// What a signal builder gets when its audit is built.
+pub struct SignalBuildContext<'a> {
+    key: &'a str,
+}
+
+impl<'a> SignalBuildContext<'a> {
+    pub(crate) fn new(key: &'a str) -> Self {
+        SignalBuildContext { key }
+    }
+
+    /// The signal's key, to name it in build errors.
+    pub fn key(&self) -> &'a str {
+        self.key
+    }
 }
 
 impl SignalBuilder for Box<dyn SignalBuilder> {
-    fn build(self: Box<Self>, key: &str) -> Result<Box<dyn Signal>, BuildErrors> {
-        (*self).build(key)
+    fn build(self: Box<Self>, context: SignalBuildContext) -> Result<Box<dyn Signal>, BuildErrors> {
+        (*self).build(context)
     }
 }
 
 impl<S: Signal + 'static> SignalBuilder for S {
-    fn build(self: Box<Self>, _key: &str) -> Result<Box<dyn Signal>, BuildErrors> {
+    fn build(
+        self: Box<Self>,
+        _context: SignalBuildContext,
+    ) -> Result<Box<dyn Signal>, BuildErrors> {
         Ok(self)
     }
 }

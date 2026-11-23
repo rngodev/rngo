@@ -1,13 +1,13 @@
 use crate::ParseErrorKind;
-use crate::audit::signal::{SignalBuilder, SignalParser};
+use crate::audit::signal::{SignalBuilder, SignalParseContext, SignalParser};
 use crate::audit::{Audit, AuditBuilder};
 use crate::effect::generator::custom::CustomParser;
 use crate::effect::generator::{GeneratorParseVisitor, GeneratorParser};
 use crate::effect::simulation::{Simulation, SimulationBuilder};
 use crate::error::{ParseError, ParseErrors};
 use crate::moment::Moment;
-use crate::proxy::channel::{ChannelBuilder, ChannelParser};
-use crate::proxy::format::{FormatParseContext, FormatParser};
+use crate::proxy::channel::{ChannelBuilder, ChannelParseContext, ChannelParser};
+use crate::proxy::format::FormatParser;
 use crate::proxy::{Proxy, ProxyBuilder};
 use crate::spec::{self, Spec};
 use std::sync::Arc;
@@ -264,7 +264,7 @@ impl Dialect {
             }
         }
 
-        let formats = FormatParseContext::new(&self.format_parsers, spec);
+        let formats = ChannelParseContext::new(&self.format_parsers, spec);
 
         for (key, channel) in &spec.channels {
             if channel.fields.contains_key("target") {
@@ -298,7 +298,7 @@ impl Dialect {
         let mut audit_builder = Audit::builder();
 
         for (key, signal) in &spec.signals {
-            match self.parse_signal(signal) {
+            match self.parse_signal(signal, spec) {
                 Ok(built) => {
                     audit_builder = audit_builder.signal(key.clone(), built);
                 }
@@ -313,7 +313,11 @@ impl Dialect {
         }
     }
 
-    fn parse_signal(&self, signal: &spec::Signal) -> Result<Box<dyn SignalBuilder>, ParseErrors> {
+    fn parse_signal(
+        &self,
+        signal: &spec::Signal,
+        spec: &Spec,
+    ) -> Result<Box<dyn SignalBuilder>, ParseErrors> {
         let matching: Vec<_> = self
             .signal_parsers
             .iter()
@@ -321,7 +325,7 @@ impl Dialect {
             .collect();
 
         match matching.as_slice() {
-            [parser] => parser.parse(signal),
+            [parser] => parser.parse(signal, &SignalParseContext::new(spec)),
             [] => Err(ParseError::new(ParseErrorKind::UnknownType {
                 kind: "signal",
                 found: signal.kind.clone(),
@@ -340,7 +344,7 @@ impl Dialect {
     fn parse_channel(
         &self,
         channel: &spec::Channel,
-        formats: &FormatParseContext,
+        formats: &ChannelParseContext,
     ) -> Result<Box<dyn ChannelBuilder>, ParseErrors> {
         let matching: Vec<_> = self
             .channel_parsers
