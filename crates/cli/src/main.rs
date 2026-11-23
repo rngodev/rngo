@@ -39,8 +39,8 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
         /// Cap the number of inputs an eval produces
-        #[arg(long)]
-        limit: Option<std::num::NonZeroU64>,
+        #[arg(long, value_parser = clap::value_parser!(u64).range(1..))]
+        limit: Option<u64>,
         /// Apply the named scenario to every prototype that defines it
         #[arg(long)]
         scenario: Option<String>,
@@ -108,7 +108,7 @@ fn main() {
             eval::EvalOptions {
                 stdout,
                 dry_run,
-                limit: limit.map(std::num::NonZeroU64::get),
+                limit,
                 scenario,
                 realtime,
                 stop: stop_on_interrupt(),
