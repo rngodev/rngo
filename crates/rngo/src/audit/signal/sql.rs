@@ -1,5 +1,5 @@
-use super::{Signal, SignalBuilder, SignalOutcome};
-use crate::audit::signal::{CelExpectation, SignalEval, SignalParser};
+use super::{Signal, SignalBuildContext, SignalBuilder, SignalContext, SignalOutcome};
+use crate::audit::signal::{CelExpectation, SignalEval, SignalParseContext, SignalParser};
 use crate::cel::json_to_cel;
 use crate::error::{BuildError, BuildErrors, ParseError, ParseErrors};
 use crate::{RunLogReader, SignalError, spec};
@@ -31,8 +31,8 @@ fn compile_expectation(source: &str) -> Result<CelExpectation, SignalError> {
 }
 
 impl Signal for SqlSignal {
-    fn evaluate(&self, run_log: &dyn RunLogReader) -> SignalOutcome {
-        match self.try_evaluate(run_log) {
+    fn evaluate(&self, context: &SignalContext) -> SignalOutcome {
+        match self.try_evaluate(context.run_log()) {
             Ok(outcome) => outcome,
             Err(error) => SignalOutcome::error(error.to_string()),
         }
@@ -79,7 +79,11 @@ impl SignalParser for SqlSignalParser {
         "sql"
     }
 
-    fn parse(&self, signal: &spec::Signal) -> Result<Box<dyn SignalBuilder>, ParseErrors> {
+    fn parse(
+        &self,
+        signal: &spec::Signal,
+        _context: &SignalParseContext,
+    ) -> Result<Box<dyn SignalBuilder>, ParseErrors> {
         let query = match signal.fields.get("query") {
             Some(value) => match value.as_str() {
                 Some(query) => query.to_string(),
@@ -135,7 +139,8 @@ impl SqlSignalBuilder {
 }
 
 impl SignalBuilder for SqlSignalBuilder {
-    fn build(self: Box<Self>, key: &str) -> Result<Box<dyn Signal>, BuildErrors> {
+    fn build(self: Box<Self>, context: SignalBuildContext) -> Result<Box<dyn Signal>, BuildErrors> {
+        let key = context.key();
         let Some(query) = self.query else {
             return Err(BuildError::signal(key, "query is required").into());
         };
@@ -160,6 +165,10 @@ mod tests {
         serde_json::from_value(fields).unwrap()
     }
 
+    fn spec() -> spec::Spec {
+        spec::from_value(serde_json::json!({ "effects": {} })).unwrap()
+    }
+
     fn expectation(expression: &str) -> CelExpectation {
         CelExpectation {
             source: expression.into(),
@@ -175,27 +184,27 @@ mod tests {
             "expect": "result == 1",
         }));
 
-        let result = SqlSignal::parser().parse(&signal);
+        let result = SqlSignal::parser().parse(&signal, &SignalParseContext::new(&spec()));
         assert!(result.is_ok());
     }
 
     #[test]
     fn missing_query_is_an_error() {
         let signal = spec_signal(serde_json::json!({ "type": "sql" }));
-        let result = SqlSignal::parser().parse(&signal);
+        let result = SqlSignal::parser().parse(&signal, &SignalParseContext::new(&spec()));
         assert!(result.is_err());
     }
 
     #[test]
     fn builder_builds_signal_with_query_and_expect() {
         let builder = SqlSignal::builder().query("SELECT 1").expect("result == 1");
-        let result = Box::new(builder).build("check");
+        let result = Box::new(builder).build(SignalBuildContext::new("check"));
         assert!(result.is_ok());
     }
 
     #[test]
     fn builder_without_query_is_an_error() {
-        let result = Box::new(SqlSignal::builder()).build("check");
+        let result = Box::new(SqlSignal::builder()).build(SignalBuildContext::new("check"));
         assert!(result.is_err());
     }
 
@@ -204,7 +213,7 @@ mod tests {
         let builder = SqlSignal::builder()
             .query("SELECT 1")
             .expect("not ( valid cel");
-        let result = Box::new(builder).build("check");
+        let result = Box::new(builder).build(SignalBuildContext::new("check"));
         assert!(result.is_err());
     }
 
@@ -215,7 +224,7 @@ mod tests {
             "query": "SELECT 1",
             "expect": 1,
         }));
-        let result = SqlSignal::parser().parse(&signal);
+        let result = SqlSignal::parser().parse(&signal, &SignalParseContext::new(&spec()));
         assert!(result.is_err());
     }
 
@@ -226,7 +235,7 @@ mod tests {
             "query": "SELECT 1",
             "expect": "not ( valid cel",
         }));
-        let result = SqlSignal::parser().parse(&signal);
+        let result = SqlSignal::parser().parse(&signal, &SignalParseContext::new(&spec()));
         assert!(result.is_err());
     }
 
@@ -284,7 +293,7 @@ mod tests {
             query: "SELECT 1".to_string(),
             expectation: None,
         };
-        match signal.evaluate(&crate::SimpleEventRunLog::default()) {
+        match signal.evaluate(&SignalContext::new(&crate::SimpleEventRunLog::default())) {
             SignalOutcome::Error { error } => {
                 assert!(error.contains("does not support running queries"));
             }

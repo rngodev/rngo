@@ -4,7 +4,7 @@ pub mod signal;
 
 use crate::{RunLogError, RunLogReader, RunLogWriter};
 use indexmap::IndexMap;
-use signal::{Signal, SignalBuilder, SignalOutcome};
+use signal::{Signal, SignalBuildContext, SignalBuilder, SignalContext, SignalOutcome};
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -33,10 +33,11 @@ impl Audit {
 
     /// Evaluates every signal and writes each outcome to the run log as metadata.
     pub fn run(&self) -> Result<AuditReport, RunLogError> {
+        let context = SignalContext::new(self.run_log_reader.as_ref());
         let outcomes: IndexMap<String, SignalOutcome> = self
             .signals
             .iter()
-            .map(|(key, signal)| (key.clone(), signal.evaluate(self.run_log_reader.as_ref())))
+            .map(|(key, signal)| (key.clone(), signal.evaluate(&context)))
             .collect();
 
         for (key, outcome) in &outcomes {
@@ -97,7 +98,7 @@ impl AuditBuilder {
         let mut signals = IndexMap::new();
 
         for (key, builder) in self.signal_builders {
-            match builder.build(&key) {
+            match builder.build(SignalBuildContext::new(&key)) {
                 Ok(signal) => {
                     signals.insert(key, signal);
                 }
@@ -206,7 +207,7 @@ mod tests {
     struct MockSignal(SignalOutcome);
 
     impl Signal for MockSignal {
-        fn evaluate(&self, _run_log: &dyn RunLogReader) -> SignalOutcome {
+        fn evaluate(&self, _context: &SignalContext) -> SignalOutcome {
             self.0.clone()
         }
     }

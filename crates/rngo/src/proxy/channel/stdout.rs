@@ -1,8 +1,10 @@
 use crate::effect::Input;
 use crate::error::{BuildErrors, ParseErrors};
-use crate::proxy::channel::{Channel, ChannelBuilder, ChannelParser};
-use crate::proxy::format::{Format, FormatBuilder, FormatParseContext};
-use crate::proxy::output::{ChannelOutput, OutputSender};
+use crate::proxy::channel::{
+    Channel, ChannelBuildContext, ChannelBuilder, ChannelParseContext, ChannelParser, SendContext,
+};
+use crate::proxy::format::{Format, FormatBuilder};
+use crate::proxy::output::ChannelOutput;
 use crate::{ChannelError, spec};
 use serde_json::Value;
 use std::sync::Arc;
@@ -23,8 +25,12 @@ impl Stdout {
 }
 
 impl Channel for Stdout {
-    fn send(&mut self, input: &Input) -> Result<Vec<ChannelOutput>, ChannelError> {
-        let data = match super::render(self.format.as_deref(), input) {
+    fn send(
+        &mut self,
+        input: &Input,
+        context: &SendContext,
+    ) -> Result<Vec<ChannelOutput>, ChannelError> {
+        let data = match super::render(self.format.as_deref(), input, context) {
             Ok(data) => data,
             Err(output) => return Ok(vec![output]),
         };
@@ -54,11 +60,10 @@ impl StdoutBuilder {
 impl ChannelBuilder for StdoutBuilder {
     fn build(
         self: Box<Self>,
-        channel_key: &str,
-        _outputs: OutputSender,
+        context: ChannelBuildContext,
     ) -> Result<Box<dyn Channel>, BuildErrors> {
         Ok(Box::new(Stdout {
-            format: super::build_format(self.format, channel_key)?,
+            format: super::build_format(self.format, &context)?,
         }))
     }
 }
@@ -73,12 +78,12 @@ impl ChannelParser for StdoutParser {
     fn parse(
         &self,
         channel: &spec::Channel,
-        formats: &FormatParseContext,
+        context: &ChannelParseContext,
     ) -> Result<Box<dyn ChannelBuilder>, ParseErrors> {
         let mut builder = StdoutBuilder::default();
 
         if let Some(value) = channel.fields.get("format")
-            && let Some(format) = formats.parse(&["format"], value)?
+            && let Some(format) = context.parse_format(&["format"], value)?
         {
             builder = builder.format(format);
         }

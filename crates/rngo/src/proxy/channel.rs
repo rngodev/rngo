@@ -8,11 +8,11 @@ pub(crate) use stream::Stream;
 
 mod parser;
 pub use crate::proxy::output::{ChannelOutput, OutputSender};
-pub use parser::ChannelParser;
+pub use parser::{ChannelParseContext, ChannelParser};
 
 use crate::effect::Input;
 use crate::error::BuildErrors;
-use crate::proxy::format::{Format, FormatBuilder};
+use crate::proxy::format::{Format, FormatBuildContext, FormatBuilder, FormatContext};
 use crate::{ChannelError, Level};
 use serde_json::Value;
 use std::process::Command;
@@ -22,45 +22,95 @@ use std::sync::Arc;
 pub trait Channel: std::fmt::Debug + Send {
     /// Sends one input, formatted by the channel's own format if it has one. The proxy ties
     /// returned outputs to the input.
-    fn send(&mut self, input: &Input) -> Result<Vec<ChannelOutput>, ChannelError>;
+    fn send(
+        &mut self,
+        input: &Input,
+        context: &SendContext,
+    ) -> Result<Vec<ChannelOutput>, ChannelError>;
     fn finish(&mut self) {}
 }
 
-/// Built with the channel's own key passed in at build time, rather than baked in at
-/// construction - lets a builder (e.g. [`crate::build::exec`]) be constructed generically,
-/// before the key it'll be added under is known, mirroring how `outputs` is threaded in.
+/// What a channel sees when it sends an input.
+pub struct SendContext<'a> {
+    format_context: FormatContext<'a>,
+}
+
+impl<'a> SendContext<'a> {
+    pub(crate) fn new() -> Self {
+        SendContext {
+            format_context: FormatContext::new(),
+        }
+    }
+
+    /// The context to pass to the channel's format.
+    pub fn format_context(&self) -> &FormatContext<'a> {
+        &self.format_context
+    }
+}
+
+/// Builds a [`Channel`] when its proxy is built. A builder gets the key it is added under only
+/// then, so it can be made before the key is known.
 pub trait ChannelBuilder: Send {
     fn build(
         self: Box<Self>,
-        channel_key: &str,
-        outputs: OutputSender,
+        context: ChannelBuildContext,
     ) -> Result<Box<dyn Channel>, BuildErrors>;
+}
+
+/// What a channel builder gets when its proxy is built.
+pub struct ChannelBuildContext<'a> {
+    key: &'a str,
+    outputs: OutputSender,
+}
+
+impl<'a> ChannelBuildContext<'a> {
+    pub(crate) fn new(key: &'a str, outputs: OutputSender) -> Self {
+        ChannelBuildContext { key, outputs }
+    }
+
+    /// The channel's key, to name it in build errors.
+    pub fn key(&self) -> &'a str {
+        self.key
+    }
+
+    /// Reports outputs outside of [`Channel::send`], such as from a reader thread.
+    pub fn outputs(&self) -> OutputSender {
+        self.outputs.clone()
+    }
+
+    /// The context to build the channel's format with.
+    pub fn format_context(&self) -> FormatBuildContext<'a> {
+        FormatBuildContext::new(self.key)
+    }
 }
 
 impl ChannelBuilder for Box<dyn ChannelBuilder> {
     fn build(
         self: Box<Self>,
-        channel_key: &str,
-        outputs: OutputSender,
+        context: ChannelBuildContext,
     ) -> Result<Box<dyn Channel>, BuildErrors> {
-        (*self).build(channel_key, outputs)
+        (*self).build(context)
     }
 }
 
-/// Builds a channel's optional format for the channel `channel_key`.
+/// Builds a channel's optional format.
 fn build_format(
     format: Option<Box<dyn FormatBuilder>>,
-    channel_key: &str,
+    context: &ChannelBuildContext,
 ) -> Result<Option<Arc<dyn Format>>, BuildErrors> {
     format
-        .map(|format| format.build(channel_key).map(Arc::from))
+        .map(|format| format.build(context.format_context()).map(Arc::from))
         .transpose()
 }
 
 /// The value a channel delivers for `input`: its formatted string, or its own `data` without a
 /// format. A format failure comes back as the error output to report instead.
-pub(crate) fn render(format: Option<&dyn Format>, input: &Input) -> Result<Value, ChannelOutput> {
-    match format.map(|f| f.format(input)) {
+pub(crate) fn render(
+    format: Option<&dyn Format>,
+    input: &Input,
+    context: &SendContext,
+) -> Result<Value, ChannelOutput> {
+    match format.map(|f| f.format(input, context.format_context())) {
         Some(Ok(data)) => Ok(Value::String(data)),
         Some(Err(error)) => Err(ChannelOutput::new(
             Level::Error,

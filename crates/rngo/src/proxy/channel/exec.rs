@@ -1,8 +1,10 @@
 use crate::effect::Input;
 use crate::error::{BuildErrors, ParseErrors};
-use crate::proxy::channel::{Channel, ChannelBuilder, ChannelParser};
-use crate::proxy::format::{Format, FormatBuilder, FormatParseContext};
-use crate::proxy::output::{ChannelOutput, OutputSender};
+use crate::proxy::channel::{
+    Channel, ChannelBuildContext, ChannelBuilder, ChannelParseContext, ChannelParser, SendContext,
+};
+use crate::proxy::format::{Format, FormatBuilder};
+use crate::proxy::output::ChannelOutput;
 use crate::{ChannelError, Level, ParseError, spec};
 use serde_json::Value;
 use std::io::{BufRead, BufReader};
@@ -26,8 +28,12 @@ impl Exec {
 }
 
 impl Channel for Exec {
-    fn send(&mut self, input: &Input) -> Result<Vec<ChannelOutput>, ChannelError> {
-        let data = match super::render(self.format.as_deref(), input) {
+    fn send(
+        &mut self,
+        input: &Input,
+        context: &SendContext,
+    ) -> Result<Vec<ChannelOutput>, ChannelError> {
+        let data = match super::render(self.format.as_deref(), input, context) {
             Ok(data) => data,
             Err(output) => return Ok(vec![output]),
         };
@@ -87,12 +93,12 @@ impl ExecBuilder {
 impl ChannelBuilder for ExecBuilder {
     fn build(
         self: Box<Self>,
-        channel_key: &str,
-        _outputs: OutputSender,
+        context: ChannelBuildContext,
     ) -> Result<Box<dyn Channel>, BuildErrors> {
+        let channel_key = context.key();
         Ok(Box::new(Exec {
             channel_key: channel_key.to_string(),
-            format: super::build_format(self.format, channel_key)?,
+            format: super::build_format(self.format, &context)?,
         }))
     }
 }
@@ -107,7 +113,7 @@ impl ChannelParser for ExecParser {
     fn parse(
         &self,
         channel: &spec::Channel,
-        formats: &FormatParseContext,
+        context: &ChannelParseContext,
     ) -> Result<Box<dyn ChannelBuilder>, ParseErrors> {
         if channel.fields.contains_key("command") {
             return Err(ParseError::invalid(
@@ -121,7 +127,7 @@ impl ChannelParser for ExecParser {
         let mut builder = ExecBuilder::default();
 
         if let Some(value) = channel.fields.get("format")
-            && let Some(format) = formats.parse(&["format"], value)?
+            && let Some(format) = context.parse_format(&["format"], value)?
         {
             builder = builder.format(format);
         }
@@ -133,6 +139,7 @@ impl ChannelParser for ExecParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::proxy::output::OutputSender;
     use jiff::Timestamp;
     use serde_json::json;
     use std::sync::mpsc;
@@ -150,14 +157,19 @@ mod tests {
     fn exec() -> Box<dyn Channel> {
         let (tx, _rx) = mpsc::channel();
         Box::new(Exec::builder())
-            .build("logger", OutputSender::new("logger", tx))
+            .build(ChannelBuildContext::new(
+                "logger",
+                OutputSender::new("logger", tx),
+            ))
             .unwrap()
     }
 
     #[test]
     #[cfg(unix)]
     fn runs_string_data_as_its_command() {
-        let outputs = exec().send(&input(json!("echo '<a> & \"b\"'"))).unwrap();
+        let outputs = exec()
+            .send(&input(json!("echo '<a> & \"b\"'")), &SendContext::new())
+            .unwrap();
         assert_eq!(
             outputs,
             vec![ChannelOutput::new(Level::Info, "<a> & \"b\"")]
@@ -166,7 +178,9 @@ mod tests {
 
     #[test]
     fn non_string_data_is_an_error_output() {
-        let outputs = exec().send(&input(json!({ "a": 1 }))).unwrap();
+        let outputs = exec()
+            .send(&input(json!({ "a": 1 })), &SendContext::new())
+            .unwrap();
         assert_eq!(outputs.len(), 1);
         assert_eq!(outputs[0].level, Level::Error);
     }

@@ -1,5 +1,8 @@
-use rngo::channel::{Channel, ChannelBuilder, ChannelOutput, ChannelParser, OutputSender};
-use rngo::format::{Format, FormatBuilder, FormatParseContext, FormatParser};
+use rngo::channel::{
+    Channel, ChannelBuildContext, ChannelBuilder, ChannelOutput, ChannelParseContext,
+    ChannelParser, SendContext,
+};
+use rngo::format::{Format, FormatBuilder, FormatContext, FormatParseContext, FormatParser};
 use rngo::{
     BuildErrors, ChannelError, Dialect, FormatError, Input, Level, ParseErrors, SimpleEventRunLog,
     parse, spec,
@@ -13,7 +16,7 @@ type Sink = Arc<Mutex<Vec<String>>>;
 struct Upper;
 
 impl Format for Upper {
-    fn format(&self, input: &Input) -> Result<String, FormatError> {
+    fn format(&self, input: &Input, _context: &FormatContext) -> Result<String, FormatError> {
         Ok(input.data.as_str().unwrap_or_default().to_uppercase())
     }
 }
@@ -28,7 +31,7 @@ impl FormatParser for UpperParser {
     fn parse(
         &self,
         _format: &spec::Format,
-        _spec: &spec::Spec,
+        _context: &FormatParseContext,
     ) -> Result<Box<dyn FormatBuilder>, ParseErrors> {
         Ok(Box::new(Upper))
     }
@@ -41,9 +44,13 @@ struct Memory {
 }
 
 impl Channel for Memory {
-    fn send(&mut self, input: &Input) -> Result<Vec<ChannelOutput>, ChannelError> {
+    fn send(
+        &mut self,
+        input: &Input,
+        context: &SendContext,
+    ) -> Result<Vec<ChannelOutput>, ChannelError> {
         let line = match &self.format {
-            Some(format) => format.format(input).unwrap(),
+            Some(format) => format.format(input, context.format_context()).unwrap(),
             None => input.data.to_string(),
         };
         self.sink.lock().unwrap().push(line);
@@ -59,14 +66,13 @@ struct MemoryBuilder {
 impl ChannelBuilder for MemoryBuilder {
     fn build(
         self: Box<Self>,
-        channel_key: &str,
-        _outputs: OutputSender,
+        context: ChannelBuildContext,
     ) -> Result<Box<dyn Channel>, BuildErrors> {
         Ok(Box::new(Memory {
             sink: self.sink,
             format: self
                 .format
-                .map(|format| format.build(channel_key))
+                .map(|format| format.build(context.format_context()))
                 .transpose()?,
         }))
     }
@@ -84,10 +90,10 @@ impl ChannelParser for MemoryParser {
     fn parse(
         &self,
         channel: &spec::Channel,
-        formats: &FormatParseContext,
+        context: &ChannelParseContext,
     ) -> Result<Box<dyn ChannelBuilder>, ParseErrors> {
         let format = match channel.fields.get("format") {
-            Some(value) => formats.parse(&["format"], value)?,
+            Some(value) => context.parse_format(&["format"], value)?,
             None => None,
         };
         Ok(Box::new(MemoryBuilder {

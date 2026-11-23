@@ -7,7 +7,9 @@ use handlebars::{
 use serde_json::json;
 
 use crate::effect::Input;
-use crate::proxy::format::{Format, FormatBuilder, FormatParser};
+use crate::proxy::format::{
+    Format, FormatBuildContext, FormatBuilder, FormatContext, FormatParseContext, FormatParser,
+};
 use crate::{FormatError, ParseError, spec};
 
 const TEMPLATE_NAME: &str = "template";
@@ -61,7 +63,7 @@ fn json_helper(
 }
 
 impl Format for TemplateFormat {
-    fn format(&self, event: &Input) -> Result<String, FormatError> {
+    fn format(&self, event: &Input, _context: &FormatContext) -> Result<String, FormatError> {
         let mut context = serde_json::to_value(event)?;
         context["effect"] = json!({ "key": event.effect });
         self.hbs
@@ -85,7 +87,8 @@ impl TemplateFormatBuilder {
 }
 
 impl FormatBuilder for TemplateFormatBuilder {
-    fn build(self: Box<Self>, channel_key: &str) -> Result<Box<dyn Format>, BuildErrors> {
+    fn build(self: Box<Self>, context: FormatBuildContext) -> Result<Box<dyn Format>, BuildErrors> {
+        let channel_key = context.channel_key();
         let Some(template) = self.template else {
             return Err(BuildError::channel(channel_key, "format: template is required").into());
         };
@@ -105,7 +108,7 @@ impl FormatParser for TemplateFormatParser {
     fn parse(
         &self,
         format: &spec::Format,
-        _spec: &spec::Spec,
+        _context: &FormatParseContext,
     ) -> Result<Box<dyn FormatBuilder>, ParseErrors> {
         let error =
             |message: String| ParseErrors::from(ParseError::invalid(message).at(["template"]));
@@ -140,14 +143,16 @@ mod tests {
     }
 
     fn render(template: &str, data: Value) -> Result<String, FormatError> {
-        TemplateFormat::new(template).unwrap().format(&event(data))
+        TemplateFormat::new(template)
+            .unwrap()
+            .format(&event(data), &FormatContext::new())
     }
 
     fn parse(format: Value) -> Result<Box<dyn Format>, ParseErrors> {
         let format: spec::Format = serde_json::from_value(format).unwrap();
         let spec: spec::Spec = serde_json::from_value(json!({ "effects": {} })).unwrap();
-        let builder = TemplateFormat::parser().parse(&format, &spec)?;
-        Ok(builder.build("out").unwrap())
+        let builder = TemplateFormat::parser().parse(&format, &FormatParseContext::new(&spec))?;
+        Ok(builder.build(FormatBuildContext::new("out")).unwrap())
     }
 
     #[test]
@@ -197,19 +202,24 @@ mod tests {
     #[test]
     fn builder_builds_a_format() {
         let format = Box::new(TemplateFormat::builder().template("{{effect.key}}"))
-            .build("out")
+            .build(FormatBuildContext::new("out"))
             .unwrap();
-        assert_eq!(format.format(&event(json!(null))).unwrap(), "user");
+        assert_eq!(
+            format
+                .format(&event(json!(null)), &FormatContext::new())
+                .unwrap(),
+            "user"
+        );
     }
 
     #[test]
     fn builder_errors_on_a_missing_or_invalid_template() {
         let missing = Box::new(TemplateFormat::builder())
-            .build("out")
+            .build(FormatBuildContext::new("out"))
             .unwrap_err();
         assert!(missing[0].to_string().contains("template is required"));
         let invalid = Box::new(TemplateFormat::builder().template("{{#if}}"))
-            .build("out")
+            .build(FormatBuildContext::new("out"))
             .unwrap_err();
         assert_eq!(invalid.len(), 1);
     }
@@ -217,7 +227,12 @@ mod tests {
     #[test]
     fn parser_builds_a_format() {
         let format = parse(json!({ "type": "template", "template": "{{effect.key}}" })).unwrap();
-        assert_eq!(format.format(&event(json!(null))).unwrap(), "user");
+        assert_eq!(
+            format
+                .format(&event(json!(null)), &FormatContext::new())
+                .unwrap(),
+            "user"
+        );
     }
 
     #[test]

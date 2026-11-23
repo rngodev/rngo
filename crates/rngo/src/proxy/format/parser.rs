@@ -1,7 +1,6 @@
-use crate::error::{ParseError, ParseErrorKind, ParseErrors};
+use crate::error::ParseErrors;
 use crate::proxy::format::FormatBuilder;
 use crate::spec;
-use serde_json::Value;
 
 /// Parses spec formats whose `type` is its `key` into format builders.
 pub trait FormatParser: Send + Sync {
@@ -9,66 +8,22 @@ pub trait FormatParser: Send + Sync {
     fn parse(
         &self,
         format: &spec::Format,
-        spec: &spec::Spec,
+        context: &FormatParseContext,
     ) -> Result<Box<dyn FormatBuilder>, ParseErrors>;
 }
 
-/// Lets a channel parser build the optional `format` of its channel with the dialect's format parsers.
+/// What a format parser sees while parsing a format.
 pub struct FormatParseContext<'a> {
-    parsers: &'a [Box<dyn FormatParser>],
     spec: &'a spec::Spec,
 }
 
 impl<'a> FormatParseContext<'a> {
-    pub(crate) fn new(parsers: &'a [Box<dyn FormatParser>], spec: &'a spec::Spec) -> Self {
-        FormatParseContext { parsers, spec }
+    pub(crate) fn new(spec: &'a spec::Spec) -> Self {
+        FormatParseContext { spec }
     }
 
-    /// Parses `value` as a format; `None` if it has no `type`. Error paths are prefixed with
-    /// `path`, where `value` sits relative to the caller's own node.
-    pub fn parse(
-        &self,
-        path: &[&str],
-        value: &Value,
-    ) -> Result<Option<Box<dyn FormatBuilder>>, ParseErrors> {
-        let invalid = |message: String| {
-            ParseErrors::from(ParseError::invalid(message).at(path.iter().copied()))
-        };
-
-        let format: spec::Format =
-            serde_json::from_value(value.clone()).map_err(|e| invalid(e.to_string()))?;
-
-        let Some(kind) = format.kind.as_deref() else {
-            return Ok(None);
-        };
-
-        let matching: Vec<_> = self.parsers.iter().filter(|p| p.key() == kind).collect();
-
-        let type_error = |kind: ParseErrorKind| {
-            ParseErrors::from(ParseError::new(kind).at(path.iter().copied().chain(["type"])))
-        };
-
-        let result = match matching.as_slice() {
-            [parser] => parser.parse(&format, self.spec),
-            [] => {
-                return Err(type_error(ParseErrorKind::UnknownType {
-                    kind: "format",
-                    found: Some(kind.to_string()),
-                }));
-            }
-            _ => {
-                return Err(type_error(ParseErrorKind::AmbiguousType {
-                    kind: "format",
-                    count: matching.len(),
-                }));
-            }
-        };
-
-        result.map(Some).map_err(|errors| {
-            errors
-                .into_iter()
-                .map(|error| error.prefixed(path))
-                .collect()
-        })
+    /// The whole spec being parsed.
+    pub fn spec(&self) -> &'a spec::Spec {
+        self.spec
     }
 }
