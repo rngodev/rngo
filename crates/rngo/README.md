@@ -5,7 +5,7 @@ A **spec** describes the behavior of a system using the following components:
 - a `Proxy` routes inputs to the appropriate system interfaces and captures outputs
 - an `Audit` surfaces pattern in logged inputs and outputs and may set expectations
 
-Each is connected via a `Log` instance, which persists all input, outputs and metadata.
+Each is connected via a run log, which persists all inputs, outputs and metadata. `SqliteRunLog` writes it to `log.sqlite`, whose tables SQL signals query; they are documented in [RUN_LOG.md](https://github.com/rngodev/rngo/blob/main/RUN_LOG.md).
 
 ## DSL
 

@@ -462,6 +462,15 @@ pub enum RunLogError {
     Unsupported,
     #[error("the query's result can't be represented as JSON")]
     UnrepresentableValue,
+    /// An existing `log.sqlite` uses a table layout this version doesn't read; `found` is `None`
+    /// for a log written before run logs were versioned.
+    #[error(
+        "log.sqlite {}, but this rngo reads run log version {supported}; start a new log (see {})",
+        found.map_or("was written before run logs were versioned".to_string(), |found| format!("uses run log version {found}")),
+        crate::spec::MIGRATION_URL
+    )]
+    #[non_exhaustive]
+    UnsupportedVersion { found: Option<u32>, supported: u32 },
 }
 
 /// A failure turning an input into the string a channel delivers.
