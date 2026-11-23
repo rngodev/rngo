@@ -108,7 +108,7 @@ fn main() {
             eval::EvalOptions {
                 stdout,
                 dry_run,
-                limit,
+                limit: limit.map(std::num::NonZeroU64::get),
                 scenario,
                 realtime,
                 stop: stop_on_interrupt(),
