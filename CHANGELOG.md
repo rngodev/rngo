@@ -15,6 +15,7 @@ Each release has a section named after its version. Changes that break existing 
 
 ### Changed
 
+- The `rngo-cli` crate's library is internal: it exists only for the CLI's own tests, is hidden from its docs, and may change in any release. To run simulations from Rust, use the `rngo` crate. The `rngo` command itself doesn't change.
 - **Breaking (spec):** keys from before versioning are rejected with a pointer to [MIGRATING.md](MIGRATING.md). Move `phases`, `schemas` and a channel's `target` as described there.
 - **Breaking (spec):** an unknown field on an effect, a trigger object, a prototype's scenario or a custom generator is a parse error at that field (e.g. `effects.user.limt`) instead of being ignored. Remove or fix the field. Such a field never had any effect, so the spec `version` stays 1.
 - **Breaking (Rust API):** the public API of the `rngo` crate is smaller. Only the items listed in the crate README are public, and public enums and spec structs are `#[non_exhaustive]`, so match them with a wildcard arm.

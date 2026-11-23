@@ -18,7 +18,7 @@ pub struct EvalOptions {
     /// Only check that the simulation builds.
     pub dry_run: bool,
     /// Cap on the number of inputs produced.
-    pub limit: Option<std::num::NonZeroU64>,
+    pub limit: Option<u64>,
     /// Name of a prototype scenario to apply to the spec.
     pub scenario: Option<String>,
     /// Wait for each input's timestamp before sending it instead of sending right away.
@@ -62,7 +62,7 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
     let audit_builder = dialect.parse_audit(&spec)?;
 
     if let Some(limit) = limit {
-        simulation_builder = simulation_builder.limit(limit.get());
+        simulation_builder = simulation_builder.limit(limit);
     }
 
     if dry_run {

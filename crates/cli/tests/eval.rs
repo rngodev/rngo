@@ -1140,7 +1140,7 @@ fn limit_caps_total_effects_produced() {
     eval(
         Some(base),
         EvalOptions {
-            limit: std::num::NonZeroU64::new(3),
+            limit: Some(3),
             ..Default::default()
         },
     )
@@ -1296,7 +1296,7 @@ fn future_inputs_are_sent_right_away_by_default() {
     eval(
         Some(base),
         EvalOptions {
-            limit: std::num::NonZeroU64::new(10),
+            limit: Some(10),
             ..Default::default()
         },
     )
