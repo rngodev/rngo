@@ -6,6 +6,7 @@ Each release has a section named after its version. Changes that break existing 
 
 ### Added
 
+- Run logs record the version of their table layout (`SqliteRunLog::VERSION`, stored in `PRAGMA user_version`), and the tables SQL signals query are documented in [RUN_LOG.md](RUN_LOG.md).
 - A spec declares its format in a top-level `version` (currently 1), and `rngo` reports a spec in a format it doesn't read. JSON Schemas for editors are in `schema/v1/`, and `rngo init` adds the `$schema` line to a new `spec.yml`.
 - `rngo init` installs the agent skills release that matches the CLI version.
 - `exec` and `stream` channels work on Windows.
@@ -15,6 +16,7 @@ Each release has a section named after its version. Changes that break existing 
 
 ### Changed
 
+- **Breaking (run log):** `SqliteRunLog::in_dir` refuses an existing `log.sqlite` of another layout version, or one written before run logs were versioned, with `RunLogError::UnsupportedVersion`, and leaves it untouched. `rngo eval` writes a new log for every run, so it isn't affected. To migrate, start a new log; old logs can still be read directly with SQLite.
 - The `rngo-cli` crate's library is internal: it exists only for the CLI's own tests, is hidden from its docs, and may change in any release. To run simulations from Rust, use the `rngo` crate. The `rngo` command itself doesn't change.
 - **Breaking (spec):** keys from before versioning are rejected with a pointer to [MIGRATING.md](MIGRATING.md). Move `phases`, `schemas` and a channel's `target` as described there.
 - **Breaking (spec):** an unknown field on an effect, a trigger object, a prototype's scenario or a custom generator is a parse error at that field (e.g. `effects.user.limt`) instead of being ignored. Remove or fix the field. Such a field never had any effect, so the spec `version` stays 1.

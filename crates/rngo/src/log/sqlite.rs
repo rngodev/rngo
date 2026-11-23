@@ -22,7 +22,33 @@ impl<T> SqliteResultExt<T> for Result<T, rusqlite::Error> {
     }
 }
 
-/// A run log persisted to `log.sqlite`, buffering writes in batched transactions.
+/// Errors unless `connection` is a new database or a log of [`SqliteRunLog::VERSION`], before
+/// anything is written to it.
+fn check_version(connection: &Connection) -> Result<(), RunLogError> {
+    let version: u32 = connection
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .sqlite()?;
+    let has_tables: bool = connection
+        .query_row(
+            "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table')",
+            [],
+            |row| row.get(0),
+        )
+        .sqlite()?;
+
+    match (version, has_tables) {
+        (0, false) => Ok(()),
+        (version, _) if version == SqliteRunLog::VERSION => Ok(()),
+        (found, _) => Err(RunLogError::UnsupportedVersion {
+            found: (found != 0).then_some(found),
+            supported: SqliteRunLog::VERSION,
+        }),
+    }
+}
+
+/// A run log persisted to `log.sqlite`, buffering writes in batched transactions. Its tables are a
+/// public contract that SQL signals query, documented in
+/// [`RUN_LOG.md`](https://github.com/rngodev/rngo/blob/main/RUN_LOG.md).
 #[derive(Debug)]
 pub struct SqliteRunLog {
     state: Mutex<State>,
@@ -37,13 +63,21 @@ struct State {
 }
 
 impl SqliteRunLog {
-    /// Opens (creating if needed) `log.sqlite` in `directory`, which must already exist.
+    /// The version of the table layout this rngo writes and reads, stored in each log's
+    /// `PRAGMA user_version`.
+    pub const VERSION: u32 = 1;
+
+    /// Opens (creating if needed) `log.sqlite` in `directory`, which must already exist. An existing
+    /// log with another layout version is left untouched and reported as
+    /// [`RunLogError::UnsupportedVersion`].
     pub fn in_dir(directory: impl AsRef<Path>) -> Result<Self, RunLogError> {
         let connection = Connection::open(directory.as_ref().join("log.sqlite")).sqlite()?;
+        check_version(&connection)?;
 
         connection
-            .execute_batch(
+            .execute_batch(&format!(
                 "
+                PRAGMA user_version = {};
                 PRAGMA journal_mode = WAL;
                 PRAGMA synchronous = NORMAL;
 
@@ -84,7 +118,8 @@ impl SqliteRunLog {
 
                 BEGIN;
                 ",
-            )
+                Self::VERSION
+            ))
             .sqlite()?;
 
         Ok(SqliteRunLog {
@@ -470,6 +505,70 @@ mod tests {
 
     fn open(directory: &std::path::Path) -> Connection {
         Connection::open(directory.join("log.sqlite")).unwrap()
+    }
+
+    fn user_version(directory: &std::path::Path) -> u32 {
+        open(directory)
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap()
+    }
+
+    #[test]
+    fn a_new_log_records_its_version_and_reopens() {
+        let tmp = TempDir::new().unwrap();
+        SqliteRunLog::in_dir(tmp.path()).unwrap().commit().unwrap();
+        assert_eq!(user_version(tmp.path()), SqliteRunLog::VERSION);
+
+        SqliteRunLog::in_dir(tmp.path()).unwrap();
+    }
+
+    #[test]
+    fn a_log_of_another_version_is_refused_and_left_unchanged() {
+        let tmp = TempDir::new().unwrap();
+        open(tmp.path())
+            .execute_batch("CREATE TABLE inputs (id INTEGER); PRAGMA user_version = 2;")
+            .unwrap();
+
+        let error = SqliteRunLog::in_dir(tmp.path()).unwrap_err();
+
+        assert!(matches!(
+            error,
+            RunLogError::UnsupportedVersion {
+                found: Some(2),
+                supported: 1,
+                ..
+            }
+        ));
+        assert!(
+            error.to_string().contains("uses run log version 2"),
+            "{error}"
+        );
+        assert_eq!(user_version(tmp.path()), 2);
+        let journal_mode: String = open(tmp.path())
+            .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(journal_mode, "delete");
+    }
+
+    #[test]
+    fn an_unversioned_log_is_refused() {
+        let tmp = TempDir::new().unwrap();
+        open(tmp.path())
+            .execute_batch("CREATE TABLE inputs (id INTEGER);")
+            .unwrap();
+
+        let error = SqliteRunLog::in_dir(tmp.path()).unwrap_err();
+
+        assert!(matches!(
+            error,
+            RunLogError::UnsupportedVersion { found: None, .. }
+        ));
+        assert!(
+            error
+                .to_string()
+                .contains("written before run logs were versioned"),
+            "{error}"
+        );
     }
 
     #[test]
