@@ -10,6 +10,18 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 const BATCH_SIZE: usize = 500;
 
+/// Converts `rusqlite` errors into [`RunLogError::Sqlite`], so `rusqlite::Error` needs no public
+/// `From` impl.
+trait SqliteResultExt<T> {
+    fn sqlite(self) -> Result<T, RunLogError>;
+}
+
+impl<T> SqliteResultExt<T> for Result<T, rusqlite::Error> {
+    fn sqlite(self) -> Result<T, RunLogError> {
+        self.map_err(|error| RunLogError::Sqlite(Box::new(error)))
+    }
+}
+
 /// A run log persisted to `log.sqlite`, buffering writes in batched transactions.
 #[derive(Debug)]
 pub struct SqliteRunLog {
@@ -27,10 +39,11 @@ struct State {
 impl SqliteRunLog {
     /// Opens (creating if needed) `log.sqlite` in `directory`, which must already exist.
     pub fn in_dir(directory: impl AsRef<Path>) -> Result<Self, RunLogError> {
-        let connection = Connection::open(directory.as_ref().join("log.sqlite"))?;
+        let connection = Connection::open(directory.as_ref().join("log.sqlite")).sqlite()?;
 
-        connection.execute_batch(
-            "
+        connection
+            .execute_batch(
+                "
                 PRAGMA journal_mode = WAL;
                 PRAGMA synchronous = NORMAL;
 
@@ -71,7 +84,8 @@ impl SqliteRunLog {
 
                 BEGIN;
                 ",
-        )?;
+            )
+            .sqlite()?;
 
         Ok(SqliteRunLog {
             state: Mutex::new(State {
@@ -130,7 +144,7 @@ impl State {
 
     fn commit(&mut self) -> Result<(), RunLogError> {
         if self.pending > 0 {
-            self.connection.execute_batch("COMMIT; BEGIN;")?;
+            self.connection.execute_batch("COMMIT; BEGIN;").sqlite()?;
             self.pending = 0;
         }
         Ok(())
@@ -152,22 +166,29 @@ fn load_effect(
     effect: &str,
 ) -> Result<(), RunLogError> {
     let ids = connection
-        .prepare_cached("SELECT id FROM inputs WHERE effect = ?1 ORDER BY id ASC")?
-        .query_map(rusqlite::params![effect], |row| row.get::<_, i64>(0))?
+        .prepare_cached("SELECT id FROM inputs WHERE effect = ?1 ORDER BY id ASC")
+        .sqlite()?
+        .query_map(rusqlite::params![effect], |row| row.get::<_, i64>(0))
+        .sqlite()?
         .map(|id| id.map(|id| id as u64))
-        .collect::<Result<_, _>>()?;
+        .collect::<Result<_, _>>()
+        .sqlite()?;
     pool.track(effect, ids);
 
-    let mut markers = connection.prepare_cached(
-        "SELECT DISTINCT m.segment, m.input_id FROM metadata m
+    let mut markers = connection
+        .prepare_cached(
+            "SELECT DISTINCT m.segment, m.input_id FROM metadata m
         JOIN inputs i ON i.id = m.input_id
         WHERE m.type = '_unique_reference' AND i.effect = ?1",
-    )?;
-    let rows = markers.query_map(rusqlite::params![effect], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
-    })?;
+        )
+        .sqlite()?;
+    let rows = markers
+        .query_map(rusqlite::params![effect], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .sqlite()?;
     for row in rows {
-        let (cursor, id) = row?;
+        let (cursor, id) = row.sqlite()?;
         pool.mark(effect, &cursor, &(id as u64));
     }
     Ok(())
@@ -185,7 +206,7 @@ fn insert_metadata_row(
     connection
         .prepare_cached(
             "INSERT INTO metadata (type, input_id, output_id, data, segment, timestamp) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        )?
+        ).sqlite()?
         .execute(rusqlite::params![
             kind,
             input_id.map(|id| id as i64),
@@ -193,7 +214,7 @@ fn insert_metadata_row(
             data.map(|v| v.to_string()),
             segment,
             timestamp.map(|t| t.as_millisecond()),
-        ])?;
+        ]).sqlite()?;
     Ok(())
 }
 
@@ -217,14 +238,14 @@ impl RunLogWriter for SqliteRunLog {
             .connection
             .prepare_cached(
                 "INSERT INTO inputs (id, effect, timestamp, data, metadata) VALUES (?1, ?2, ?3, ?4, ?5)",
-            )?
+            ).sqlite()?
             .execute(rusqlite::params![
                 input.id as i64,
                 input.effect,
                 input.timestamp.as_millisecond(),
                 serde_json::to_string(&input.data)?,
                 serde_json::to_string(&input.metadata)?,
-            ])?;
+            ]).sqlite()?;
 
         state.pool.push(&input.effect, input.id);
         state.record()
@@ -237,7 +258,7 @@ impl RunLogWriter for SqliteRunLog {
             .connection
             .prepare_cached(
                 "INSERT INTO outputs (input_id, timestamp, channel, level, data, metadata) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            )?
+            ).sqlite()?
             .execute(rusqlite::params![
                 output.input_id.map(|id| id as i64),
                 output.timestamp.as_millisecond(),
@@ -249,7 +270,7 @@ impl RunLogWriter for SqliteRunLog {
                 },
                 output.data,
                 serde_json::to_string(&output.metadata)?,
-            ])?;
+            ]).sqlite()?;
         state.record()
     }
 
@@ -285,7 +306,8 @@ fn query_last(connection: &Connection) -> Result<Option<Arc<Input>>, RunLogError
     let row = connection
         .prepare_cached(
             "SELECT id, effect, timestamp, data, metadata FROM inputs ORDER BY id DESC LIMIT 1",
-        )?
+        )
+        .sqlite()?
         .query_row([], |row| {
             let id: i64 = row.get(0)?;
             let effect: String = row.get(1)?;
@@ -294,7 +316,8 @@ fn query_last(connection: &Connection) -> Result<Option<Arc<Input>>, RunLogError
             let metadata: String = row.get(4)?;
             Ok((id, effect, timestamp, data, metadata))
         })
-        .optional()?;
+        .optional()
+        .sqlite()?;
 
     let Some((id, effect, timestamp, data, metadata)) = row else {
         return Ok(None);
@@ -316,7 +339,7 @@ fn query_last_for_effect(
     let row = connection
         .prepare_cached(
             "SELECT id, timestamp, data, metadata FROM inputs WHERE effect = ?1 ORDER BY id DESC LIMIT 1",
-        )?
+        ).sqlite()?
         .query_row(rusqlite::params![key], |row| {
             let id: i64 = row.get(0)?;
             let timestamp: i64 = row.get(1)?;
@@ -324,7 +347,7 @@ fn query_last_for_effect(
             let metadata: String = row.get(3)?;
             Ok((id, timestamp, data, metadata))
         })
-        .optional()?;
+        .optional().sqlite()?;
 
     let Some((id, timestamp, data, metadata)) = row else {
         return Ok(None);
@@ -341,13 +364,15 @@ fn query_last_for_effect(
 
 fn query_by_id(connection: &Connection, key: &str, id: u64) -> Result<Input, RunLogError> {
     let (timestamp, data, metadata) = connection
-        .prepare_cached("SELECT timestamp, data, metadata FROM inputs WHERE id = ?1")?
+        .prepare_cached("SELECT timestamp, data, metadata FROM inputs WHERE id = ?1")
+        .sqlite()?
         .query_row(rusqlite::params![id as i64], |row| {
             let timestamp: i64 = row.get(0)?;
             let data: String = row.get(1)?;
             let metadata: String = row.get(2)?;
             Ok((timestamp, data, metadata))
-        })?;
+        })
+        .sqlite()?;
 
     Ok(Input {
         id,
@@ -429,7 +454,8 @@ impl RunLogReader for SqliteRunLog {
         let value = self
             .state()
             .connection
-            .query_row(query, [], |row| row.get::<_, rusqlite::types::Value>(0))?;
+            .query_row(query, [], |row| row.get::<_, rusqlite::types::Value>(0))
+            .sqlite()?;
         sql_value_to_json(value)
     }
 }
@@ -890,6 +916,14 @@ mod tests {
 
         let value = run_log.query("SELECT COUNT(*) FROM missing_table");
 
-        assert!(matches!(value, Err(RunLogError::Sqlite(_))));
+        let Err(error @ RunLogError::Sqlite(_)) = value else {
+            panic!("expected a sqlite error, got {value:?}");
+        };
+        let source = std::error::Error::source(&error).unwrap();
+        assert!(source.downcast_ref::<rusqlite::Error>().is_some());
+        assert!(
+            error.to_string().starts_with("sqlite: no such table"),
+            "{error}"
+        );
     }
 }

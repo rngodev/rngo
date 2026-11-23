@@ -442,11 +442,20 @@ impl SimulationError {
 }
 
 /// A failure reading from or writing to a run log.
+///
+/// A SQLite failure keeps the underlying error as its [`source`](std::error::Error::source), boxed
+/// so that upgrading SQLite isn't a breaking change. Match it with `RunLogError::Sqlite(..)`; only
+/// the crate builds one:
+///
+/// ```compile_fail,E0639
+/// let error = rngo::RunLogError::Sqlite("disk full".into());
+/// ```
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum RunLogError {
     #[error("sqlite: {0}")]
-    Sqlite(#[from] rusqlite::Error),
+    #[non_exhaustive]
+    Sqlite(#[source] Box<dyn std::error::Error + Send + Sync>),
     #[error("json: {0}")]
     Json(#[from] serde_json::Error),
     #[error("this run log does not support running queries")]
