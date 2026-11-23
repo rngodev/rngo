@@ -47,6 +47,7 @@ Each release has a section named after its version. Changes that break existing 
   - `Format::format(&self, input)` takes a second argument, `context: &FormatContext`.
   - `FormatBuilder::build(self, channel_key)` is `build(self, context: FormatBuildContext)`; use `context.channel_key()`.
   - `FormatParser::parse(&self, format, spec)` takes `context: &FormatParseContext` instead of the spec; use `context.spec()`.
+- **Breaking (Rust API):** `RunLogError::Sqlite` holds a boxed error instead of a `rusqlite::Error`, and `RunLogError` no longer implements `From<rusqlite::Error>`, so upgrading `rusqlite` (for example, to pick up a SQLite security fix) is no longer a breaking change. The message is unchanged. To migrate, match the variant with `RunLogError::Sqlite(..)`, and if you need the `rusqlite` error, downcast its `source()` to `rusqlite::Error`.
 - **Breaking (Rust API):** public field names and types are consistent. Spec files and run logs don't change. To migrate:
   - The Rust field for a `type` key is `kind` everywhere: `spec::Format::ftype`, `spec::Generator::stype`, `spec::Channel::ctype`, `spec::Signal::stype`, `Metadata::mtype` and the generator metadata's `mtype` are all renamed `kind`.
   - `generator::Metadata` is renamed `generator::GeneratorMetadata`, so `rngo::Metadata` is only the run log row.
