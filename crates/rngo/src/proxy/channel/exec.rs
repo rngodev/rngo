@@ -146,6 +146,7 @@ mod tests {
 
     fn input(data: Value) -> Input {
         Input {
+            channel: None,
             id: 1,
             effect: "ping".into(),
             timestamp: Timestamp::now(),

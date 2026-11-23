@@ -4,9 +4,7 @@ pub(crate) mod output;
 mod stop;
 
 use crate::error::BuildErrors;
-use crate::{
-    BuildError, Input, Metadata, ProxyError, RunLogError, RunLogWriter, SimpleEventRunLog,
-};
+use crate::{Input, Metadata, ProxyError, RunLogError, RunLogWriter, SimpleEventRunLog};
 use channel::{Channel, ChannelBuildContext, ChannelBuilder, SendContext};
 use jiff::Timestamp;
 use output::{Output, OutputSender};
@@ -23,7 +21,6 @@ type OnWait = Box<dyn FnMut(Timestamp) + Send>;
 pub struct Proxy {
     run_log_writer: Arc<dyn RunLogWriter>,
     channels: HashMap<String, Box<dyn Channel>>,
-    effect_channels: HashMap<String, String>,
     output_rx: Receiver<Output>,
     realtime: bool,
     on_wait: Option<OnWait>,
@@ -37,8 +34,10 @@ impl Proxy {
         ProxyBuilder::new()
     }
 
-    /// Logs `input` and sends it to its effect's channel. In realtime mode, first waits until its
-    /// timestamp. Once stopped, does nothing. The first call records the `simulation_start` timing.
+    /// Logs `input` and sends it to its channel ([`Input::channel`]), if it has one. In realtime
+    /// mode, first waits until its timestamp. Once stopped, does nothing. The first call records the
+    /// `simulation_start` timing. An input naming a channel the proxy doesn't have is
+    /// [`ProxyError::UnknownChannel`], and isn't logged.
     pub fn send(&mut self, input: &Input) -> Result<(), ProxyError> {
         if !self.started {
             self.started = true;
@@ -49,19 +48,25 @@ impl Proxy {
             return Ok(());
         }
 
+        if let Some(channel_key) = &input.channel
+            && !self.channels.contains_key(channel_key)
+        {
+            return Err(ProxyError::UnknownChannel {
+                effect: input.effect.clone(),
+                channel: channel_key.clone(),
+            });
+        }
+
         self.run_log_writer.push_input(input.clone())?;
 
-        let channel_key = match self.effect_channels.get(&input.effect) {
-            Some(k) => k,
-            None => return Ok(()),
-        };
-
-        if let Some(channel) = self.channels.get_mut(channel_key) {
+        if let Some(channel_key) = &input.channel
+            && let Some(channel) = self.channels.get_mut(channel_key)
+        {
             for output in channel.send(input, &SendContext::new())? {
                 self.run_log_writer
                     .push_output(output.into_output(channel_key, Some(input.id)))?;
             }
-        };
+        }
 
         self.drain_outputs()?;
         Ok(())
@@ -124,7 +129,6 @@ impl Proxy {
 pub struct ProxyBuilder {
     run_log_writer: Option<Arc<dyn RunLogWriter>>,
     channel_builders: Vec<(String, Box<dyn ChannelBuilder>)>,
-    effect_channels: HashMap<String, String>,
     realtime: bool,
     on_wait: Option<OnWait>,
     stop: StopHandle,
@@ -135,7 +139,6 @@ impl ProxyBuilder {
         Self {
             run_log_writer: None,
             channel_builders: vec![],
-            effect_channels: HashMap::new(),
             realtime: false,
             on_wait: None,
             stop: StopHandle::new(),
@@ -176,20 +179,6 @@ impl ProxyBuilder {
         self
     }
 
-    /// Sends each effect's inputs to its channel, as (effect, channel) pairs such as `Simulation::effect_channels`;
-    /// an effect assigned twice goes to the last channel it was assigned to. `build` fails if a channel was never added.
-    pub fn effect_channels<E: Into<String>, C: Into<String>>(
-        mut self,
-        effect_channels: impl IntoIterator<Item = (E, C)>,
-    ) -> Self {
-        self.effect_channels.extend(
-            effect_channels
-                .into_iter()
-                .map(|(effect, channel)| (effect.into(), channel.into())),
-        );
-        self
-    }
-
     pub fn build(self) -> Result<Proxy, BuildErrors> {
         let mut errors = vec![];
         let mut channels = HashMap::new();
@@ -198,19 +187,6 @@ impl ProxyBuilder {
         let run_log_writer = self
             .run_log_writer
             .unwrap_or_else(|| Arc::new(SimpleEventRunLog::new()));
-
-        let mut unknown: Vec<_> = self
-            .effect_channels
-            .values()
-            .filter(|channel| !self.channel_builders.iter().any(|(key, _)| key == *channel))
-            .collect();
-        unknown.sort();
-        unknown.dedup();
-        for channel in unknown {
-            errors.push(BuildError::proxy(format!(
-                "effects were assigned to unknown channel: {channel}"
-            )));
-        }
 
         for (key, channel_builder) in self.channel_builders {
             let outputs = OutputSender::new(&key, output_tx.clone());
@@ -230,7 +206,6 @@ impl ProxyBuilder {
         Ok(Proxy {
             run_log_writer,
             channels,
-            effect_channels: self.effect_channels,
             output_rx,
             realtime: self.realtime,
             on_wait: self.on_wait,
@@ -354,6 +329,15 @@ mod tests {
             timestamp: Timestamp::now(),
             data: json!(null),
             metadata: vec![],
+            channel: Some("logger".into()),
+        }
+    }
+
+    /// An input with no channel, which the proxy only logs.
+    fn unrouted(id: u64) -> Input {
+        Input {
+            channel: None,
+            ..input(id)
         }
     }
 
@@ -366,7 +350,6 @@ mod tests {
         let mut proxy = Proxy::builder()
             .run_log_writer(log.clone())
             .channel("logger", channel)
-            .effect_channels([("ping", "logger")])
             .build()
             .unwrap();
 
@@ -388,7 +371,6 @@ mod tests {
         let sent = Arc::new(Mutex::new(vec![]));
         let mut proxy = Proxy::builder()
             .channel("logger", RecordingSinkBuilder::new(&sent))
-            .effect_channels([("ping", "logger")])
             .build()
             .unwrap();
 
@@ -405,7 +387,6 @@ mod tests {
         let mut proxy = Proxy::builder()
             .run_log_writer(log.clone())
             .channel("logger", channel::Exec::builder())
-            .effect_channels([("ping", "logger")])
             .build()
             .unwrap();
 
@@ -422,7 +403,6 @@ mod tests {
     fn recording_proxy(builder: ProxyBuilder, sent: &Arc<Mutex<Vec<Value>>>) -> Proxy {
         builder
             .channel("logger", RecordingSinkBuilder::new(sent))
-            .effect_channels([("ping", "logger")])
             .build()
             .unwrap()
     }
@@ -454,13 +434,37 @@ mod tests {
     }
 
     #[test]
-    fn effects_assigned_to_an_unknown_channel_fail_the_build() {
-        let result = Proxy::builder().effect_channels([("ping", "nope")]).build();
+    fn an_input_for_an_unknown_channel_is_an_error_and_is_not_logged() {
+        let log = Arc::new(RecordingLog::default());
+        let mut proxy = Proxy::builder()
+            .run_log_writer(log.clone())
+            .build()
+            .unwrap();
+
+        let result = proxy.send(&input(1).channel("nope"));
 
         assert!(matches!(
-            result.err().as_deref(),
-            Some([BuildError::Proxy { message }]) if message.contains("nope")
+            result,
+            Err(ProxyError::UnknownChannel { ref effect, ref channel, .. })
+                if effect == "ping" && channel == "nope"
         ));
+        assert!(log.inputs.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn an_input_with_no_channel_is_logged_but_not_sent() {
+        let log = Arc::new(RecordingLog::default());
+        let sent = Arc::new(Mutex::new(vec![]));
+        let mut proxy = Proxy::builder()
+            .run_log_writer(log.clone())
+            .channel("logger", RecordingSinkBuilder::new(&sent))
+            .build()
+            .unwrap();
+
+        proxy.send(&unrouted(1)).unwrap();
+
+        assert_eq!(log.inputs.lock().unwrap().len(), 1);
+        assert!(sent.lock().unwrap().is_empty());
     }
 
     #[test]
@@ -539,7 +543,7 @@ mod tests {
             "nothing sent, no timing"
         );
 
-        proxy.send(&input(1)).unwrap();
+        proxy.send(&unrouted(1)).unwrap();
         proxy.finish().unwrap();
         proxy.finish().unwrap();
 
@@ -564,9 +568,9 @@ mod tests {
             .build()
             .unwrap();
 
-        proxy.send(&input(1)).unwrap();
+        proxy.send(&unrouted(1)).unwrap();
         proxy.stop_handle().stop();
-        proxy.send(&input(2)).unwrap();
+        proxy.send(&unrouted(2)).unwrap();
 
         let ids: Vec<_> = log.inputs.lock().unwrap().iter().map(|i| i.id).collect();
         assert_eq!(ids, [1]);

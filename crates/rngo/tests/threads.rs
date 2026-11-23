@@ -53,7 +53,6 @@ fn a_run_built_on_one_thread_runs_on_another() {
     let proxy = dialect
         .parse_proxy(&spec)
         .unwrap()
-        .effect_channels(simulation.effect_channels())
         .run_log_writer(run_log.clone())
         .build()
         .unwrap();

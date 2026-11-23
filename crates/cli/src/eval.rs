@@ -78,9 +78,7 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
     let simulation = simulation_builder
         .run_log_reader(sqlite_run_log.clone())
         .build()?;
-    let effect_channels = simulation.effect_channels();
-    proxy_builder = proxy_builder.effect_channels(effect_channels.clone());
-    let writer = Arc::new(StatusWriter::new(sqlite_run_log.clone(), effect_channels));
+    let writer = Arc::new(StatusWriter::new(sqlite_run_log.clone()));
 
     let flush_failure = Arc::new(Mutex::new(None));
 

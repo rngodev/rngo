@@ -2,7 +2,7 @@ use console::{Term, style};
 use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 use rngo::{Input, Metadata, Output, RunLogError, RunLogWriter};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -16,7 +16,6 @@ struct ChannelStats {
 
 pub struct StatusWriter {
     child: Arc<dyn RunLogWriter>,
-    effect_channels: HashMap<String, String>,
     term: Term,
     display: Mutex<Display>,
 }
@@ -32,14 +31,9 @@ struct Display {
 }
 
 impl StatusWriter {
-    /// `effect_channels` maps each effect key to the channel it writes to.
-    pub fn new<T: RunLogWriter + 'static>(
-        child: Arc<T>,
-        effect_channels: HashMap<String, String>,
-    ) -> Self {
+    pub fn new<T: RunLogWriter + 'static>(child: Arc<T>) -> Self {
         StatusWriter {
             child: child as Arc<dyn RunLogWriter>,
-            effect_channels,
             term: Term::stderr(),
             display: Mutex::new(Display::default()),
         }
@@ -160,7 +154,7 @@ impl RunLogWriter for StatusWriter {
         {
             let mut display = self.display();
             display.last_timestamp = Some(input.timestamp);
-            if let Some(channel) = self.effect_channels.get(&input.effect) {
+            if let Some(channel) = &input.channel {
                 display.stats.entry(channel.clone()).or_default().inputs += 1;
             }
             display.dirty = true;
