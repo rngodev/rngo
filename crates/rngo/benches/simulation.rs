@@ -1,5 +1,5 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use rngo::{Dialect, RunLogWriter, SimpleEventRunLog, Simulation, SimulationBuilder, SqliteRunLog};
+use rngo::{Dialect, LogWriter, SimpleLog, Simulation, SimulationBuilder, SqliteLog};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
@@ -72,7 +72,7 @@ fn builder(spec: &Value, limit: u64) -> SimulationBuilder {
         .limit(limit)
 }
 
-fn drain(simulation: Simulation, log: &impl RunLogWriter) -> usize {
+fn drain(simulation: Simulation, log: &impl LogWriter) -> usize {
     let mut count = 0;
     for input in simulation.filter_map(|step| step.unwrap().into_input()) {
         log.push_input(input).unwrap();
@@ -91,9 +91,9 @@ fn bench_spec(c: &mut Criterion, name: &str, spec: Value, sizes: &[u64]) {
         group.bench_with_input(BenchmarkId::new("memory", size), &size, |b, &size| {
             b.iter_batched(
                 || {
-                    let log = std::sync::Arc::new(SimpleEventRunLog::new());
+                    let log = std::sync::Arc::new(SimpleLog::new());
                     let simulation = builder(&spec, size)
-                        .run_log_reader(log.clone())
+                        .log_reader(log.clone())
                         .build()
                         .unwrap();
                     (log, simulation)
@@ -107,9 +107,9 @@ fn bench_spec(c: &mut Criterion, name: &str, spec: Value, sizes: &[u64]) {
             b.iter_batched(
                 || {
                     let tmp = TempDir::new().unwrap();
-                    let log = std::sync::Arc::new(SqliteRunLog::in_dir(tmp.path()).unwrap());
+                    let log = std::sync::Arc::new(SqliteLog::in_dir(tmp.path()).unwrap());
                     let simulation = builder(&spec, size)
-                        .run_log_reader(log.clone())
+                        .log_reader(log.clone())
                         .build()
                         .unwrap();
                     (tmp, log, simulation)

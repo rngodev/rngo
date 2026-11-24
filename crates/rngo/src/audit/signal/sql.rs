@@ -2,7 +2,7 @@ use super::{Signal, SignalBuildContext, SignalBuilder, SignalContext, SignalOutc
 use crate::audit::signal::{CelExpectation, SignalEval, SignalParseContext, SignalParser};
 use crate::cel::json_to_cel;
 use crate::error::{BuildError, BuildErrors, ParseError, ParseErrors};
-use crate::{RunLogReader, SignalError, spec};
+use crate::{LogReader, SignalError, spec};
 use cel::{Context, Program};
 
 #[derive(Debug)]
@@ -32,7 +32,7 @@ fn compile_expectation(source: &str) -> Result<CelExpectation, SignalError> {
 
 impl Signal for SqlSignal {
     fn evaluate(&self, context: &SignalContext) -> SignalOutcome {
-        match self.try_evaluate(context.run_log()) {
+        match self.try_evaluate(context.log()) {
             Ok(outcome) => outcome,
             Err(error) => SignalOutcome::error(error.to_string()),
         }
@@ -40,8 +40,8 @@ impl Signal for SqlSignal {
 }
 
 impl SqlSignal {
-    fn try_evaluate(&self, run_log: &dyn RunLogReader) -> Result<SignalOutcome, SignalError> {
-        let value = run_log.query(&self.query)?;
+    fn try_evaluate(&self, log: &dyn LogReader) -> Result<SignalOutcome, SignalError> {
+        let value = log.query(&self.query)?;
         evaluate_expect(self.expectation.as_ref(), value)
     }
 }
@@ -288,12 +288,12 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_run_log_is_reported_in_the_outcome() {
+    fn unsupported_log_is_reported_in_the_outcome() {
         let signal = SqlSignal {
             query: "SELECT 1".to_string(),
             expectation: None,
         };
-        match signal.evaluate(&SignalContext::new(&crate::SimpleEventRunLog::default())) {
+        match signal.evaluate(&SignalContext::new(&crate::SimpleLog::default())) {
             SignalOutcome::Error { error } => {
                 assert!(error.contains("does not support running queries"));
             }

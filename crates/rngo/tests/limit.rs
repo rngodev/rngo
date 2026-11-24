@@ -17,7 +17,7 @@ fn unlimited_effect_keeps_running_after_limited_effect_stops() {
         });
 
     let inputs: Vec<_> = simulation_builder
-        .run_log_reader(std::sync::Arc::new(rngo::SimpleEventRunLog::new()))
+        .log_reader(std::sync::Arc::new(rngo::SimpleLog::new()))
         .build()
         .unwrap()
         .filter_map(|step| step.unwrap().into_input())
@@ -68,7 +68,7 @@ fn run_limit_lower_than_effect_limit_wins() {
 
     let inputs: Vec<_> = simulation_builder
         .limit(4)
-        .run_log_reader(std::sync::Arc::new(rngo::SimpleEventRunLog::new()))
+        .log_reader(std::sync::Arc::new(rngo::SimpleLog::new()))
         .build()
         .unwrap()
         .filter_map(|step| step.unwrap().into_input())
@@ -86,7 +86,7 @@ fn effect_limit_lower_than_run_limit_wins() {
 
     let inputs: Vec<_> = simulation_builder
         .limit(10)
-        .run_log_reader(std::sync::Arc::new(rngo::SimpleEventRunLog::new()))
+        .log_reader(std::sync::Arc::new(rngo::SimpleLog::new()))
         .build()
         .unwrap()
         .filter_map(|step| step.unwrap().into_input())
@@ -113,7 +113,7 @@ fn spec_limit_is_applied() {
     let inputs: Vec<_> = Dialect::primitive()
         .parse_simulation(&rngo::spec::from_value(value).unwrap())
         .unwrap()
-        .run_log_reader(std::sync::Arc::new(rngo::SimpleEventRunLog::new()))
+        .log_reader(std::sync::Arc::new(rngo::SimpleLog::new()))
         .build()
         .unwrap()
         .filter_map(|step| step.unwrap().into_input())

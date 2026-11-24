@@ -12,7 +12,7 @@ struct LastIdAtLeast {
 
 impl Signal for LastIdAtLeast {
     fn evaluate(&self, context: &SignalContext) -> SignalOutcome {
-        let Some(last) = context.run_log().last() else {
+        let Some(last) = context.log().last() else {
             return SignalOutcome::error("no inputs");
         };
         SignalOutcome::success(
@@ -75,7 +75,7 @@ fn outcome(min: u64) -> SignalOutcome {
     let report = dialect
         .parse_audit(&spec(json!(min)))
         .unwrap()
-        .run_log(simulation.run_log().clone())
+        .log(simulation.log().clone())
         .build()
         .unwrap()
         .run()

@@ -4,7 +4,7 @@ pub(crate) mod output;
 mod stop;
 
 use crate::error::BuildErrors;
-use crate::{Input, Metadata, ProxyError, RunLogError, RunLogWriter, SimpleEventRunLog};
+use crate::{Input, LogError, LogWriter, Metadata, ProxyError, SimpleLog};
 use channel::{Channel, ChannelBuildContext, ChannelBuilder, SendContext};
 use jiff::Timestamp;
 use output::{Output, OutputSender};
@@ -19,7 +19,7 @@ const WAIT_TICK: Duration = Duration::from_secs(1);
 type OnWait = Box<dyn FnMut(Timestamp) + Send>;
 
 pub struct Proxy {
-    run_log_writer: Arc<dyn RunLogWriter>,
+    log_writer: Arc<dyn LogWriter>,
     channels: HashMap<String, Box<dyn Channel>>,
     output_rx: Receiver<Output>,
     realtime: bool,
@@ -57,13 +57,13 @@ impl Proxy {
             });
         }
 
-        self.run_log_writer.push_input(input.clone())?;
+        self.log_writer.push_input(input.clone())?;
 
         if let Some(channel_key) = &input.channel
             && let Some(channel) = self.channels.get_mut(channel_key)
         {
             for output in channel.send(input, &SendContext::new())? {
-                self.run_log_writer
+                self.log_writer
                     .push_output(output.into_output(channel_key, Some(input.id)))?;
             }
         }
@@ -98,7 +98,7 @@ impl Proxy {
     }
 
     /// Records the `simulation_end` timing (if anything was sent) and drains the channels.
-    pub fn finish(&mut self) -> Result<(), RunLogError> {
+    pub fn finish(&mut self) -> Result<(), LogError> {
         if self.started && !self.finished {
             self.finished = true;
             self.record_timing("simulation_end")?;
@@ -110,24 +110,24 @@ impl Proxy {
         self.drain_outputs()
     }
 
-    fn record_timing(&self, key: &str) -> Result<(), RunLogError> {
-        self.run_log_writer
+    fn record_timing(&self, key: &str) -> Result<(), LogError> {
+        self.log_writer
             .push_metadata(Metadata::new("timing").data(serde_json::json!({
                 "key": key,
                 "timestamp": Timestamp::now().as_millisecond(),
             })))
     }
 
-    fn drain_outputs(&mut self) -> Result<(), RunLogError> {
+    fn drain_outputs(&mut self) -> Result<(), LogError> {
         while let Ok(output) = self.output_rx.try_recv() {
-            self.run_log_writer.push_output(output)?;
+            self.log_writer.push_output(output)?;
         }
         Ok(())
     }
 }
 
 pub struct ProxyBuilder {
-    run_log_writer: Option<Arc<dyn RunLogWriter>>,
+    log_writer: Option<Arc<dyn LogWriter>>,
     channel_builders: Vec<(String, Box<dyn ChannelBuilder>)>,
     realtime: bool,
     on_wait: Option<OnWait>,
@@ -137,7 +137,7 @@ pub struct ProxyBuilder {
 impl ProxyBuilder {
     pub fn new() -> Self {
         Self {
-            run_log_writer: None,
+            log_writer: None,
             channel_builders: vec![],
             realtime: false,
             on_wait: None,
@@ -145,8 +145,8 @@ impl ProxyBuilder {
         }
     }
 
-    pub fn run_log_writer<T: RunLogWriter + 'static>(mut self, writer: Arc<T>) -> Self {
-        self.run_log_writer = Some(writer as Arc<dyn RunLogWriter>);
+    pub fn log_writer<T: LogWriter + 'static>(mut self, writer: Arc<T>) -> Self {
+        self.log_writer = Some(writer as Arc<dyn LogWriter>);
         self
     }
 
@@ -184,9 +184,9 @@ impl ProxyBuilder {
         let mut channels = HashMap::new();
         let (output_tx, output_rx) = mpsc::channel::<Output>();
 
-        let run_log_writer = self
-            .run_log_writer
-            .unwrap_or_else(|| Arc::new(SimpleEventRunLog::new()));
+        let log_writer = self
+            .log_writer
+            .unwrap_or_else(|| Arc::new(SimpleLog::new()));
 
         for (key, channel_builder) in self.channel_builders {
             let outputs = OutputSender::new(&key, output_tx.clone());
@@ -204,7 +204,7 @@ impl ProxyBuilder {
         }
 
         Ok(Proxy {
-            run_log_writer,
+            log_writer,
             channels,
             output_rx,
             realtime: self.realtime,
@@ -242,16 +242,16 @@ mod tests {
         metadata: Mutex<Vec<Metadata>>,
     }
 
-    impl RunLogWriter for RecordingLog {
-        fn push_input(&self, input: Input) -> Result<(), RunLogError> {
+    impl LogWriter for RecordingLog {
+        fn push_input(&self, input: Input) -> Result<(), LogError> {
             self.inputs.lock().unwrap().push(input);
             Ok(())
         }
-        fn push_output(&self, output: Output) -> Result<(), RunLogError> {
+        fn push_output(&self, output: Output) -> Result<(), LogError> {
             self.outputs.lock().unwrap().push(output);
             Ok(())
         }
-        fn push_metadata(&self, metadata: Metadata) -> Result<(), RunLogError> {
+        fn push_metadata(&self, metadata: Metadata) -> Result<(), LogError> {
             self.metadata.lock().unwrap().push(metadata);
             Ok(())
         }
@@ -348,7 +348,7 @@ mod tests {
         let mut channel = RecordingSinkBuilder::new(&sent);
         channel.format = Some(Arc::new(FailOnEvenIds));
         let mut proxy = Proxy::builder()
-            .run_log_writer(log.clone())
+            .log_writer(log.clone())
             .channel("logger", channel)
             .build()
             .unwrap();
@@ -385,7 +385,7 @@ mod tests {
     fn channel_outputs_are_tied_to_the_input() {
         let log = Arc::new(RecordingLog::default());
         let mut proxy = Proxy::builder()
-            .run_log_writer(log.clone())
+            .log_writer(log.clone())
             .channel("logger", channel::Exec::builder())
             .build()
             .unwrap();
@@ -436,10 +436,7 @@ mod tests {
     #[test]
     fn an_input_for_an_unknown_channel_is_an_error_and_is_not_logged() {
         let log = Arc::new(RecordingLog::default());
-        let mut proxy = Proxy::builder()
-            .run_log_writer(log.clone())
-            .build()
-            .unwrap();
+        let mut proxy = Proxy::builder().log_writer(log.clone()).build().unwrap();
 
         let result = proxy.send(&input(1).channel("nope"));
 
@@ -456,7 +453,7 @@ mod tests {
         let log = Arc::new(RecordingLog::default());
         let sent = Arc::new(Mutex::new(vec![]));
         let mut proxy = Proxy::builder()
-            .run_log_writer(log.clone())
+            .log_writer(log.clone())
             .channel("logger", RecordingSinkBuilder::new(&sent))
             .build()
             .unwrap();
@@ -532,10 +529,7 @@ mod tests {
     #[test]
     fn records_start_and_end_timing() {
         let log = Arc::new(RecordingLog::default());
-        let mut proxy = Proxy::builder()
-            .run_log_writer(log.clone())
-            .build()
-            .unwrap();
+        let mut proxy = Proxy::builder().log_writer(log.clone()).build().unwrap();
 
         proxy.finish().unwrap();
         assert!(
@@ -563,10 +557,7 @@ mod tests {
     #[test]
     fn logs_inputs_unless_stopped() {
         let log = Arc::new(RecordingLog::default());
-        let mut proxy = Proxy::builder()
-            .run_log_writer(log.clone())
-            .build()
-            .unwrap();
+        let mut proxy = Proxy::builder().log_writer(log.clone()).build().unwrap();
 
         proxy.send(&unrouted(1)).unwrap();
         proxy.stop_handle().stop();

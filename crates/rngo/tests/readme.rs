@@ -1,4 +1,4 @@
-use rngo::{Dialect, SimpleEventRunLog, SqliteRunLog, Step};
+use rngo::{Dialect, SimpleLog, SqliteLog, Step};
 use serde_json::{Value, json};
 
 fn readme_spec() -> Value {
@@ -20,7 +20,7 @@ fn readme_spec_is_valid() {
     dialect
         .parse_simulation(&spec)
         .unwrap()
-        .run_log_reader(std::sync::Arc::new(SimpleEventRunLog::new()))
+        .log_reader(std::sync::Arc::new(SimpleLog::new()))
         .build()
         .unwrap();
     dialect.parse_proxy(&spec).unwrap();
@@ -42,27 +42,27 @@ fn readme_spec_runs_and_passes_audit() {
     let spec = rngo::spec::from_value(value).unwrap();
     let dialect = Dialect::primitive();
     let dir = tempfile::tempdir().unwrap();
-    let run_log = std::sync::Arc::new(SqliteRunLog::in_dir(dir.path()).unwrap());
+    let log = std::sync::Arc::new(SqliteLog::in_dir(dir.path()).unwrap());
 
     let mut simulation = dialect
         .parse_simulation(&spec)
         .unwrap()
         .limit(200)
-        .run_log_reader(run_log.clone())
+        .log_reader(log.clone())
         .build()
         .unwrap();
 
     let mut proxy = dialect
         .parse_proxy(&spec)
         .unwrap()
-        .run_log_writer(run_log.clone())
+        .log_writer(log.clone())
         .build()
         .unwrap();
 
     let audit = dialect
         .parse_audit(&spec)
         .unwrap()
-        .run_log(run_log)
+        .log(log)
         .build()
         .unwrap();
 

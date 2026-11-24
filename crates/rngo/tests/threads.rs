@@ -1,6 +1,6 @@
 use rngo::{
-    Audit, AuditBuilder, Dialect, Proxy, ProxyBuilder, RunLogReader, SimpleEventRunLog, Simulation,
-    SimulationBuilder, SqliteRunLog, StandaloneSimulation, Step,
+    Audit, AuditBuilder, Dialect, LogReader, Proxy, ProxyBuilder, SimpleLog, Simulation,
+    SimulationBuilder, SqliteLog, StandaloneSimulation, Step,
 };
 use serde_json::json;
 use std::sync::Arc;
@@ -19,8 +19,8 @@ fn runs_and_builders_are_send() {
     assert_send::<ProxyBuilder>();
     assert_send::<AuditBuilder>();
     assert_send_sync::<Dialect>();
-    assert_send_sync::<SimpleEventRunLog>();
-    assert_send_sync::<SqliteRunLog>();
+    assert_send_sync::<SimpleLog>();
+    assert_send_sync::<SqliteLog>();
 }
 
 #[test]
@@ -42,24 +42,24 @@ fn a_run_built_on_one_thread_runs_on_another() {
     .unwrap();
     let dialect = Dialect::primitive();
     let dir = tempfile::tempdir().unwrap();
-    let run_log = Arc::new(SqliteRunLog::in_dir(dir.path()).unwrap());
+    let log = Arc::new(SqliteLog::in_dir(dir.path()).unwrap());
 
     let simulation = dialect
         .parse_simulation(&spec)
         .unwrap()
-        .run_log_reader(run_log.clone())
+        .log_reader(log.clone())
         .build()
         .unwrap();
     let proxy = dialect
         .parse_proxy(&spec)
         .unwrap()
-        .run_log_writer(run_log.clone())
+        .log_writer(log.clone())
         .build()
         .unwrap();
     let audit = dialect
         .parse_audit(&spec)
         .unwrap()
-        .run_log(run_log.clone())
+        .log(log.clone())
         .build()
         .unwrap();
 
@@ -78,6 +78,6 @@ fn a_run_built_on_one_thread_runs_on_another() {
     .unwrap();
 
     assert!(report.passed());
-    let count = run_log.query("SELECT COUNT(*) FROM inputs").unwrap();
+    let count = log.query("SELECT COUNT(*) FROM inputs").unwrap();
     assert_eq!(count, json!(3));
 }

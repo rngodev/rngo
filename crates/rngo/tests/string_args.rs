@@ -1,5 +1,5 @@
 use rngo::build::*;
-use rngo::{SimpleEventRunLog, Simulation};
+use rngo::{SimpleLog, Simulation};
 
 #[test]
 fn builders_accept_str_and_string() {
@@ -14,7 +14,7 @@ fn builders_accept_str_and_string() {
             e.trigger_effect(String::from("upstream"))
                 .generator(object().property(String::from("b"), constant().value(1)))
         })
-        .run_log_reader(std::sync::Arc::new(SimpleEventRunLog::new()))
+        .log_reader(std::sync::Arc::new(SimpleLog::new()))
         .build();
     assert!(simulation.is_ok());
 }

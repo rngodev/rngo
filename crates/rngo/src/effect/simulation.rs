@@ -2,9 +2,9 @@ use crate::effect::bound::Bound;
 use crate::effect::prototype::{Prototype, PrototypeBuilder};
 use crate::effect::{Effect, EffectBuilder, EffectContext, Step};
 use crate::error::{BuildError, BuildErrors, SimulationKey};
-use crate::log::SimpleEventRunLog;
+use crate::log::SimpleLog;
 use crate::moment::Moment;
-use crate::{RunLogReader, SimulationError};
+use crate::{LogReader, SimulationError};
 use indexmap::IndexMap;
 use jiff::{SignedDuration, Timestamp};
 use std::sync::Arc;
@@ -46,12 +46,12 @@ impl Iterator for Simulation {
 #[derive(Debug)]
 pub struct StandaloneSimulation {
     simulation: Simulation,
-    log: Arc<SimpleEventRunLog>,
+    log: Arc<SimpleLog>,
 }
 
 impl StandaloneSimulation {
     /// The log the inputs are written to, which the simulation's effects read from.
-    pub fn run_log(&self) -> &Arc<SimpleEventRunLog> {
+    pub fn log(&self) -> &Arc<SimpleLog> {
         &self.log
     }
 }
@@ -70,7 +70,7 @@ impl Iterator for StandaloneSimulation {
 
 #[derive(Debug)]
 pub struct SimulationBuilder {
-    run_log_reader: Option<Arc<dyn RunLogReader>>,
+    log_reader: Option<Arc<dyn LogReader>>,
     effect_builders: Vec<EffectBuilder>,
     seed: Option<u64>,
     now: Option<Timestamp>,
@@ -82,7 +82,7 @@ pub struct SimulationBuilder {
 impl SimulationBuilder {
     fn new() -> Self {
         SimulationBuilder {
-            run_log_reader: None,
+            log_reader: None,
             effect_builders: vec![],
             seed: None,
             now: None,
@@ -94,8 +94,8 @@ impl SimulationBuilder {
         }
     }
 
-    pub fn run_log_reader<T: RunLogReader + 'static>(mut self, reader: Arc<T>) -> Self {
-        self.run_log_reader = Some(reader as Arc<dyn RunLogReader>);
+    pub fn log_reader<T: LogReader + 'static>(mut self, reader: Arc<T>) -> Self {
+        self.log_reader = Some(reader as Arc<dyn LogReader>);
         self
     }
 
@@ -153,10 +153,10 @@ impl SimulationBuilder {
         self
     }
 
-    /// Builds a [`StandaloneSimulation`] over a new in-memory log, replacing any run log reader set.
+    /// Builds a [`StandaloneSimulation`] over a new in-memory log, replacing any log reader set.
     pub fn standalone(self) -> Result<StandaloneSimulation, BuildErrors> {
-        let log = Arc::new(SimpleEventRunLog::new());
-        let simulation = self.run_log_reader(log.clone()).build()?;
+        let log = Arc::new(SimpleLog::new());
+        let simulation = self.log_reader(log.clone()).build()?;
         Ok(StandaloneSimulation { simulation, log })
     }
 
@@ -170,10 +170,10 @@ impl SimulationBuilder {
             ));
         }
 
-        let Some(run_log_reader) = self.run_log_reader else {
+        let Some(log_reader) = self.log_reader else {
             errors.push(BuildError::simulation(
-                SimulationKey::RunLogReader,
-                "run_log_reader was not set",
+                SimulationKey::LogReader,
+                "log_reader was not set",
             ));
             return Err(errors.into());
         };
@@ -224,7 +224,7 @@ impl SimulationBuilder {
                 now,
                 seed: self.seed.unwrap_or(1),
                 prototype,
-                run_log_reader: run_log_reader.clone(),
+                log_reader: log_reader.clone(),
             };
 
             match effect_builder.build(context) {
@@ -303,8 +303,8 @@ mod tests {
 
     #[test]
     fn limit_counts_only_inputs() {
-        let mut simulation_builder = super::Simulation::builder()
-            .run_log_reader(std::sync::Arc::new(crate::SimpleEventRunLog::new()));
+        let mut simulation_builder =
+            super::Simulation::builder().log_reader(std::sync::Arc::new(crate::SimpleLog::new()));
 
         simulation_builder = simulation_builder.effect("alternating", |e| {
             e.trigger_hertz(1000.0)
@@ -330,13 +330,13 @@ mod tests {
     }
 
     #[test]
-    fn build_without_a_run_log_reader_is_an_error() {
+    fn build_without_a_log_reader_is_an_error() {
         let errors = super::Simulation::builder().build().unwrap_err();
 
         assert!(matches!(
             errors.as_slice(),
             [BuildError::Simulation {
-                key: crate::SimulationKey::RunLogReader,
+                key: crate::SimulationKey::LogReader,
                 ..
             }]
         ));
@@ -344,7 +344,7 @@ mod tests {
 
     #[test]
     fn standalone_logs_inputs_so_later_effects_can_read_them() {
-        use crate::RunLogReader;
+        use crate::LogReader;
 
         let simulation_builder = super::Simulation::builder()
             .effect("upstream", |e| {
@@ -361,6 +361,6 @@ mod tests {
         let yielded = simulation.by_ref().flatten().count();
 
         assert!(yielded > 0);
-        assert!(simulation.run_log().last().is_some());
+        assert!(simulation.log().last().is_some());
     }
 }

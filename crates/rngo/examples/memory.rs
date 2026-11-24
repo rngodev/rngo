@@ -1,4 +1,4 @@
-use rngo::{Dialect, RunLogWriter, SqliteRunLog};
+use rngo::{Dialect, LogWriter, SqliteLog};
 use serde_json::json;
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -73,16 +73,16 @@ fn spec() -> serde_json::Value {
     })
 }
 
-/// Runs the spec on a `SqliteRunLog` for `limit` inputs, returning the number of inputs
+/// Runs the spec on a `SqliteLog` for `limit` inputs, returning the number of inputs
 /// produced and the peak heap bytes allocated during the run (excluding setup).
 fn measure(limit: u64) -> (usize, usize) {
     let tmp = TempDir::new().unwrap();
-    let log = std::sync::Arc::new(SqliteRunLog::in_dir(tmp.path()).unwrap());
+    let log = std::sync::Arc::new(SqliteLog::in_dir(tmp.path()).unwrap());
     let simulation = Dialect::primitive()
         .parse_simulation(&rngo::spec::from_value(spec()).unwrap())
         .unwrap()
         .limit(limit)
-        .run_log_reader(log.clone())
+        .log_reader(log.clone())
         .build()
         .unwrap();
 

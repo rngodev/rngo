@@ -47,7 +47,7 @@ fn run(builder: CounterBuilder) -> Result<Vec<Input>, BuildErrors> {
                 .limit(3)
                 .generator(object().property("counter", builder))
         })
-        .run_log_reader(std::sync::Arc::new(rngo::SimpleEventRunLog::new()))
+        .log_reader(std::sync::Arc::new(rngo::SimpleLog::new()))
         .build()?
         .filter_map(|step| step.unwrap().into_input())
         .collect())
@@ -108,7 +108,7 @@ fn a_generator_defined_outside_the_crate_can_skip_and_attach_metadata() {
                 .limit(2)
                 .generator(EveryOther { fired: 0 })
         })
-        .run_log_reader(std::sync::Arc::new(rngo::SimpleEventRunLog::new()))
+        .log_reader(std::sync::Arc::new(rngo::SimpleLog::new()))
         .build()
         .unwrap()
         .map(Result::unwrap)
@@ -170,7 +170,7 @@ fn a_registered_generator_parser_handles_its_type_in_a_spec() {
             &rngo::spec::from_value(counter_spec(json!({ "type": "counter", "step": 5 }))).unwrap(),
         )
         .unwrap()
-        .run_log_reader(std::sync::Arc::new(rngo::SimpleEventRunLog::new()))
+        .log_reader(std::sync::Arc::new(rngo::SimpleLog::new()))
         .build()
         .unwrap()
         .filter_map(|step| step.unwrap().into_input())

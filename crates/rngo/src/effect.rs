@@ -9,7 +9,7 @@ use crate::SimulationError;
 use crate::effect::bound::{Bound, BoundKind};
 use crate::effect::prototype::Prototype;
 use crate::error::{BuildError, BuildErrors, EffectKey};
-use crate::log::{Metadata, RunLogReader};
+use crate::log::{LogReader, Metadata};
 use crate::moment::offset_timestamp;
 use clock::Clock;
 use generator::{
@@ -27,7 +27,7 @@ pub use trigger::TriggerEvent;
 #[derive(Debug)]
 pub(crate) struct Effect {
     pub(crate) key: String,
-    run_log_reader: Arc<dyn RunLogReader>,
+    log_reader: Arc<dyn LogReader>,
     trigger: Trigger,
     trigger_config: TriggerConfig,
     seed: u64,
@@ -54,7 +54,7 @@ impl Effect {
             self.seed,
             self.start,
             origin,
-            &self.run_log_reader,
+            &self.log_reader,
         )?;
         self.end_offset = self.end.map(|end| offset_from(end, origin));
         self.origin = origin;
@@ -101,7 +101,7 @@ impl Iterator for Effect {
         let result = self.generator.next(&context);
 
         if let Some(data) = result.value {
-            let last_id = self.run_log_reader.last().map(|e| e.id).unwrap_or(0);
+            let last_id = self.log_reader.last().map(|e| e.id).unwrap_or(0);
             self.produced += 1;
 
             Some(Ok(Step::Input(Input {
@@ -153,7 +153,7 @@ pub struct Input {
     pub metadata: Vec<GeneratorMetadata>,
     /// The key of the channel the proxy sends it to: its effect's channel, else its prototype's.
     /// Only routing uses it, so it is never serialized, and inputs read back from a
-    /// [`SqliteRunLog`](crate::SqliteRunLog) have none.
+    /// [`SqliteLog`](crate::SqliteLog) have none.
     #[serde(skip)]
     pub channel: Option<String>,
 }
@@ -211,7 +211,7 @@ pub(crate) struct EffectContext<'a> {
     pub(crate) now: Timestamp,
     pub(crate) seed: u64,
     pub(crate) prototype: &'a Prototype,
-    pub(crate) run_log_reader: Arc<dyn RunLogReader>,
+    pub(crate) log_reader: Arc<dyn LogReader>,
 }
 
 /// Describes an effect: its window, channel, prototype, trigger and generator; the simulation fills in the rest when it builds.
@@ -303,7 +303,7 @@ impl EffectBuilder {
             now,
             seed,
             prototype,
-            run_log_reader,
+            log_reader,
         } = context;
         let mut errors: Vec<BuildError> = vec![];
         if self.limit == Some(0) {
@@ -376,7 +376,7 @@ impl EffectBuilder {
 
         let generator_result = if let Some(generator_builder) = self.generator_builder {
             let visitor = GeneratorBuildVisitor {
-                event_run_log: run_log_reader.clone(),
+                log_reader: log_reader.clone(),
                 simulation_seed: seed,
                 effect_key: self.key.clone(),
                 path: vec![],
@@ -399,7 +399,7 @@ impl EffectBuilder {
             seed,
             start,
             origin,
-            &run_log_reader,
+            &log_reader,
         );
 
         match generator_result
@@ -408,7 +408,7 @@ impl EffectBuilder {
         {
             Ok((generator, trigger)) if errors.is_empty() => Ok(Effect {
                 key: self.key,
-                run_log_reader: run_log_reader.clone(),
+                log_reader: log_reader.clone(),
                 trigger,
                 trigger_config: self.trigger,
                 seed,
@@ -440,7 +440,7 @@ fn build_trigger(
     seed: u64,
     start: Timestamp,
     origin: Timestamp,
-    run_log_reader: &Arc<dyn RunLogReader>,
+    log_reader: &Arc<dyn LogReader>,
 ) -> Result<Trigger, BuildErrors> {
     let clock = |builder: clock::ClockBuilder| {
         builder
@@ -456,7 +456,7 @@ fn build_trigger(
 
     match config {
         TriggerConfig::Effect { key } => Ok(Trigger::Effect {
-            run_log_reader: run_log_reader.clone(),
+            log_reader: log_reader.clone(),
             key,
             sim_start: origin,
             last_offset: 0,
@@ -478,7 +478,7 @@ mod tests {
     };
     use crate::effect::prototype::Prototype;
     use crate::error::BuildErrors;
-    use crate::log::SimpleEventRunLog;
+    use crate::log::SimpleLog;
     use jiff::{SignedDuration, Timestamp};
     use std::sync::Arc;
 
@@ -487,7 +487,7 @@ mod tests {
             now: Timestamp::now(),
             seed: 1,
             prototype,
-            run_log_reader: Arc::new(SimpleEventRunLog::new()),
+            log_reader: Arc::new(SimpleLog::new()),
         }
     }
 

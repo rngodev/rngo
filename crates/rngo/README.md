@@ -5,7 +5,7 @@ A **spec** describes the behavior of a system using the following components:
 - a `Proxy` routes inputs to the appropriate system interfaces and captures outputs
 - an `Audit` surfaces pattern in logged inputs and outputs and may set expectations
 
-Each is connected via a run log, which persists all inputs, outputs and metadata. `SqliteRunLog` writes it to `log.sqlite`, whose tables SQL signals query; they are documented in [RUN_LOG.md](https://github.com/rngodev/rngo/blob/main/RUN_LOG.md).
+Each is connected via a log, which persists all inputs, outputs and metadata. `SqliteLog` writes it to `log.sqlite`, whose tables SQL signals query; they are documented in [LOG.md](https://github.com/rngodev/rngo/blob/main/LOG.md).
 
 ## DSL
 
@@ -17,9 +17,9 @@ use serde_json::Value;
 use rngo::build::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // The run log records inputs, outputs and metadata. `SqliteRunLog` writes
+    // The log records inputs, outputs and metadata. `SqliteLog` writes
     // `log.sqlite` into the directory you give it.
-    let run_log = Arc::new(rngo::SqliteRunLog::in_dir("run")?);
+    let log = Arc::new(rngo::SqliteLog::in_dir("run")?);
 
     // The simulation generates a deterministic stream of inputs.
     let mut simulation = rngo::Simulation::builder()
@@ -75,7 +75,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .property("created_at", context().path(["clock", "now"])),
                 )
         })
-        .run_log_reader(run_log.clone())
+        .log_reader(log.clone())
         .build()?;
 
     // The proxy routes inputs to the system's interfaces and captures outputs.
@@ -91,7 +91,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
         )
         .channel("log", stream().command("tail -F logs/app.log"))
-        .run_log_writer(run_log.clone())
+        .log_writer(log.clone())
         .build()?;
 
     // The audit checks patterns in the logged inputs and outputs.
@@ -111,7 +111,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .query("SELECT count(*) FROM outputs WHERE channel = 'log' AND data LIKE 'ERROR%'")
                 .expect("result < 20")
         )
-        .run_log(run_log)
+        .log(log)
         .build()?;
 
     // To evaluate the spec, run the simulation against the proxy...
@@ -123,7 +123,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     proxy.finish()?;
 
-    // ...then run the audit against the run log.
+    // ...then run the audit against the log.
     let audit_report = audit.run()?;
     assert!(audit_report.passed());
 
@@ -244,24 +244,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let value: serde_json::Value = serde_json::from_str(&raw)?;
     let spec = rngo::spec::from_value(value)?;
     let dialect = rngo::Dialect::primitive();
-    let run_log = Arc::new(rngo::SqliteRunLog::in_dir("run")?);
+    let log = Arc::new(rngo::SqliteLog::in_dir("run")?);
 
     let mut simulation = dialect
         .parse_simulation(&spec)?
-        .run_log_reader(run_log.clone())
+        .log_reader(log.clone())
         .build()?;
 
     let mut proxy = dialect
         .parse_proxy(&spec)?
-        .run_log_writer(run_log.clone())
+        .log_writer(log.clone())
         .build()?;
 
     let audit = dialect
         .parse_audit(&spec)?
-        .run_log(run_log)
+        .log(log)
         .build()?;
 
-    // Run the simulation against the proxy, then audit the run log.
+    // Run the simulation against the proxy, then audit the log.
     for step in &mut simulation {
         if let rngo::Step::Input(input) = step? {
             proxy.send(&input)?;

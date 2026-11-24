@@ -16,10 +16,10 @@ The first versioned format. Specs written before versioning were already in it i
 
 An unknown field on an effect, a trigger object, a prototype's scenario or a custom generator is rejected rather than ignored. Such a field never did anything, so remove it, or fix the typo it hides (`limt` for `limit`, `chanel` for `channel`).
 
-## Run log
+## Log
 
-A run log (`log.sqlite`) records the version of its table layout, which [RUN_LOG.md](RUN_LOG.md) documents. `rngo` opens only logs of the version it writes, and reports a log of another version, or one written before run logs were versioned, without changing it. SQL signals written against one version may need updating for the next.
+A log (`log.sqlite`) records the version of its table layout, which [LOG.md](LOG.md) documents. `rngo` opens only logs of the version it writes, and reports a log of another version, or one written before logs were versioned, without changing it. SQL signals written against one version may need updating for the next.
 
 ### Version 1
 
-The first versioned layout: the `inputs`, `outputs` and `metadata` tables as written by rngo 0.40, now stamped with `PRAGMA user_version = 1`. Logs written before versioning can still be read directly with SQLite, but `SqliteRunLog::in_dir` won't reopen them; start a new log instead.
+The first versioned layout: the `inputs`, `outputs` and `metadata` tables as written by rngo 0.40, now stamped with `PRAGMA user_version = 1`. Logs written before versioning can still be read directly with SQLite, but `SqliteLog::in_dir` won't reopen them; start a new log instead.
