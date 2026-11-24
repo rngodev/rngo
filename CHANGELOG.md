@@ -4,6 +4,8 @@ Each release has a section named after its version. Changes that break existing 
 
 ## Unreleased
 
+## 0.41.0 - 2026-11-23
+
 ### Added
 
 - Logs record the version of their table layout (`SqliteLog::VERSION`, stored in `PRAGMA user_version`), and the tables SQL signals query are documented in [LOG.md](LOG.md).
