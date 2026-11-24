@@ -12,7 +12,7 @@ pub enum Level {
     Info,
 }
 
-/// Something a channel reported, as written to the run log.
+/// Something a channel reported, as written to the log.
 #[derive(Clone, Debug, Serialize)]
 #[non_exhaustive]
 pub struct Output {

@@ -2,7 +2,7 @@ mod status;
 
 use console::style;
 use rngo::signal::SignalOutcome;
-use rngo::{Dialect, RunLogWriter, SqliteRunLog, Step, StopHandle, spec};
+use rngo::{Dialect, LogWriter, SqliteLog, Step, StopHandle, spec};
 use status::StatusWriter;
 use std::error::Error;
 use std::fs;
@@ -67,18 +67,16 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
 
     if dry_run {
         simulation_builder
-            .run_log_reader(Arc::new(rngo::SimpleEventRunLog::new()))
+            .log_reader(Arc::new(rngo::SimpleLog::new()))
             .build()?;
         return Ok(true);
     }
 
     let eval_dir = prepare_eval_dir(&rngo_dir, &spec, rewritten)?;
 
-    let sqlite_run_log = Arc::new(SqliteRunLog::in_dir(&eval_dir)?);
-    let simulation = simulation_builder
-        .run_log_reader(sqlite_run_log.clone())
-        .build()?;
-    let writer = Arc::new(StatusWriter::new(sqlite_run_log.clone()));
+    let sqlite_log = Arc::new(SqliteLog::in_dir(&eval_dir)?);
+    let simulation = simulation_builder.log_reader(sqlite_log.clone()).build()?;
+    let writer = Arc::new(StatusWriter::new(sqlite_log.clone()));
 
     let flush_failure = Arc::new(Mutex::new(None));
 
@@ -97,7 +95,7 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
     }
 
     let mut proxy = proxy_builder
-        .run_log_writer(writer.clone())
+        .log_writer(writer.clone())
         .stop_handle(stop.clone())
         .build()?;
 
@@ -126,14 +124,14 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
     writer.finish();
 
     if let Some(error) = failure {
-        sqlite_run_log.commit()?;
+        sqlite_log.commit()?;
         return Err(error);
     }
 
-    let audit = audit_builder.run_log(sqlite_run_log.clone()).build()?;
+    let audit = audit_builder.log(sqlite_log.clone()).build()?;
 
     let audit_report = audit.run()?;
-    sqlite_run_log.commit()?;
+    sqlite_log.commit()?;
 
     if !audit_report.outcomes.is_empty() {
         println!();

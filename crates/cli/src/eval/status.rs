@@ -1,7 +1,7 @@
 use console::{Term, style};
 use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
-use rngo::{Input, Metadata, Output, RunLogError, RunLogWriter};
+use rngo::{Input, LogError, LogWriter, Metadata, Output};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
@@ -15,7 +15,7 @@ struct ChannelStats {
 }
 
 pub struct StatusWriter {
-    child: Arc<dyn RunLogWriter>,
+    child: Arc<dyn LogWriter>,
     term: Term,
     display: Mutex<Display>,
 }
@@ -31,9 +31,9 @@ struct Display {
 }
 
 impl StatusWriter {
-    pub fn new<T: RunLogWriter + 'static>(child: Arc<T>) -> Self {
+    pub fn new<T: LogWriter + 'static>(child: Arc<T>) -> Self {
         StatusWriter {
-            child: child as Arc<dyn RunLogWriter>,
+            child: child as Arc<dyn LogWriter>,
             term: Term::stderr(),
             display: Mutex::new(Display::default()),
         }
@@ -149,8 +149,8 @@ impl std::fmt::Debug for StatusWriter {
     }
 }
 
-impl RunLogWriter for StatusWriter {
-    fn push_input(&self, input: Input) -> Result<(), RunLogError> {
+impl LogWriter for StatusWriter {
+    fn push_input(&self, input: Input) -> Result<(), LogError> {
         {
             let mut display = self.display();
             display.last_timestamp = Some(input.timestamp);
@@ -163,7 +163,7 @@ impl RunLogWriter for StatusWriter {
         self.child.push_input(input)
     }
 
-    fn push_output(&self, output: Output) -> Result<(), RunLogError> {
+    fn push_output(&self, output: Output) -> Result<(), LogError> {
         {
             let mut display = self.display();
             display
@@ -177,12 +177,12 @@ impl RunLogWriter for StatusWriter {
         self.child.push_output(output)
     }
 
-    fn push_metadata(&self, metadata: Metadata) -> Result<(), RunLogError> {
+    fn push_metadata(&self, metadata: Metadata) -> Result<(), LogError> {
         self.render(&mut self.display(), false);
         self.child.push_metadata(metadata)
     }
 
-    fn flush(&self) -> Result<(), RunLogError> {
+    fn flush(&self) -> Result<(), LogError> {
         self.child.flush()
     }
 }

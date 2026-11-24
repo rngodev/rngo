@@ -1,7 +1,7 @@
 use super::clock::Clock;
 use crate::SimulationError;
 use crate::effect::Input;
-use crate::log::RunLogReader;
+use crate::log::LogReader;
 use jiff::Timestamp;
 use std::sync::Arc;
 
@@ -33,7 +33,7 @@ impl TriggerEvent {
 #[derive(Debug)]
 pub(super) enum Trigger {
     Effect {
-        run_log_reader: Arc<dyn RunLogReader>,
+        log_reader: Arc<dyn LogReader>,
         key: String,
         sim_start: Timestamp,
         last_offset: i64,
@@ -53,12 +53,12 @@ impl Trigger {
                 Err(_) => Some(clock.last()),
             },
             Trigger::Effect {
-                run_log_reader: event_run_log,
+                log_reader,
                 key,
                 sim_start,
                 last_offset,
             } => {
-                let input_event = event_run_log.last_for_effect(key)?;
+                let input_event = log_reader.last_for_effect(key)?;
                 let offset = input_event.timestamp.duration_since(*sim_start).as_millis() as i64;
                 (offset > *last_offset).then_some(offset)
             }
@@ -69,12 +69,12 @@ impl Trigger {
     pub(super) fn pull(&mut self) -> Option<Result<TriggerEvent, SimulationError>> {
         match self {
             Trigger::Effect {
-                run_log_reader: event_run_log,
+                log_reader,
                 key,
                 sim_start,
                 last_offset,
             } => {
-                if let Some(input_event) = event_run_log.last_for_effect(key) {
+                if let Some(input_event) = log_reader.last_for_effect(key) {
                     let offset =
                         input_event.timestamp.duration_since(*sim_start).as_millis() as i64;
                     *last_offset = offset;

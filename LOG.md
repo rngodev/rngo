@@ -1,10 +1,10 @@
-# The run log
+# The log
 
-Each `rngo eval` writes its run to `log.sqlite` in its run directory (`.rngo/evals/<id>/`, linked from `.rngo/evals/last`). `SqliteRunLog` writes the same file from Rust. SQL signals query it, and so can any SQLite client, so its tables are a public contract: a change to them bumps the run log version and gets a note in [MIGRATING.md](MIGRATING.md#run-log).
+Each `rngo eval` writes its run to `log.sqlite` in its run directory (`.rngo/evals/<id>/`, linked from `.rngo/evals/last`). `SqliteLog` writes the same file from Rust. SQL signals query it, and so can any SQLite client, so its tables are a public contract: a change to them bumps the log version and gets a note in [MIGRATING.md](MIGRATING.md#log).
 
 ## Version
 
-This layout is **version 1**. A log records its version in SQLite's `user_version` header (`PRAGMA user_version`), and `SqliteRunLog::VERSION` is the version a given rngo reads and writes. Opening an existing log of another version, or one written before run logs were versioned, is an error that leaves the file untouched.
+This layout is **version 1**. A log records its version in SQLite's `user_version` header (`PRAGMA user_version`), and `SqliteLog::VERSION` is the version a given rngo reads and writes. Opening an existing log of another version, or one written before logs were versioned, is an error that leaves the file untouched.
 
 All timestamps are milliseconds since the Unix epoch, and JSON columns hold JSON text (query them with SQLite's `->>` operator or `json_extract`).
 

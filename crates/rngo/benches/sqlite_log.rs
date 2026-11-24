@@ -1,6 +1,6 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use jiff::Timestamp;
-use rngo::{Input, Rng, RunLogReader, RunLogWriter, SqliteRunLog};
+use rngo::{Input, LogReader, LogWriter, Rng, SqliteLog};
 use std::hint::black_box;
 use tempfile::TempDir;
 
@@ -20,9 +20,9 @@ fn input(id: u64, effect: &str) -> Input {
     )
 }
 
-fn filled(count: u64) -> (TempDir, std::sync::Arc<SqliteRunLog>) {
+fn filled(count: u64) -> (TempDir, std::sync::Arc<SqliteLog>) {
     let tmp = TempDir::new().unwrap();
-    let log = std::sync::Arc::new(SqliteRunLog::in_dir(tmp.path()).unwrap());
+    let log = std::sync::Arc::new(SqliteLog::in_dir(tmp.path()).unwrap());
     for id in 1..=count {
         log.push_input(input(id, if id % 2 == 0 { "a" } else { "b" }))
             .unwrap();
@@ -43,7 +43,7 @@ fn push_input(c: &mut Criterion) {
             b.iter_batched(
                 || {
                     let tmp = TempDir::new().unwrap();
-                    let log = std::sync::Arc::new(SqliteRunLog::in_dir(tmp.path()).unwrap());
+                    let log = std::sync::Arc::new(SqliteLog::in_dir(tmp.path()).unwrap());
                     let inputs: Vec<_> = (1..=size).map(|id| input(id, "a")).collect();
                     (tmp, log, inputs)
                 },

@@ -4,7 +4,7 @@ use super::{
 use crate::Rng;
 use crate::effect::generator::{GeneratorMetadata, GeneratorParseVisitor, GeneratorParser};
 use crate::error::{BuildErrors, ParseErrors};
-use crate::log::RunLogReader;
+use crate::log::LogReader;
 use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -15,7 +15,7 @@ pub enum Cursor {
 
 #[derive(Debug)]
 pub(crate) struct Reference {
-    event_run_log: Arc<dyn RunLogReader>,
+    log_reader: Arc<dyn LogReader>,
     key: String,
     cursor: Cursor,
     unique_cursor: Option<String>,
@@ -38,15 +38,13 @@ impl Reference {
 impl Generator for Reference {
     fn next(&mut self, _context: &GeneratorContext) -> GeneratorResult {
         let sampled = match self.cursor {
-            Cursor::Random => self
-                .event_run_log
-                .random_for_effect(&self.key, &mut self.rng),
+            Cursor::Random => self.log_reader.random_for_effect(&self.key, &mut self.rng),
             Cursor::Unique => {
                 let cursor = self
                     .unique_cursor
                     .as_deref()
                     .expect("unique_cursor set for Cursor::Unique");
-                self.event_run_log
+                self.log_reader
                     .unique_for_effect(&self.key, cursor, &mut self.rng)
             }
         };
@@ -91,7 +89,7 @@ impl GeneratorBuilder for ReferenceBuilder {
             let unique_cursor = matches!(self.cursor, Cursor::Unique).then(|| visitor.path_id());
 
             Ok(Box::new(Reference {
-                event_run_log: visitor.event_run_log.clone(),
+                log_reader: visitor.log_reader.clone(),
                 key,
                 cursor: self.cursor,
                 unique_cursor,

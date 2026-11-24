@@ -1,6 +1,6 @@
 use jiff::SignedDuration;
 use rngo::build::*;
-use rngo::{Input, Metadata, RunLogWriter, Simulation, SimulationBuilder, SqliteRunLog, Step};
+use rngo::{Input, LogWriter, Metadata, Simulation, SimulationBuilder, SqliteLog, Step};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
@@ -8,7 +8,7 @@ fn short_window() -> SimulationBuilder {
     Simulation::builder().start(Moment::Relative(SignedDuration::from_secs(-5)))
 }
 
-fn log_all(simulation: Simulation, log: &impl RunLogWriter) -> Vec<Input> {
+fn log_all(simulation: Simulation, log: &impl LogWriter) -> Vec<Input> {
     let mut inputs = vec![];
     for item in simulation {
         match item {
@@ -27,7 +27,7 @@ fn log_all(simulation: Simulation, log: &impl RunLogWriter) -> Vec<Input> {
 #[test]
 fn reference_with_no_prior_events_is_skipped_not_logged() {
     let tmp = TempDir::new().unwrap();
-    let run_log = std::sync::Arc::new(SqliteRunLog::in_dir(tmp.path()).unwrap());
+    let log = std::sync::Arc::new(SqliteLog::in_dir(tmp.path()).unwrap());
 
     let mut simulation_builder = short_window();
     simulation_builder = simulation_builder.effect("derived", |e| {
@@ -35,21 +35,18 @@ fn reference_with_no_prior_events_is_skipped_not_logged() {
             .generator(reference().effect("nonexistent"))
     });
 
-    let simulation = simulation_builder
-        .run_log_reader(run_log.clone())
-        .build()
-        .unwrap();
+    let simulation = simulation_builder.log_reader(log.clone()).build().unwrap();
 
-    let input_count = log_all(simulation, run_log.as_ref()).len();
+    let input_count = log_all(simulation, log.as_ref()).len();
 
     assert_eq!(
         input_count, 0,
         "reference to an effect with no events should never yield a value"
     );
 
-    // Dropping the run log commits its pending transaction (see `SqliteRunLog`'s `Drop` impl),
+    // Dropping the log commits its pending transaction (see `SqliteLog`'s `Drop` impl),
     // so its writes are visible to a fresh connection opened on the same file.
-    drop(run_log);
+    drop(log);
 
     let conn = Connection::open(tmp.path().join("log.sqlite")).unwrap();
     let input_row_count: i64 = conn

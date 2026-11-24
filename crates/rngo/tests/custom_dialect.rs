@@ -4,8 +4,8 @@ use rngo::channel::{
 };
 use rngo::format::{Format, FormatBuilder, FormatContext, FormatParseContext, FormatParser};
 use rngo::{
-    BuildErrors, ChannelError, Dialect, FormatError, Input, Level, ParseErrors, SimpleEventRunLog,
-    parse, spec,
+    BuildErrors, ChannelError, Dialect, FormatError, Input, Level, ParseErrors, SimpleLog, parse,
+    spec,
 };
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
@@ -134,18 +134,18 @@ fn a_custom_dialect_runs_custom_channels_and_formats() {
     let sink = Sink::default();
     let dialect = dialect(&sink);
     let spec = spec_with(json!({ "type": "constant", "value": "hi" }));
-    let log = std::sync::Arc::new(SimpleEventRunLog::new());
+    let log = std::sync::Arc::new(SimpleLog::new());
 
     let simulation = dialect
         .parse_simulation(&spec)
         .unwrap()
-        .run_log_reader(log.clone())
+        .log_reader(log.clone())
         .build()
         .unwrap();
     let mut proxy = dialect
         .parse_proxy(&spec)
         .unwrap()
-        .run_log_writer(log.clone())
+        .log_writer(log.clone())
         .build()
         .unwrap();
     for step in simulation {

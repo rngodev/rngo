@@ -365,8 +365,8 @@ pub enum SimulationKey {
     Start,
     /// The default prototype's `end`.
     End,
-    /// The run log the simulation reads earlier inputs from.
-    RunLogReader,
+    /// The log the simulation reads earlier inputs from.
+    LogReader,
     /// The simulation's or a prototype's `limit`.
     Limit,
 }
@@ -441,32 +441,32 @@ impl SimulationError {
     }
 }
 
-/// A failure reading from or writing to a run log.
+/// A failure reading from or writing to a log.
 ///
 /// A SQLite failure keeps the underlying error as its [`source`](std::error::Error::source), boxed
-/// so that upgrading SQLite isn't a breaking change. Match it with `RunLogError::Sqlite(..)`; only
+/// so that upgrading SQLite isn't a breaking change. Match it with `LogError::Sqlite(..)`; only
 /// the crate builds one:
 ///
 /// ```compile_fail,E0639
-/// let error = rngo::RunLogError::Sqlite("disk full".into());
+/// let error = rngo::LogError::Sqlite("disk full".into());
 /// ```
 #[derive(Error, Debug)]
 #[non_exhaustive]
-pub enum RunLogError {
+pub enum LogError {
     #[error("sqlite: {0}")]
     #[non_exhaustive]
     Sqlite(#[source] Box<dyn std::error::Error + Send + Sync>),
     #[error("json: {0}")]
     Json(#[from] serde_json::Error),
-    #[error("this run log does not support running queries")]
+    #[error("this log does not support running queries")]
     Unsupported,
     #[error("the query's result can't be represented as JSON")]
     UnrepresentableValue,
     /// An existing `log.sqlite` uses a table layout this version doesn't read; `found` is `None`
-    /// for a log written before run logs were versioned.
+    /// for a log written before logs were versioned.
     #[error(
-        "log.sqlite {}, but this rngo reads run log version {supported}; start a new log (see {})",
-        found.map_or("was written before run logs were versioned".to_string(), |found| format!("uses run log version {found}")),
+        "log.sqlite {}, but this rngo reads log version {supported}; start a new log (see {})",
+        found.map_or("was written before logs were versioned".to_string(), |found| format!("uses log version {found}")),
         crate::spec::MIGRATION_URL
     )]
     #[non_exhaustive]
@@ -571,7 +571,7 @@ pub enum ProxyError {
     #[error(transparent)]
     Channel(#[from] ChannelError),
     #[error(transparent)]
-    RunLog(#[from] RunLogError),
+    Log(#[from] LogError),
     /// An input from effect `effect` named channel `channel`, which the proxy doesn't have.
     #[error("effect `{effect}` sends to unknown channel `{channel}`")]
     #[non_exhaustive]
@@ -589,7 +589,7 @@ pub enum SignalError {
     #[error("expect expression must evaluate to a bool, got {0}")]
     NotBool(String),
     #[error("query failed: {0}")]
-    Query(#[from] RunLogError),
+    Query(#[from] LogError),
 }
 
 #[cfg(test)]

@@ -7,7 +7,7 @@ pub(crate) use sql::SqlSignal;
 mod parser;
 pub use parser::{SignalParseContext, SignalParser};
 
-use crate::RunLogReader;
+use crate::LogReader;
 use serde::Serialize;
 
 /// A check run once against a finished run's log.
@@ -17,17 +17,17 @@ pub trait Signal: std::fmt::Debug + Send {
 
 /// What a signal sees when it is evaluated.
 pub struct SignalContext<'a> {
-    run_log: &'a dyn RunLogReader,
+    log: &'a dyn LogReader,
 }
 
 impl<'a> SignalContext<'a> {
-    pub(crate) fn new(run_log: &'a dyn RunLogReader) -> Self {
-        SignalContext { run_log }
+    pub(crate) fn new(log: &'a dyn LogReader) -> Self {
+        SignalContext { log }
     }
 
     /// The finished run's log.
-    pub fn run_log(&self) -> &'a dyn RunLogReader {
-        self.run_log
+    pub fn log(&self) -> &'a dyn LogReader {
+        self.log
     }
 }
 

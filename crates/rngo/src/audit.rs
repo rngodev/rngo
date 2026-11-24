@@ -2,7 +2,7 @@ use crate::error::{BuildError, BuildErrors};
 use crate::log::Metadata;
 pub mod signal;
 
-use crate::{RunLogError, RunLogReader, RunLogWriter};
+use crate::{LogError, LogReader, LogWriter};
 use indexmap::IndexMap;
 use signal::{Signal, SignalBuildContext, SignalBuilder, SignalContext, SignalOutcome};
 use std::sync::Arc;
@@ -10,20 +10,20 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub struct Audit {
     signals: IndexMap<String, Box<dyn Signal>>,
-    run_log_reader: Arc<dyn RunLogReader>,
-    run_log_writer: Arc<dyn RunLogWriter>,
+    log_reader: Arc<dyn LogReader>,
+    log_writer: Arc<dyn LogWriter>,
 }
 
 impl Audit {
     pub(crate) fn new(
         signals: IndexMap<String, Box<dyn Signal>>,
-        run_log_reader: Arc<dyn RunLogReader>,
-        run_log_writer: Arc<dyn RunLogWriter>,
+        log_reader: Arc<dyn LogReader>,
+        log_writer: Arc<dyn LogWriter>,
     ) -> Self {
         Audit {
             signals,
-            run_log_reader,
-            run_log_writer,
+            log_reader,
+            log_writer,
         }
     }
 
@@ -31,9 +31,9 @@ impl Audit {
         AuditBuilder::new()
     }
 
-    /// Evaluates every signal and writes each outcome to the run log as metadata.
-    pub fn run(&self) -> Result<AuditReport, RunLogError> {
-        let context = SignalContext::new(self.run_log_reader.as_ref());
+    /// Evaluates every signal and writes each outcome to the log as metadata.
+    pub fn run(&self) -> Result<AuditReport, LogError> {
+        let context = SignalContext::new(self.log_reader.as_ref());
         let outcomes: IndexMap<String, SignalOutcome> = self
             .signals
             .iter()
@@ -46,7 +46,7 @@ impl Audit {
                 map.insert("key".to_string(), serde_json::Value::String(key.clone()));
             }
 
-            self.run_log_writer
+            self.log_writer
                 .push_metadata(Metadata::new("signal").data(data))?;
         }
 
@@ -56,16 +56,16 @@ impl Audit {
 
 pub struct AuditBuilder {
     signal_builders: Vec<(String, Box<dyn SignalBuilder>)>,
-    run_log_reader: Option<Arc<dyn RunLogReader>>,
-    run_log_writer: Option<Arc<dyn RunLogWriter>>,
+    log_reader: Option<Arc<dyn LogReader>>,
+    log_writer: Option<Arc<dyn LogWriter>>,
 }
 
 impl AuditBuilder {
     pub fn new() -> Self {
         AuditBuilder {
             signal_builders: vec![],
-            run_log_reader: None,
-            run_log_writer: None,
+            log_reader: None,
+            log_writer: None,
         }
     }
 
@@ -75,22 +75,22 @@ impl AuditBuilder {
         self
     }
 
-    pub fn run_log_reader<T: RunLogReader + 'static>(mut self, reader: Arc<T>) -> Self {
-        self.run_log_reader = Some(reader as Arc<dyn RunLogReader>);
+    pub fn log_reader<T: LogReader + 'static>(mut self, reader: Arc<T>) -> Self {
+        self.log_reader = Some(reader as Arc<dyn LogReader>);
         self
     }
 
-    pub fn run_log_writer<T: RunLogWriter + 'static>(mut self, writer: Arc<T>) -> Self {
-        self.run_log_writer = Some(writer as Arc<dyn RunLogWriter>);
+    pub fn log_writer<T: LogWriter + 'static>(mut self, writer: Arc<T>) -> Self {
+        self.log_writer = Some(writer as Arc<dyn LogWriter>);
         self
     }
 
     /// Convenience for the common case where a single backend serves as both reader and writer -
-    /// equivalent to calling [`AuditBuilder::run_log_reader`] and [`AuditBuilder::run_log_writer`]
+    /// equivalent to calling [`AuditBuilder::log_reader`] and [`AuditBuilder::log_writer`]
     /// with clones of the same handle. Reach for those directly if the reader and writer need to
     /// be different objects.
-    pub fn run_log<T: RunLogReader + RunLogWriter + 'static>(self, run_log: Arc<T>) -> Self {
-        self.run_log_reader(run_log.clone()).run_log_writer(run_log)
+    pub fn log<T: LogReader + LogWriter + 'static>(self, log: Arc<T>) -> Self {
+        self.log_reader(log.clone()).log_writer(log)
     }
 
     pub fn build(self) -> Result<Audit, BuildErrors> {
@@ -106,14 +106,14 @@ impl AuditBuilder {
             }
         }
 
-        // Unlike `SimulationBuilder`, which writes the run it produces to whatever run log it's
-        // given (or a throwaway default), an `Audit` only ever reads and annotates a run log some
+        // Unlike `SimulationBuilder`, which writes the run it produces to whatever log it's
+        // given (or a throwaway default), an `Audit` only ever reads and annotates a log some
         // other process already populated - defaulting here would silently evaluate every signal
         // against an empty log instead of surfacing the missing wiring.
-        let run_log = match (self.run_log_reader, self.run_log_writer) {
+        let log = match (self.log_reader, self.log_writer) {
             (Some(reader), Some(writer)) => Some((reader, writer)),
             _ => {
-                errors.push(BuildError::audit("run_log was not set"));
+                errors.push(BuildError::audit("log was not set"));
                 None
             }
         };
@@ -122,8 +122,8 @@ impl AuditBuilder {
             return Err(errors.into());
         }
 
-        let (run_log_reader, run_log_writer) = run_log.expect("checked above");
-        Ok(Audit::new(signals, run_log_reader, run_log_writer))
+        let (log_reader, log_writer) = log.expect("checked above");
+        Ok(Audit::new(signals, log_reader, log_writer))
     }
 }
 
@@ -199,7 +199,7 @@ impl AuditReport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Input, RunLogReader, RunLogWriter};
+    use crate::{Input, LogReader, LogWriter};
     use signal::SignalEval;
     use std::sync::{Arc, Mutex};
 
@@ -212,15 +212,15 @@ mod tests {
         }
     }
 
-    /// A run log whose only job is to capture every `Metadata` row pushed to it, so a test can
-    /// assert on exactly what `Audit::run` writes back - `SimpleEventRunLog` has no way to read
-    /// its metadata back out, and `SqliteRunLog` needs a real directory on disk.
+    /// A log whose only job is to capture every `Metadata` row pushed to it, so a test can
+    /// assert on exactly what `Audit::run` writes back - `SimpleLog` has no way to read
+    /// its metadata back out, and `SqliteLog` needs a real directory on disk.
     #[derive(Debug, Default)]
-    struct MockRunLog {
+    struct MockLog {
         metadata: Mutex<Vec<Metadata>>,
     }
 
-    impl RunLogReader for MockRunLog {
+    impl LogReader for MockLog {
         fn last(&self) -> Option<Arc<Input>> {
             None
         }
@@ -229,8 +229,8 @@ mod tests {
             None
         }
 
-        fn query(&self, _query: &str) -> Result<serde_json::Value, RunLogError> {
-            Err(RunLogError::Unsupported)
+        fn query(&self, _query: &str) -> Result<serde_json::Value, LogError> {
+            Err(LogError::Unsupported)
         }
 
         fn random_for_effect(&self, _key: &str, _rng: &mut crate::Rng) -> Option<Arc<Input>> {
@@ -247,16 +247,16 @@ mod tests {
         }
     }
 
-    impl RunLogWriter for MockRunLog {
-        fn push_input(&self, _input: Input) -> Result<(), RunLogError> {
+    impl LogWriter for MockLog {
+        fn push_input(&self, _input: Input) -> Result<(), LogError> {
             unimplemented!("not exercised by these tests")
         }
 
-        fn push_output(&self, _output: crate::Output) -> Result<(), RunLogError> {
+        fn push_output(&self, _output: crate::Output) -> Result<(), LogError> {
             unimplemented!("not exercised by these tests")
         }
 
-        fn push_metadata(&self, metadata: Metadata) -> Result<(), RunLogError> {
+        fn push_metadata(&self, metadata: Metadata) -> Result<(), LogError> {
             self.metadata.lock().unwrap().push(metadata);
             Ok(())
         }
@@ -292,8 +292,8 @@ mod tests {
         signals.insert("b".to_string(), Box::new(MockSignal(success(true))));
         signals.insert("a".to_string(), Box::new(MockSignal(success(false))));
 
-        let run_log = Arc::new(MockRunLog::default());
-        let audit = Audit::new(signals, run_log.clone(), run_log);
+        let log = Arc::new(MockLog::default());
+        let audit = Audit::new(signals, log.clone(), log);
 
         let audit_report = audit.run().unwrap();
 
@@ -310,12 +310,12 @@ mod tests {
         );
         signals.insert("errored".to_string(), Box::new(MockSignal(error())));
 
-        let run_log = Arc::new(MockRunLog::default());
-        let audit = Audit::new(signals, run_log.clone(), run_log.clone());
+        let log = Arc::new(MockLog::default());
+        let audit = Audit::new(signals, log.clone(), log.clone());
 
         audit.run().unwrap();
 
-        let written = run_log.metadata.lock().unwrap();
+        let written = log.metadata.lock().unwrap();
         assert_eq!(written.len(), 2);
 
         assert_eq!(written[0].kind, "signal");
@@ -345,13 +345,13 @@ mod tests {
     fn builder_wires_signal_builders_into_a_runnable_audit() {
         use crate::build::sql_signal;
 
-        let run_log = Arc::new(MockRunLog::default());
+        let log = Arc::new(MockLog::default());
         let audit = Audit::builder()
             .signal(
                 "check",
                 sql_signal().query("SELECT 1").expect("result == 1"),
             )
-            .run_log(run_log)
+            .log(log)
             .build()
             .unwrap();
 
@@ -361,7 +361,7 @@ mod tests {
     }
 
     #[test]
-    fn builder_without_a_run_log_is_an_error() {
+    fn builder_without_a_log_is_an_error() {
         use crate::build::sql_signal;
 
         let result = Audit::builder()
@@ -376,11 +376,11 @@ mod tests {
     fn builder_collects_errors_from_every_failing_signal_builder() {
         use crate::build::sql_signal;
 
-        let run_log = Arc::new(MockRunLog::default());
+        let log = Arc::new(MockLog::default());
         let result = Audit::builder()
             .signal("no-query", sql_signal())
             .signal("also-no-query", sql_signal())
-            .run_log(run_log)
+            .log(log)
             .build();
 
         let errors = result.unwrap_err();
