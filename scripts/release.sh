@@ -40,7 +40,7 @@ sed -i.bak -E "s/^rngo = \{ version = \"[^\"]+\"/rngo = { version = \"$VERSION\"
 sed -i.bak -E "s/^version = \"[^\"]+\"/version = \"$VERSION\"/" crates/cli/Cargo.toml
 find crates -name "*.bak" -delete
 
-cargo generate-lockfile
+cargo update --workspace
 
 git add CHANGELOG.md Cargo.lock crates/rngo/Cargo.toml crates/cli/Cargo.toml
 git commit -m "$VERSION"
