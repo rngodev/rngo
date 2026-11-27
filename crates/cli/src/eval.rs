@@ -97,13 +97,18 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
     let mut proxy = proxy_builder
         .log_writer(writer.clone())
         .stop_handle(stop.clone())
+        .dir(&eval_dir)
         .build()?;
 
     let mut failure: Option<Box<dyn Error>> = None;
 
     for item in simulation {
         match item {
-            Ok(Step::Input(input)) => proxy.send(&input)?,
+            Ok(Step::Input(input)) => {
+                if let Err(error) = proxy.send(&input) {
+                    failure = Some(error.into());
+                }
+            }
             Ok(Step::Skipped(skipped)) => writer.push_metadata(skipped.into())?,
             Ok(_) => {}
             Err(error) => failure = Some(error.into()),
@@ -120,7 +125,9 @@ pub fn eval(path: Option<&Path>, options: EvalOptions) -> Result<bool, Box<dyn E
         }
     }
 
-    proxy.finish()?;
+    if let Err(error) = proxy.finish() {
+        failure.get_or_insert(error.into());
+    }
     writer.finish();
 
     if let Some(error) = failure {

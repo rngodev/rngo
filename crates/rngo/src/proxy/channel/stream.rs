@@ -2,15 +2,15 @@ use crate::effect::Input;
 use crate::error::{BuildErrors, ParseErrors};
 use crate::proxy::channel::{
     Channel, ChannelBuildContext, ChannelBuilder, ChannelParseContext, ChannelParser, SendContext,
+    StderrTail,
 };
 use crate::proxy::format::{Format, FormatBuilder};
-use crate::proxy::output::{ChannelOutput, OutputSender};
-use crate::{BuildError, ChannelError, Level, ParseError, spec};
+use crate::proxy::output::ChannelOutput;
+use crate::{BuildError, ChannelError, ParseError, spec};
 use serde_json::Value;
-use std::collections::VecDeque;
-use std::io::{BufRead, BufReader, Write};
+use std::io::Write;
 use std::process::{Child, ChildStdin, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -18,8 +18,6 @@ use std::time::{Duration, Instant};
 const STARTUP_GRACE: Duration = Duration::from_millis(250);
 const SHUTDOWN_GRACE: Duration = Duration::from_millis(200);
 const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(5);
-const READER_JOIN_GRACE: Duration = Duration::from_millis(200);
-const STDERR_TAIL_LINES: usize = 5;
 
 #[derive(Debug)]
 pub(crate) struct Stream {
@@ -28,7 +26,7 @@ pub(crate) struct Stream {
     child: Child,
     stdin: Option<ChildStdin>,
     reader_threads: Vec<JoinHandle<()>>,
-    stderr_tail: Arc<Mutex<VecDeque<String>>>,
+    stderr_tail: StderrTail,
     startup_checked: bool,
 }
 
@@ -43,15 +41,10 @@ impl Stream {
             }
         };
         thread::sleep(SHUTDOWN_POLL_INTERVAL * 4);
-        let stderr = self
-            .stderr_tail
-            .lock()
-            .map(|tail| tail.iter().cloned().collect::<Vec<_>>().join("\n"))
-            .unwrap_or_default();
         Some(ChannelError::exited(
             self.channel_key.clone(),
             status.to_string(),
-            stderr,
+            self.stderr_tail.text(),
         ))
     }
 
@@ -102,7 +95,7 @@ impl Channel for Stream {
         Ok(vec![])
     }
 
-    fn finish(&mut self) {
+    fn finish(&mut self) -> Result<(), ChannelError> {
         self.stdin.take();
 
         let deadline = Instant::now() + SHUTDOWN_GRACE;
@@ -116,21 +109,14 @@ impl Channel for Stream {
         let _ = self.child.kill();
         let _ = self.child.wait();
 
-        let deadline = Instant::now() + READER_JOIN_GRACE;
-        for handle in self.reader_threads.drain(..) {
-            while !handle.is_finished() && Instant::now() < deadline {
-                thread::sleep(SHUTDOWN_POLL_INTERVAL);
-            }
-            if handle.is_finished() {
-                let _ = handle.join();
-            }
-        }
+        super::join_readers(&mut self.reader_threads);
+        Ok(())
     }
 }
 
 impl Drop for Stream {
     fn drop(&mut self) {
-        self.finish();
+        let _ = self.finish();
     }
 }
 
@@ -178,21 +164,8 @@ impl ChannelBuilder for StreamBuilder {
 
         let stdin = child.stdin.take();
 
-        let stderr_tail = Arc::new(Mutex::new(VecDeque::new()));
-        let mut reader_threads = vec![];
-
-        if let Some(stdout) = child.stdout.take() {
-            reader_threads.push(spawn_reader(stdout, Level::Info, outputs.clone(), None));
-        }
-
-        if let Some(stderr) = child.stderr.take() {
-            reader_threads.push(spawn_reader(
-                stderr,
-                Level::Error,
-                outputs,
-                Some(stderr_tail.clone()),
-            ));
-        }
+        let stderr_tail = StderrTail::default();
+        let reader_threads = super::spawn_readers(&mut child, &outputs, &stderr_tail);
 
         Ok(Box::new(Stream {
             channel_key: channel_key.to_string(),
@@ -204,29 +177,6 @@ impl ChannelBuilder for StreamBuilder {
             startup_checked: false,
         }))
     }
-}
-
-fn spawn_reader(
-    pipe: impl std::io::Read + Send + 'static,
-    level: Level,
-    outputs: OutputSender,
-    tail: Option<Arc<Mutex<VecDeque<String>>>>,
-) -> JoinHandle<()> {
-    thread::spawn(move || {
-        for line in BufReader::new(pipe).lines().map_while(Result::ok) {
-            if !line.is_empty() {
-                if let Some(tail) = &tail
-                    && let Ok(mut tail) = tail.lock()
-                {
-                    if tail.len() == STDERR_TAIL_LINES {
-                        tail.pop_front();
-                    }
-                    tail.push_back(line.clone());
-                }
-                outputs.send(ChannelOutput::new(level, line));
-            }
-        }
-    })
 }
 
 pub(crate) struct StreamParser {}
@@ -272,6 +222,7 @@ impl ChannelParser for StreamParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::proxy::output::OutputSender;
     use jiff::Timestamp;
     use std::sync::mpsc;
 

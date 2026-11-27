@@ -1,8 +1,10 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": true,
+  "description": "Where inputs are delivered: a `type` plus that type's own fields.",
   "properties": {
     "type": {
+      "description": "The channel type. Built in: `stream` (one long-lived `command`, one line per input on its\nstdin), `exec` (runs each input as a shell command), `stdout` (prints each input) and\n`batch` (appends inputs to a file in the run directory and runs `command` on each full\nfile, with the file's path in `RNGO_BATCH_FILE` and its contents on stdin; `size` caps the\ninputs per file, 10000 by default, and is ignored with `--realtime`). Each accepts an\noptional `format`.",
       "type": [
         "string",
         "null"

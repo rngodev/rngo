@@ -1623,3 +1623,125 @@ fn unsupported_spec_version_points_at_migration_notes() {
     assert!(error.contains("MIGRATING.md"), "{error}");
     assert!(!error.contains("unknown field"), "{error}");
 }
+
+fn write_batch_fixture(base: &Path, channel: serde_json::Value) {
+    fs::create_dir_all(base.join(".rngo/effects")).unwrap();
+    fs::create_dir_all(base.join(".rngo/channels")).unwrap();
+    write_yaml(
+        base.join(".rngo/spec.yml"),
+        &json!({ "seed": 1, "start": "2024-01-01", "end": "2024-01-11" }),
+    );
+    write_yaml(
+        base.join(".rngo/effects/user.yml"),
+        &json!({
+            "channel": "db",
+            "trigger": "hz(1, day)",
+            "generator": { "type": "constant", "value": "x" }
+        }),
+    );
+    write_yaml(base.join(".rngo/channels/db.yml"), &channel);
+}
+
+fn logged_inputs(base: &Path) -> usize {
+    let connection = rusqlite::Connection::open(base.join(".rngo/evals/last/log.sqlite")).unwrap();
+    let count: i64 = connection
+        .query_row("SELECT count(*) FROM inputs", [], |row| row.get(0))
+        .unwrap();
+    count as usize
+}
+
+fn batch_files(base: &Path) -> Vec<std::path::PathBuf> {
+    match fs::read_dir(base.join(".rngo/evals/last/batches/db")) {
+        Ok(entries) => entries.map(|entry| entry.unwrap().path()).collect(),
+        Err(_) => vec![],
+    }
+}
+
+#[test]
+#[cfg(unix)]
+fn batch_channel_loads_every_logged_input_and_deletes_its_files() {
+    let tmp = TempDir::new().unwrap();
+    let base = tmp.path();
+    let loaded = base.join("loaded");
+    write_batch_fixture(
+        base,
+        json!({ "type": "batch", "command": append_stdin_to(&loaded), "size": 3 }),
+    );
+
+    assert!(eval(Some(base), EvalOptions::default()).unwrap());
+
+    let inputs = logged_inputs(base);
+    assert!(inputs > 3, "the run should span several batches");
+    assert_eq!(fs::read_to_string(&loaded).unwrap().lines().count(), inputs);
+    assert!(base.join(".rngo/evals/last/batches/db").is_dir());
+    assert!(batch_files(base).is_empty());
+}
+
+#[test]
+#[cfg(unix)]
+fn a_failed_batch_fails_the_run_and_keeps_its_file() {
+    let tmp = TempDir::new().unwrap();
+    let base = tmp.path();
+    write_batch_fixture(
+        base,
+        json!({ "type": "batch", "command": "cat > /dev/null; echo 'no such table' >&2; exit 3" }),
+    );
+
+    let error = eval(Some(base), EvalOptions::default())
+        .unwrap_err()
+        .to_string();
+
+    assert!(error.contains("exit status: 3"), "{error}");
+    assert!(error.contains("no such table"), "{error}");
+    let kept = batch_files(base);
+    assert_eq!(kept.len(), 1);
+    assert_eq!(
+        fs::read_to_string(&kept[0]).unwrap().lines().count(),
+        logged_inputs(base)
+    );
+}
+
+#[test]
+fn stdout_writes_no_batch_files() {
+    let tmp = TempDir::new().unwrap();
+    let base = tmp.path();
+    let loaded = base.join("loaded");
+    write_batch_fixture(
+        base,
+        json!({ "type": "batch", "command": append_stdin_to(&loaded) }),
+    );
+
+    eval(
+        Some(base),
+        EvalOptions {
+            stdout: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    assert!(!loaded.exists());
+    assert!(!base.join(".rngo/evals/last/batches").exists());
+}
+
+#[test]
+fn dry_run_rejects_a_batch_size_that_isnt_positive() {
+    let tmp = TempDir::new().unwrap();
+    let base = tmp.path();
+    write_batch_fixture(
+        base,
+        json!({ "type": "batch", "command": "cat", "size": 0 }),
+    );
+
+    let error = eval(
+        Some(base),
+        EvalOptions {
+            dry_run: true,
+            ..Default::default()
+        },
+    )
+    .unwrap_err()
+    .to_string();
+
+    assert!(error.contains("channels.db.size"), "{error}");
+}

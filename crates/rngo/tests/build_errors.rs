@@ -72,4 +72,20 @@ fn channel_errors_built_outside_the_crate_can_be_read_back() {
         ChannelError::spawn("db", ErrorKind::NotFound.into()),
         ChannelError::Spawn { .. }
     ));
+
+    let batch = ChannelError::batch(
+        "db",
+        "exit status: 3",
+        2,
+        "ERROR: relation \"users\" does not exist",
+        "batches/db/00000001",
+    );
+    assert!(
+        matches!(&batch, ChannelError::Batch { inputs: 2, path, .. } if path.ends_with("00000001"))
+    );
+    assert_eq!(
+        batch.to_string(),
+        "channel `db`: command exited (exit status: 3) loading a batch of 2 inputs, kept at \
+         batches/db/00000001:\nERROR: relation \"users\" does not exist"
+    );
 }

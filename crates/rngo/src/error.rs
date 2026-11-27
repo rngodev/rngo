@@ -523,6 +523,20 @@ pub enum ChannelError {
         #[source]
         source: std::io::Error,
     },
+    #[error(
+        "channel `{channel}`: command exited ({status}) loading a batch of {inputs} input{}, kept at {}{}",
+        if *inputs == 1 { "" } else { "s" },
+        path.display(),
+        format_stderr(stderr)
+    )]
+    #[non_exhaustive]
+    Batch {
+        channel: String,
+        status: String,
+        inputs: usize,
+        stderr: String,
+        path: std::path::PathBuf,
+    },
 }
 
 impl ChannelError {
@@ -544,6 +558,24 @@ impl ChannelError {
             channel: channel.into(),
             status: status.into(),
             stderr: stderr.into(),
+        }
+    }
+
+    /// Channel `channel`'s command exited with `status` while loading the batch of `inputs` inputs
+    /// kept at `path`; `stderr` is the end of its stderr, empty if none.
+    pub fn batch(
+        channel: impl Into<String>,
+        status: impl Into<String>,
+        inputs: usize,
+        stderr: impl Into<String>,
+        path: impl Into<std::path::PathBuf>,
+    ) -> Self {
+        ChannelError::Batch {
+            channel: channel.into(),
+            status: status.into(),
+            inputs,
+            stderr: stderr.into(),
+            path: path.into(),
         }
     }
 

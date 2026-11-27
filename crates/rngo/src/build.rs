@@ -12,10 +12,11 @@ pub use crate::effect::generator::string::StringBuilder;
 use crate::effect::generator::{
     Array, Constant, Context, Function, Number, Object, Reference, Select, Str,
 };
+pub use crate::proxy::channel::batch::BatchBuilder;
 pub use crate::proxy::channel::exec::ExecBuilder;
 pub use crate::proxy::channel::stdout::StdoutBuilder;
 pub use crate::proxy::channel::stream::StreamBuilder;
-use crate::proxy::channel::{Exec, Stdout, Stream};
+use crate::proxy::channel::{Batch, Exec, Stdout, Stream};
 pub use crate::proxy::format::sql::SqlFormatBuilder;
 pub use crate::proxy::format::template::TemplateFormatBuilder;
 use crate::proxy::format::{SqlFormat, TemplateFormat};
@@ -70,6 +71,10 @@ pub fn template_format() -> TemplateFormatBuilder {
 
 pub fn stream() -> StreamBuilder {
     Stream::builder()
+}
+
+pub fn batch() -> BatchBuilder {
+    Batch::builder()
 }
 
 pub fn exec() -> ExecBuilder {

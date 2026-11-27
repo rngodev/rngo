@@ -9,6 +9,7 @@ use channel::{Channel, ChannelBuildContext, ChannelBuilder, SendContext};
 use jiff::Timestamp;
 use output::{Output, OutputSender};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver};
 use std::time::Duration;
@@ -97,17 +98,26 @@ impl Proxy {
         }
     }
 
-    /// Records the `simulation_end` timing (if anything was sent) and drains the channels.
-    pub fn finish(&mut self) -> Result<(), LogError> {
+    /// Records the `simulation_end` timing (if anything was sent) and finishes every channel,
+    /// returning the first channel error once all have finished and their outputs are logged.
+    pub fn finish(&mut self) -> Result<(), ProxyError> {
         if self.started && !self.finished {
             self.finished = true;
             self.record_timing("simulation_end")?;
         }
 
-        for channel in self.channels.values_mut() {
-            channel.finish();
+        let mut failure = None;
+        let mut keys: Vec<_> = self.channels.keys().cloned().collect();
+        keys.sort();
+        for key in keys {
+            if let Some(channel) = self.channels.get_mut(&key)
+                && let Err(error) = channel.finish()
+            {
+                failure.get_or_insert(error);
+            }
         }
-        self.drain_outputs()
+        self.drain_outputs()?;
+        failure.map_or(Ok(()), |error| Err(error.into()))
     }
 
     fn record_timing(&self, key: &str) -> Result<(), LogError> {
@@ -132,6 +142,7 @@ pub struct ProxyBuilder {
     realtime: bool,
     on_wait: Option<OnWait>,
     stop: StopHandle,
+    dir: Option<PathBuf>,
 }
 
 impl ProxyBuilder {
@@ -139,6 +150,7 @@ impl ProxyBuilder {
         Self {
             log_writer: None,
             channel_builders: vec![],
+            dir: None,
             realtime: false,
             on_wait: None,
             stop: StopHandle::new(),
@@ -160,6 +172,13 @@ impl ProxyBuilder {
     /// while it lasts.
     pub fn on_wait(mut self, f: impl FnMut(Timestamp) + Send + 'static) -> Self {
         self.on_wait = Some(Box::new(f));
+        self
+    }
+
+    /// A directory channels may write files in, such as the `batch` channel's batch files.
+    /// Without one, such channels use a new directory under the system's temporary directory.
+    pub fn dir(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.dir = Some(dir.into());
         self
     }
 
@@ -191,7 +210,10 @@ impl ProxyBuilder {
         for (key, channel_builder) in self.channel_builders {
             let outputs = OutputSender::new(&key, output_tx.clone());
 
-            match channel_builder.build(ChannelBuildContext::new(&key, outputs)) {
+            let context = ChannelBuildContext::new(&key, outputs)
+                .with_dir(self.dir.as_deref())
+                .with_realtime(self.realtime);
+            match channel_builder.build(context) {
                 Ok(channel) => {
                     channels.insert(key, channel);
                 }
@@ -524,6 +546,70 @@ mod tests {
 
         assert_eq!(sent.lock().unwrap().len(), 1);
         assert!(proxy.stop_handle().is_stopped());
+    }
+
+    #[derive(Debug)]
+    struct Finishing {
+        fail: bool,
+        outputs: OutputSender,
+    }
+
+    impl Channel for Finishing {
+        fn send(
+            &mut self,
+            _input: &Input,
+            _context: &SendContext,
+        ) -> Result<Vec<ChannelOutput>, crate::ChannelError> {
+            Ok(vec![])
+        }
+
+        fn finish(&mut self) -> Result<(), crate::ChannelError> {
+            self.outputs
+                .send(ChannelOutput::new(Level::Info, "finished"));
+            if self.fail {
+                Err(crate::ChannelError::exited("bad", "exit status: 1", ""))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    struct FinishingBuilder(bool);
+
+    impl ChannelBuilder for FinishingBuilder {
+        fn build(
+            self: Box<Self>,
+            context: ChannelBuildContext,
+        ) -> Result<Box<dyn Channel>, BuildErrors> {
+            Ok(Box::new(Finishing {
+                fail: self.0,
+                outputs: context.outputs(),
+            }))
+        }
+    }
+
+    #[test]
+    fn finish_finishes_every_channel_and_returns_a_failure() {
+        let log = Arc::new(RecordingLog::default());
+        let mut proxy = Proxy::builder()
+            .log_writer(log.clone())
+            .channel("bad", FinishingBuilder(true))
+            .channel("good", FinishingBuilder(false))
+            .build()
+            .unwrap();
+
+        let error = proxy.finish().unwrap_err();
+
+        assert!(matches!(error, ProxyError::Channel(_)), "{error}");
+        let mut finished: Vec<_> = log
+            .outputs
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|output| output.channel.clone())
+            .collect();
+        finished.sort();
+        assert_eq!(finished, ["bad", "good"]);
     }
 
     #[test]
