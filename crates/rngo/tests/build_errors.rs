@@ -1,5 +1,5 @@
 use rngo::generator::{GeneratorEdge, GeneratorEdgeKind};
-use rngo::{BuildError, ChannelError, EffectKey, SimulationKey};
+use rngo::{BatchTarget, BuildError, ChannelError, EffectKey, SimulationKey};
 use std::io::ErrorKind;
 
 #[test]
@@ -87,5 +87,18 @@ fn channel_errors_built_outside_the_crate_can_be_read_back() {
         batch.to_string(),
         "channel `db`: command exited (exit status: 3) loading a batch of 2 inputs, kept at \
          batches/db/00000001:\nERROR: relation \"users\" does not exist"
+    );
+
+    let split = ChannelError::batch("db", "exit status: 1", 1, "", "batches/db/00000001/user")
+        .with_batch_target(BatchTarget::new("user", "users"));
+    assert!(matches!(
+        &split,
+        ChannelError::Batch { target: Some(target), .. }
+            if target.effect == "user" && target.table == "users"
+    ));
+    assert_eq!(
+        split.to_string(),
+        "channel `db`: command exited (exit status: 1) loading a batch of 1 input of effect \
+         `user` into table `users`, kept at batches/db/00000001/user"
     );
 }

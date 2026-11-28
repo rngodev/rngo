@@ -143,6 +143,35 @@ without it, `psql` exits 0 after a failed statement and the batch rolls back sil
 psql -X -q -1 -v ON_ERROR_STOP=1 -f "$RNGO_BATCH_FILE" "$DATABASE_URL"
 ```
 
+Even batched, `INSERT`s cost one round trip per row. Bulk loaders such as Postgres `COPY`, MySQL
+`LOAD DATA LOCAL INFILE`, SQLite `.import` and DuckDB `read_csv` read a whole file at once, but
+expect one CSV file per table. For them, use `csv_format()`, which writes an input's `data`
+object as one CSV row with no header (one field per key, in key order; `null` as an empty field,
+strings always quoted, arrays and objects as quoted JSON), and `split_by_effect()` on the batch.
+Each batch then writes one file per effect and column list (`size` still counts the whole batch)
+and runs the command once per file, with three more variables:
+
+- `RNGO_BATCH_EFFECT`: the effect key.
+- `RNGO_BATCH_TABLE`: the effect's `metadata.table` in a spec (`effect_table` in Rust), else the
+  effect key.
+- `RNGO_BATCH_COLUMNS`: the file's columns, comma-separated and unquoted.
+
+```text
+psql -X -v ON_ERROR_STOP=1 "$DATABASE_URL" -c "\copy $RNGO_BATCH_TABLE ($RNGO_BATCH_COLUMNS) FROM '$RNGO_BATCH_FILE' WITH (FORMAT csv)"
+```
+
+On Neon, use the direct (non-pooled) connection string for bulk loads. Postgres folds unquoted
+names to lowercase, so for mixed-case tables or columns quote them in the command yourself.
+
+Files load parents first: an effect's files load after those of every effect it references
+through a `reference` generator or an effect trigger, so foreign keys hold (in Rust, or for
+references a custom Rust generator makes, declare them with `load_after`). A batch split by
+effect isn't one transaction: if a file fails, the run stops with an error naming its effect and
+table, files already loaded stay loaded and are deleted, and the failed file and those after it
+are kept. For effects that reference each other in a cycle, make the foreign keys `DEFERRABLE
+INITIALLY DEFERRED` and load the cycle's files in one transaction yourself, or drop the
+constraints for the load.
+
 ## Spec
 
 You can also define the above as a JSON (or YAML) spec:

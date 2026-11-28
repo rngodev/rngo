@@ -82,7 +82,11 @@ impl Dialect {
                 Box::new(select()),
                 Box::new(string()),
             ],
-            vec![Box::new(sql_format()), Box::new(template_format())],
+            vec![
+                Box::new(csv_format()),
+                Box::new(sql_format()),
+                Box::new(template_format()),
+            ],
             vec![
                 Box::new(batch()),
                 Box::new(exec()),

@@ -1,3 +1,4 @@
+pub(crate) mod csv;
 pub(crate) mod sql;
 pub(crate) mod template;
 
@@ -7,6 +8,7 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 
 mod parser;
+pub(crate) use csv::CsvFormat;
 pub use parser::{FormatParseContext, FormatParser};
 pub(crate) use sql::SqlFormat;
 pub(crate) use template::TemplateFormat;
