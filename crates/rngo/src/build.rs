@@ -17,9 +17,10 @@ pub use crate::proxy::channel::exec::ExecBuilder;
 pub use crate::proxy::channel::stdout::StdoutBuilder;
 pub use crate::proxy::channel::stream::StreamBuilder;
 use crate::proxy::channel::{Batch, Exec, Stdout, Stream};
+pub use crate::proxy::format::csv::CsvFormatBuilder;
 pub use crate::proxy::format::sql::SqlFormatBuilder;
 pub use crate::proxy::format::template::TemplateFormatBuilder;
-use crate::proxy::format::{SqlFormat, TemplateFormat};
+use crate::proxy::format::{CsvFormat, SqlFormat, TemplateFormat};
 
 pub fn array() -> ArrayBuilder {
     Array::builder()
@@ -59,6 +60,10 @@ pub fn string() -> StringBuilder {
 
 pub fn sql_signal() -> SqlSignalBuilder {
     SqlSignal::builder()
+}
+
+pub fn csv_format() -> CsvFormatBuilder {
+    CsvFormat::builder()
 }
 
 pub fn sql_format() -> SqlFormatBuilder {

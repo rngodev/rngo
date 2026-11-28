@@ -257,6 +257,9 @@ pub struct Effect {
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct Format {
+    /// The format type. Built in: `sql` (an `INSERT` into the effect's `metadata.table`, else a
+    /// table named after the effect), `csv` (the `data` object as one CSV row, no header, one
+    /// field per key in key order) and `template` (a Handlebars `template` over the input).
     #[serde(rename = "type")]
     pub kind: Option<String>,
     #[serde(flatten)]
@@ -292,8 +295,9 @@ pub struct Channel {
     /// stdin), `exec` (runs each input as a shell command), `stdout` (prints each input) and
     /// `batch` (appends inputs to a file in the run directory and runs `command` on each full
     /// file, with the file's path in `RNGO_BATCH_FILE` and its contents on stdin; `size` caps the
-    /// inputs per file, 10000 by default, and is ignored with `--realtime`). Each accepts an
-    /// optional `format`.
+    /// inputs per batch, 10000 by default, and is ignored with `--realtime`; `split: effect` writes
+    /// one file per effect and column list, loaded parents first, and sets `RNGO_BATCH_EFFECT`,
+    /// `RNGO_BATCH_TABLE` and `RNGO_BATCH_COLUMNS`). Each accepts an optional `format`.
     #[serde(rename = "type")]
     pub kind: Option<String>,
     #[serde(flatten)]

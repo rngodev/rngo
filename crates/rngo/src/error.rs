@@ -524,8 +524,9 @@ pub enum ChannelError {
         source: std::io::Error,
     },
     #[error(
-        "channel `{channel}`: command exited ({status}) loading a batch of {inputs} input{}, kept at {}{}",
+        "channel `{channel}`: command exited ({status}) loading a batch of {inputs} input{}{}, kept at {}{}",
         if *inputs == 1 { "" } else { "s" },
+        format_batch_target(target.as_deref()),
         path.display(),
         format_stderr(stderr)
     )]
@@ -536,7 +537,26 @@ pub enum ChannelError {
         inputs: usize,
         stderr: String,
         path: std::path::PathBuf,
+        /// The effect and table of the file, for a batch split by effect.
+        target: Option<Box<BatchTarget>>,
     },
+}
+
+/// The effect whose inputs a batch file split by effect held, and the table it loaded into.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct BatchTarget {
+    pub effect: String,
+    pub table: String,
+}
+
+impl BatchTarget {
+    pub fn new(effect: impl Into<String>, table: impl Into<String>) -> Self {
+        BatchTarget {
+            effect: effect.into(),
+            table: table.into(),
+        }
+    }
 }
 
 impl ChannelError {
@@ -576,7 +596,17 @@ impl ChannelError {
             inputs,
             stderr: stderr.into(),
             path: path.into(),
+            target: None,
         }
+    }
+
+    /// Names the effect and table of a [`ChannelError::Batch`] file split by effect; leaves other
+    /// variants as they are.
+    pub fn with_batch_target(mut self, target: BatchTarget) -> Self {
+        if let ChannelError::Batch { target: t, .. } = &mut self {
+            *t = Some(Box::new(target));
+        }
+        self
     }
 
     /// Channel `channel` couldn't start its command, failing with `source`.
@@ -585,6 +615,15 @@ impl ChannelError {
             channel: channel.into(),
             source,
         }
+    }
+}
+
+fn format_batch_target(target: Option<&BatchTarget>) -> String {
+    match target {
+        Some(BatchTarget { effect, table }) => {
+            format!(" of effect `{effect}` into table `{table}`")
+        }
+        None => String::new(),
     }
 }
 

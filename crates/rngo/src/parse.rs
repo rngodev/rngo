@@ -5,7 +5,7 @@ use crate::effect::generator::{
     Array, Constant, Context, Function, GeneratorParser, Number, Object, Reference, Select, Str,
 };
 use crate::proxy::channel::{Batch, ChannelParser, Exec, Stdout, Stream};
-use crate::proxy::format::{FormatParser, SqlFormat, TemplateFormat};
+use crate::proxy::format::{CsvFormat, FormatParser, SqlFormat, TemplateFormat};
 
 /// The `array` generator parser.
 pub fn array() -> impl GeneratorParser {
@@ -50,6 +50,11 @@ pub fn select() -> impl GeneratorParser {
 /// The `string` generator parser.
 pub fn string() -> impl GeneratorParser {
     Str::parser()
+}
+
+/// The `csv` format parser.
+pub fn csv_format() -> impl FormatParser {
+    CsvFormat::parser()
 }
 
 /// The `sql` format parser.

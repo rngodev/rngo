@@ -1,4 +1,5 @@
-type: stream
-command: psql -q $DATABASE_URL
+type: batch
+split: effect
+command: psql -X -v ON_ERROR_STOP=1 "$DATABASE_URL" -c "\copy $RNGO_BATCH_TABLE ($RNGO_BATCH_COLUMNS) FROM '$RNGO_BATCH_FILE' WITH (FORMAT csv)"
 format:
-  type: sql
+  type: csv
