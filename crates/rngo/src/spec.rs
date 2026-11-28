@@ -282,11 +282,18 @@ pub struct GeneratorType {
     pub generator: Generator,
 }
 
+/// Where inputs are delivered: a `type` plus that type's own fields.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct Channel {
+    /// The channel type. Built in: `stream` (one long-lived `command`, one line per input on its
+    /// stdin), `exec` (runs each input as a shell command), `stdout` (prints each input) and
+    /// `batch` (appends inputs to a file in the run directory and runs `command` on each full
+    /// file, with the file's path in `RNGO_BATCH_FILE` and its contents on stdin; `size` caps the
+    /// inputs per file, 10000 by default, and is ignored with `--realtime`). Each accepts an
+    /// optional `format`.
     #[serde(rename = "type")]
     pub kind: Option<String>,
     #[serde(flatten)]

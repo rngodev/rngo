@@ -131,6 +131,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+`stream` sends each statement on its own, so each one is a round trip and a commit. To load many
+backdated inputs, use `batch()` instead: it appends inputs to numbered files under the proxy's
+`dir` (a temporary directory if unset) and runs its command once per file (every `size` inputs,
+10,000 by default, and once more at `finish`), with the file's path in `RNGO_BATCH_FILE` and its
+contents on stdin. A command that exits non-zero fails the run, and its file is kept. With `psql`,
+`-1` makes each batch one transaction, and `ON_ERROR_STOP` is needed for it to fail at all:
+without it, `psql` exits 0 after a failed statement and the batch rolls back silently.
+
+```text
+psql -X -q -1 -v ON_ERROR_STOP=1 -f "$RNGO_BATCH_FILE" "$DATABASE_URL"
+```
+
 ## Spec
 
 You can also define the above as a JSON (or YAML) spec:

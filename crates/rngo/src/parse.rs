@@ -4,7 +4,7 @@ use crate::audit::signal::{SignalParser, SqlSignal};
 use crate::effect::generator::{
     Array, Constant, Context, Function, GeneratorParser, Number, Object, Reference, Select, Str,
 };
-use crate::proxy::channel::{ChannelParser, Exec, Stdout, Stream};
+use crate::proxy::channel::{Batch, ChannelParser, Exec, Stdout, Stream};
 use crate::proxy::format::{FormatParser, SqlFormat, TemplateFormat};
 
 /// The `array` generator parser.
@@ -60,6 +60,11 @@ pub fn sql_format() -> impl FormatParser {
 /// The `template` format parser.
 pub fn template_format() -> impl FormatParser {
     TemplateFormat::parser()
+}
+
+/// The `batch` channel parser.
+pub fn batch() -> impl ChannelParser {
+    Batch::parser()
 }
 
 /// The `exec` channel parser.

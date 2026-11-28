@@ -4,6 +4,16 @@ Each release has a section named after its version. Changes that break existing 
 
 ## Unreleased
 
+### Added
+
+- A `batch` channel (`type: batch`, `build::batch()`) for loading many backdated inputs at once. It appends inputs to numbered files in the run's `batches/<channel>/` directory and runs its `command` once per file, every `size` inputs (10,000 by default) and once more when the run finishes, including after Ctrl-C. The command gets the file's path in `RNGO_BATCH_FILE` and its contents on stdin. A file is deleted once its command succeeds; a command that exits non-zero fails the run, and its file is kept. With `--realtime`, each input is sent on its own.
+- `ProxyBuilder::dir` gives channels a directory to write files in, read with `ChannelBuildContext::dir`. `ChannelBuildContext::realtime` tells a channel whether the proxy is realtime. `ChannelError::batch` reports a failed batch.
+
+### Changed
+
+- When a channel fails mid-run, `rngo eval` still finishes the other channels and commits the log before reporting the error.
+- **Breaking (Rust API):** `Channel::finish` returns `Result<(), ChannelError>` and `Proxy::finish` returns `Result<(), ProxyError>`, so a channel can report a failure while finishing. `Proxy::finish` finishes every channel before returning the first error. To migrate, a custom channel that overrides `finish` returns `Ok(())`. Callers of `Proxy::finish` that use `?` into `Box<dyn Error>` need no change; code that matched on its `LogError` matches `ProxyError::Log` instead.
+
 ## 0.41.0 - 2026-11-23
 
 ### Added
